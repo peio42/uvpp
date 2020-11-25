@@ -2,7 +2,7 @@
 //  => Sinon loop->close() renvoie EBUSY car il reste un handler actif
 
 #include <fmt/core.h>
-#include "uv/uv.hpp"
+#include "uvpp/uv.hpp"
 
 int main(int ac, char* av[]) {
   uv::Loop *loop = uv::Loop::getDefault();

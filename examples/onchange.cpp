@@ -1,6 +1,6 @@
 #include <stdlib.h>
 #include <iostream>
-#include <uv/uv.hpp>
+#include <uvpp/uv.hpp>
 
 char *command;
 uv::Loop *loop;
