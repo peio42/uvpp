@@ -1,2 +1,157 @@
 # uvpp
-uvpp is a C++ wrapper for the wonderful libuv library.
+uvpp is a Modern C++ wrapper for the wonderful libuv library.
+
+## Why uvpp
+libuv has been developed with object oriented design. When you use the
+library into your C project, its class hierarchy is clear.
+But if you want to use it inside a C++ project, you will actually have
+to deal with a big amount of reinterpret_cast everywhere.
+uvw might be an option, but it's more an event library, based on libuv
+than a simple wrapper, and the overhead isn't so negligible.
+
+uvpp wants to be a simple wrapper over libuv, with limited overhead,
+proposing a clean Modern C++ interface with exception management.
+
+## Usage
+uvpp is a header-only C++ library. You will need a C++17 compiler.
+Just include "uvpp/uv.hpp".
+
+    #include <uvpp/uv.hpp>
+
+For everything else, you can stick to libuv engine for the
+implementation. So you'll mainly need a Loop object, the Reactor, from
+which the handles will be attached. A default loop is available.
+
+    auto loop = uv::Loop::getDefault();
+
+or you can create one, for example with
+
+> uv::Loop loop();
+
+Then create Handles object as needed, and you can directly call the
+methods from the objects.
+
+    uv::Idle idle(loop);
+
+###### Memory management
+_uvpp doesn't allocate any object for you. You can allocate them
+yourself or use local variable, but it's your programmer's duty to
+correctly manage memory. Don't hesitate to use smart-pointers if
+you want._
+
+###### Callbacks
+You can use Modern C++ lambda function, but then be careful you can't
+capture any variable, as the compiler will have to translate it into
+a simple function pointer.
+
+    idle.start([](uv::Idle *idle) {
+      static int64_t counter = 0;
+
+      counter++;
+      if (counter >= 1000000)
+        idle->close();
+    });
+
+Of course, you can also reference any function.
+
+_When you execute a function you need to pass a callback to, you have
+two options. You can use the raw libuv function, or you can call a
+"safe" uvpp function, which will just check the result value and
+raise an exception if needed, before calling your callback._
+
+This safe way require you to use template version of the functions.
+Not every callback will be given a status error code, but as a general
+rule, any callback can be written in a template-style to keep
+consistency.
+
+    Loop *loop = Loop::getDefault();
+
+    Tcp server(loop);
+
+    try {
+      IPv4 addr("0.0.0.0", 2345);
+      server.bind(&addr);
+
+      server.listen<[](Tcp *server) {
+        // ... Some useful stuff
+        //
+        // No need to check status. If there is an error during the
+        // listen, an exception should raise during the loop->run()
+      }>();
+
+      loop->run();
+    } catch (uv::Error &e) {
+      // ... An error occured
+    }
+
+###### Under development
+_You can notice the sockaddr helper `IPv4`. The library is just starting
+its development and doesn't have a lot of them yet. When its API starts
+to be stable, expect to see more.._
+_Also more C++ oriented types will be proposed, like `std::string` for
+example._
+
+###### Differences with libuv
+The same objects and Handles have been mirrored. But the first noticeable
+difference, aside of object methods instead of global functions, is that
+the handles keep their types inside the callbacks. No need to cast
+anything.
+
+Also, the `read` method (or `start_read`) has an additional callback, for
+EoF event, in its template form:
+
+    uv::fs::read<on_read, on_eof>(loop, &req, fd, &iov, 1, -1);
+
+# Example
+
+This is a simple TCP echo server using uvpp
+
+    #include <fmt/core.h>
+
+    #include "uvpp/uv.hpp"
+
+    using namespace uv;
+
+    int main(int ac, char* av[]) {
+      Loop *loop = Loop::getDefault();
+
+      Tcp server(loop);
+
+      try {
+        IPv4 addr("0.0.0.0", 2345);
+        server.bind(&addr);
+
+        server.listen<[](Tcp *server) {
+          fmt::print("New connection\n");
+
+          auto client = new Tcp(server->getLoop());
+          server->accept(client);
+
+          client->read_start<[](Tcp *client, size_t suggested_size, Buffer *buf) {
+            buf->allocate(suggested_size);
+          }, [](Tcp *client, ssize_t nread, const Buffer *buf) {
+            auto req = new Tcp::WriteRq;
+            auto buf2 = new Buffer(buf->base, nread);
+            req->set(buf2);
+
+            client->write<[](Tcp::WriteRq *req) {
+              auto buf2 = req->get<Buffer>();
+              delete buf2->base;
+              delete buf2;
+              delete req;
+            }>(req, buf2, 1);
+          }, [](Tcp *client, const Buffer *buf) {
+            fmt::print("Disconnection\n");
+
+            client->close();
+            delete buf->base;
+          }>();
+        }>();
+
+        loop->run();
+      } catch (uv::Error &e) {
+        fmt::print(stderr, "Error {}\n", e.message());
+      }
+
+      return 0;
+    }
