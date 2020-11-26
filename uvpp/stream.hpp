@@ -26,7 +26,7 @@ namespace uv {
     using ConnectionCb = void (*)(S *server, int status);
 
     using SafeReadCb = void (*)(S *stream, ssize_t nread, const Buffer *buf);
-    using SafeEofCb = void (*)(S *server);
+    using SafeEofCb = void (*)(S *server, const Buffer *buf);
     using SafeWriteCb = void (*)(WriteRq *req);
     using SafeConnectCb = void (*)(ConnectRq *req);
     using SafeShutdownCb = void (*)(ShutdownRq *req);
@@ -63,12 +63,12 @@ namespace uv {
     void read_start(AllocCb alloc_cb, ReadCb read_cb) {
       _safe(uv_read_start(as_stream(), reinterpret_cast<uv_alloc_cb>(alloc_cb), reinterpret_cast<uv_read_cb>(read_cb)));
     }
-    template<SafeReadCb rcb, SafeEofCb ecb>
-    void read_start(AllocCb alloc_cb) {
-      read_start(alloc_cb, [](S *stream, ssize_t nread, const Buffer *buf) {
+    template<AllocCb acb, SafeReadCb rcb, SafeEofCb ecb>
+    void read_start() {
+      read_start(acb, [](S *stream, ssize_t nread, const Buffer *buf) {
           if (nread < 0) {
             if (nread == UV_EOF)
-              ecb(stream);
+              ecb(stream, buf);
             else
               _safe(nread);
           } else
@@ -85,16 +85,16 @@ namespace uv {
     }
     template<SafeWriteCb cb>
     void write(WriteRq *req, const Buffer bufs[], unsigned int nbufs) {
-      write(req, bufs, nbufs, cb);
+      write(req, bufs, nbufs, _safeCb<WriteRq, cb>);
     }
 
     template<class Z>
     void write(WriteRq *req, const Buffer bufs[], unsigned int nbufs, Z *send_handle, WriteCb cb) {
-      _safe(uv_write2(req, as_stream(), bufs, nbufs, send_handle->as_stream(), cb));
+      _safe(uv_write2(req, as_stream(), bufs, nbufs, send_handle->as_stream(), _safeCb<WriteRq, cb>));
     }
     template<SafeWriteCb cb, class Z>
     void write(WriteRq *req, const Buffer bufs[], unsigned int nbufs, Z *send_handle) {
-      write(req, bufs, nbufs, send_handle, cb);
+      write(req, bufs, nbufs, send_handle, _safeCb<req, cb>);
     }
 
     int try_write(const Buffer bufs[], unsigned int nbufs) {
