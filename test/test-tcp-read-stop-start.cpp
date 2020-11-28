@@ -38,7 +38,9 @@ TEST_F(TcpReadStopStartTest, tcp_read_stop_start) {
     uv::Tcp server(loop);
     server_ptr = &server;
     server.bind(&addr);
-    server.listen<[](uv::Tcp *server) {
+    server.listen([](uv::Tcp *server, int status) {
+        ASSERT_EQ(status, 0);
+
         auto connection = new uv::Tcp(server->getLoop());
         server->accept(connection);
         connection->read_start(do_alloc, [](uv::Tcp *connection, ssize_t nread, const uv::Buffer *buf) {
@@ -61,7 +63,7 @@ TEST_F(TcpReadStopStartTest, tcp_read_stop_start) {
 
             read_cb_called++;
           });
-    }>();
+      });
   }
 
   { /* Client */

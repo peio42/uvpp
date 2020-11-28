@@ -127,7 +127,7 @@ namespace uv {
     }
     template<Cb cb>
     static int readdir(Loop *loop, Rq *req, uv_dir_t *dir) {
-      readdir(loop, req, dir, _safeReqCb<Rq, cb>);
+      return readdir(loop, req, dir, _safeReqCb<Rq, cb>);
     }
 
     static void scandir(Loop *loop, Rq *req, const char *path, int flags, Cb cb) {
