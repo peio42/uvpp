@@ -23,8 +23,12 @@ namespace uv {
       IPv6_Only = UV_UDP_IPV6ONLY,
       Partial = UV_UDP_PARTIAL,
       ReuseAddr = UV_UDP_REUSEADDR,
+#  ifdef UV_UDP_MMSG_CHUNK
       MMSG_Chunk = UV_UDP_MMSG_CHUNK,
+#  endif
+#  ifdef UV_UDP_RECVMMSG
       RecvMMSG = UV_UDP_RECVMMSG,
+#  endif
     };
 
     bool castable(Handle &h) { return h.getType() == Handle::Type::Udp; }
@@ -131,9 +135,11 @@ namespace uv {
     }
 
 
+#  ifdef uv_udp_using_recvmmsg
     bool using_recvmmsg() {
       return uv_udp_using_recvmmsg(this);
     }
+#  endif
 
     void recv_stop() {
       _safe(uv_udp_recv_stop(this));
