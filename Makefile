@@ -1,10 +1,10 @@
 .PHONY: run test clean
 
 run: test
-        test/main
+	test/main
 
 test:
-        make -C test
+	make -C test
 
 clean:
-        make -C test clean
+	make -C test clean
