@@ -155,3 +155,19 @@ This is a simple TCP echo server using uvpp
 
       return 0;
     }
+
+# Testing process
+
+Install [Clang](https://clang.llvm.org/) compiler, [Google Test](https://github.com/google/googletest), [fmt](https://github.com/fmtlib/fmt) library and [libuv](https://github.com/libuv/libuv) version to test.
+
+On Ubuntu:
+
+```shell
+sudo apt install clang libgtest-dev libfmt-dev libuv1-dev
+```
+
+And run from working directory:
+
+```shell
+make
+```
