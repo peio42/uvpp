@@ -138,7 +138,7 @@ TEST_F(TimerTest, timer) {
   // printf("repeat_cb_called %d\n", repeat_cb_called);
   ASSERT_EQ(repeat_cb_called, 5);
   ASSERT_EQ(repeat_close_cb_called, 1);
-  ASSERT_GE(loop->now() - start_time, 500);
+  ASSERT_GE(loop->now() - start_time, 500UL);
 }
 
 
@@ -157,8 +157,8 @@ TEST_F(TimerTest, timer_start_twice) {
 TEST_F(TimerTest, timer_init) {
   uv::Timer timer(loop);
 
-  ASSERT_EQ(timer.get_repeat(), 0);
-  ASSERT_EQ(timer.active(), 0);
+  ASSERT_EQ(timer.get_repeat(), 0UL);
+  ASSERT_FALSE(timer.active());
 }
 
 
@@ -212,11 +212,11 @@ TEST_F(TimerTest, timer_run_once) {
 
   timer.start(timer_run_once_timer_cb, 0, 0);
   loop->run();
-  ASSERT_EQ(timer_run_once_timer_cb_called, 1);
+  ASSERT_EQ(timer_run_once_timer_cb_called, 1UL);
 
   timer.start(timer_run_once_timer_cb, 1);
   loop->run();
-  ASSERT_EQ(timer_run_once_timer_cb_called, 2);
+  ASSERT_EQ(timer_run_once_timer_cb_called, 2UL);
 
   timer.close();
   loop->run();
@@ -264,15 +264,19 @@ TEST_F(TimerTest, timer_early_check) {
 
   timer_early_check_expected_time = loop->now() + timeout_ms;
 
-  uv::Timer timer(loop);
-  timer.start([](uv::Timer *timer) {
-      uint64_t hrtime = uv::hrtime() / 1000000;
-      ASSERT_GE(hrtime, timer_early_check_expected_time);
+  try {
+    uv::Timer timer(loop);
+    timer.start([](uv::Timer *timer) {
+        uint64_t hrtime = uv::hrtime() / 1000000;
+        ASSERT_GE(hrtime, timer_early_check_expected_time);
       }, timeout_ms);
-  loop->run();
+    loop->run();
 
-  timer.close();
-  loop->run();
+    timer.close();
+    loop->run();
+  } catch (uv::Error &e) {
+    FAIL();
+  }
 }
 
 
@@ -281,7 +285,7 @@ uv::Timer *repeat_2_ptr;
 
 TEST_F(TimerTest, timer_again) {
   uint64_t start_time = loop->now();
-  ASSERT_GT(start_time, 0);
+  ASSERT_GT(start_time, 0UL);
 
   uv::Timer dummy(loop);
   try {
@@ -301,7 +305,7 @@ TEST_F(TimerTest, timer_again) {
   repeat_1_ptr = &repeat_1;
   repeat_1.start([](uv::Timer *timer) {
       ASSERT_EQ(timer, repeat_1_ptr);
-      ASSERT_EQ(timer->get_repeat(), 50);
+      ASSERT_EQ(timer->get_repeat(), 50UL);
 
       repeat_1_cb_called++;
 
@@ -315,10 +319,10 @@ TEST_F(TimerTest, timer_again) {
         repeat_2_cb_allowed = true;
       }
     }, 50);
-  ASSERT_EQ(repeat_1.get_repeat(), 0);
+  ASSERT_EQ(repeat_1.get_repeat(), 0UL);
 
   repeat_1.set_repeat(50);
-  ASSERT_EQ(repeat_1.get_repeat(), 50);
+  ASSERT_EQ(repeat_1.get_repeat(), 50UL);
 
 
   uv::Timer repeat_2(loop);
@@ -338,10 +342,10 @@ TEST_F(TimerTest, timer_again) {
         return ;
       }
 
-      ASSERT_EQ(timer->get_repeat(), 100);
+      ASSERT_EQ(timer->get_repeat(), 100UL);
       timer->set_repeat(0);
     }, 100, 100);
-  ASSERT_EQ(repeat_2.get_repeat(), 100);
+  ASSERT_EQ(repeat_2.get_repeat(), 100UL);
 
   loop->run();
 

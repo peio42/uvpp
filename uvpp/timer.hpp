@@ -15,7 +15,7 @@ namespace uv {
     Timer() = default;
 
     Timer(Loop *loop) {
-      uv_timer_init(loop, this);
+      _safe(uv_timer_init(loop, this));
     }
 
     // template<class V = void>
