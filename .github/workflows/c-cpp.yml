@@ -1,0 +1,21 @@
+name: C/C++ CI
+
+on:
+  push:
+    branches: [ ]
+  pull_request:
+    branches: [ ]
+
+jobs:
+  test:
+
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v2
+    - name: Install packages
+      run: sudo apt install -y clang libuv1-dev libgtest-dev libfmt-dev
+    - name: Make binary
+      run: make
+    - name: Start main
+      run: ./test/main
