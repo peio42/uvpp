@@ -15,5 +15,11 @@ jobs:
     - uses: actions/checkout@v2
     - name: Install packages
       run: sudo apt install -y clang libuv1-dev libgtest-dev libfmt-dev
+    - name: Install SonarCloud Cpp build-wrapper
+      run: |
+        wget http://sonarcloud.io/static/cpp/build-wrapper-linux-x86.zip
+        unzip build-wrapper-linux-x86.zip
     - name: Make binary and execute tests
-      run: make
+      run: ./build-wrapper-linux-x86/build-wrapper-linux-x86-64 --out-dir build-wrapper-linux-x86 make
+    - name: TMP Check if JSON correctly created from build-wrapper-linux
+      run: cat build-wrapper-linux-x86/*.json
