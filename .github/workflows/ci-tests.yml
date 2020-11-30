@@ -21,5 +21,14 @@ jobs:
         unzip build-wrapper-linux-x86.zip
     - name: Make binary and execute tests
       run: ./build-wrapper-linux-x86/build-wrapper-linux-x86-64 --out-dir build-wrapper-linux-x86 make
-    - name: TMP Check if JSON correctly created from build-wrapper-linux
-      run: cat build-wrapper-linux-x86/*.json
+    - name: SonarCloud Scan
+      uses: sonarsource/sonarcloud-github-action@master
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+      with:
+        args: >
+          -Dsonar.organization=peio42-github
+          -Dsonar.projectKey=org.blutch:uvpp
+          -Dsonar.sources=uvpp/
+          -Dsonar.tests=test/
