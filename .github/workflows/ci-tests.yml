@@ -15,7 +15,7 @@ jobs:
         wget http://sonarcloud.io/static/cpp/build-wrapper-linux-x86.zip
         unzip build-wrapper-linux-x86.zip
     - name: Make binary and execute tests
-      run: ./build-wrapper-linux-x86/build-wrapper-linux-x86-64 --out-dir build_wrapper_output_directory make
+      run: ./build-wrapper-linux-x86/build-wrapper-linux-x86-64 --out-dir build_wrapper_output_directory make build
 #    - name: Display log content for analyse
 #      run: cat build_wrapper_output_directory/*.log
 #    - name: Display JSON content for analyse
