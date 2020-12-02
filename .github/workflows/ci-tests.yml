@@ -16,8 +16,10 @@ jobs:
         unzip build-wrapper-linux-x86.zip
     - name: Make binary and execute tests
       run: ./build-wrapper-linux-x86/build-wrapper-linux-x86-64 --out-dir build_wrapper_output_directory make
-    - name: Display JSON content for analyse
-      run: cat build_wrapper_output_directory/*.json
+#    - name: Display log content for analyse
+#      run: cat build_wrapper_output_directory/*.log
+#    - name: Display JSON content for analyse
+#      run: cat build_wrapper_output_directory/*.json
     - name: SonarCloud Scan
       uses: sonarsource/sonarcloud-github-action@master
       env:

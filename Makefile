@@ -10,7 +10,7 @@ SRCS = test/main.cpp $(wildcard test/test-*.cpp)
 OBJS = $(SRCS:.cpp=.o)
 
 test: build
-	test/main
+	./test/main
 
 build: $(OBJS)
 
