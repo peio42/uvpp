@@ -10,6 +10,8 @@ jobs:
     - uses: actions/checkout@v2
     - name: Install packages
       run: sudo apt install -y clang libuv1-dev libgtest-dev libfmt-dev
+    - name: Which directory
+      run: pwd
     - name: Install SonarCloud Cpp build-wrapper
       run: |
         wget http://sonarcloud.io/static/cpp/build-wrapper-linux-x86.zip
