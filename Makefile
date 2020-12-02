@@ -1,10 +1,18 @@
-.PHONY: run test clean
+.PHONY: clean build test 
 
-run: test
+CXX = clang++
+CC = $(CXX)
+CXXFLAGS = -Wall -std=c++17 -I.
+LDLIBS = -luv -lfmt -ldl -pthread -lgtest
+
+# Lambda build error in examples SRCS = test/main.cpp $(wildcard test/test-*.cpp) $(wildcard examples/*.cpp) 
+SRCS = test/main.cpp $(wildcard test/test-*.cpp)
+OBJS = $(SRCS:.cpp=.o)
+
+test: test
 	test/main
 
-test:
-	make -C test
+build: $(OBJS)
 
 clean:
-	make -C test clean
+	rm -f $(OBJS)

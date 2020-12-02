@@ -27,6 +27,8 @@ jobs:
         args: >
           -Dsonar.organization=peio42-github
           -Dsonar.projectKey=org.blutch:uvpp
-          -Dsonar.sources=uvpp
-          -Dsonar.tests=test
+          -Dsonar.sources=.
           -Dsonar.cfamily.build-wrapper-output=build_wrapper_output_directory
+
+#          -Dsonar.sources=uvpp
+#          -Dsonar.tests=test
