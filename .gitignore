@@ -1,3 +1,6 @@
 /.project
 /**/*.o
 /**/main
+/.scannerwork/
+/bw_out/
+/sonar-project.properties

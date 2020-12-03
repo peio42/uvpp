@@ -17,11 +17,9 @@ jobs:
         wget http://sonarcloud.io/static/cpp/build-wrapper-linux-x86.zip
         unzip build-wrapper-linux-x86.zip
     - name: Make binary and execute tests
-      run: ./build-wrapper-linux-x86/build-wrapper-linux-x86-64 --out-dir build_wrapper_output_directory make build
-#    - name: Display log content for analyse
-#      run: cat build_wrapper_output_directory/*.log
-#    - name: Display JSON content for analyse
-#      run: cat build_wrapper_output_directory/*.json
+      run: ./build-wrapper-linux-x86/build-wrapper-linux-x86-64 --out-dir bw_out make build
+    - name: Hack Sonar JSON file with path in docker container
+      run: sed -i 's?/home/runner/work/uvpp/uvpp?/github/workspace?g' bw_out/build-wrapper-dump.json
     - name: SonarCloud Scan
       uses: sonarsource/sonarcloud-github-action@master
       env:
@@ -31,8 +29,5 @@ jobs:
         args: >
           -Dsonar.organization=peio42-github
           -Dsonar.projectKey=org.blutch:uvpp
-          -Dsonar.sources=.
-          -Dsonar.cfamily.build-wrapper-output=build_wrapper_output_directory
-
-#          -Dsonar.sources=uvpp
-#          -Dsonar.tests=test
+          -Dsonar.sources=uvpp,test
+          -Dsonar.cfamily.build-wrapper-output=bw_out
