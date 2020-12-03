@@ -31,3 +31,4 @@ jobs:
           -Dsonar.projectKey=org.blutch:uvpp
           -Dsonar.sources=uvpp,test
           -Dsonar.cfamily.build-wrapper-output=bw_out
+          -Dsonar.verbose=true
