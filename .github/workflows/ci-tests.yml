@@ -11,8 +11,8 @@ jobs:
         fetch-depth: 0    
     - name: Install packages
       run: sudo apt install -y clang libuv1-dev libgtest-dev libfmt-dev
-    - name: Fetch master branch for SonarCloud analysis with blame info
-      run : git fetch origin master
+#    - name: Fetch master branch for SonarCloud analysis with blame info
+#      run : git fetch origin master
     - name: Install SonarCloud scanner
       run: |
         wget https://binaries.sonarsource.com/Distribution/sonar-scanner-cli/sonar-scanner-cli-4.5.0.2216-linux.zip
