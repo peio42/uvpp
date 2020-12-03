@@ -21,3 +21,6 @@ jobs:
       run: ./build-wrapper-linux-x86/build-wrapper-linux-x86-64 --out-dir bw_out make build
     - name: SonarCloud Scan
       run: ./sonar-scanner-4.5.0.2216-linux/bin/sonar-scanner
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}      
