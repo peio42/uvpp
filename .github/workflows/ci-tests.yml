@@ -1,5 +1,4 @@
 name: C/C++ CI
-
 on:
   push:
   pull_request:
@@ -10,8 +9,6 @@ jobs:
     - uses: actions/checkout@v2
     - name: Install packages
       run: sudo apt install -y clang libuv1-dev libgtest-dev libfmt-dev
-    - name: Which directory
-      run: pwd
     - name: Install SonarCloud scanner
       run: |
         wget https://binaries.sonarsource.com/Distribution/sonar-scanner-cli/sonar-scanner-cli-4.5.0.2216-linux.zip
@@ -23,8 +20,4 @@ jobs:
     - name: Make binary and execute tests
       run: ./build-wrapper-linux-x86/build-wrapper-linux-x86-64 --out-dir bw_out make build
     - name: SonarCloud Scan
-      run: ./sonar-scanner-4.5.0.2216-linux/bin/sonar-scanner \
-        -Dsonar.organization=peio42-github \
-        -Dsonar.projectKey=org.blutch:uvpp \
-        -Dsonar.sources=uvpp,test \
-        -Dsonar.cfamily.build-wrapper-output=bw_out
+      run: ./sonar-scanner-4.5.0.2216-linux/bin/sonar-scanner
