@@ -1,19 +1,30 @@
 name: C/C++ CI
-
 on:
   push:
-    branches: [ ]
   pull_request:
-    branches: [ ]
-
 jobs:
   test:
-
     runs-on: ubuntu-20.04
-
     steps:
     - uses: actions/checkout@v2
+      with:
+        fetch-depth: 0    
     - name: Install packages
       run: sudo apt install -y clang libuv1-dev libgtest-dev libfmt-dev
+#    - name: Fetch master branch for SonarCloud analysis with blame info
+#      run : git fetch origin master
+    - name: Install SonarCloud scanner
+      run: |
+        wget https://binaries.sonarsource.com/Distribution/sonar-scanner-cli/sonar-scanner-cli-4.5.0.2216-linux.zip
+        unzip sonar-scanner-cli-4.5.0.2216-linux.zip
+    - name: Install SonarCloud Cpp build-wrapper
+      run: |
+        wget http://sonarcloud.io/static/cpp/build-wrapper-linux-x86.zip
+        unzip build-wrapper-linux-x86.zip
     - name: Make binary and execute tests
-      run: make
+      run: ./build-wrapper-linux-x86/build-wrapper-linux-x86-64 --out-dir bw_out make build
+    - name: SonarCloud Scan
+      run: ./sonar-scanner-4.5.0.2216-linux/bin/sonar-scanner
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}      

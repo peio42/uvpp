@@ -1,3 +1,5 @@
+![C/C++ CI](https://github.com/peio42/uvpp/workflows/C/C++%20CI/badge.svg) [![Quality Gate Status](https://sonarcloud.io/api/project_badges/measure?project=org.blutch%3Auvpp&metric=alert_status)](https://sonarcloud.io/dashboard?id=org.blutch%3Auvpp)
+
 # uvpp
 uvpp is a Modern C++ wrapper for the wonderful libuv library.
 
