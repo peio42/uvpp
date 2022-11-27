@@ -26,11 +26,13 @@ namespace uv {
       Error::safe(uv_loop_configure(this, UV_LOOP_BLOCK_SIGNAL, sig));
     }
 
+#if UV_VERSION_MAJOR >= 1 && UV_VERSION_MINOR >= 39
     enum class OptionMetricsIdleTimeClass;
     static OptionMetricsIdleTimeClass OptionMetricsIdleTime;
     void configure(const OptionMetricsIdleTimeClass __attribute__((unused)) option) {
       Error::safe(uv_loop_configure(this, UV_METRICS_IDLE_TIME));
     }
+#endif
 
     void close() {
       Error::safe(uv_loop_close(this));
@@ -75,9 +77,11 @@ namespace uv {
       uv_walk(this, reinterpret_cast<uv_walk_cb>(cb), static_cast<void *>(arg));
     }
 
+#if UV_VERSION_MAJOR >= 1 && UV_VERSION_MINOR >= 12
     void fork() {
       Error::safe(uv_loop_fork(this));
     }
+#endif
 
     template<class V = void>
     void setData(V *data) { this->data = static_cast<void *>(data); }

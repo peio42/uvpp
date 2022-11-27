@@ -47,7 +47,9 @@ namespace uv {
         Readdir = UV_FS_READDIR,
         Closedir = UV_FS_CLOSEDIR,
         Mkstemp = UV_FS_MKSTEMP,
+#if UV_VERSION_MAJOR >= 1 && UV_VERSION_MINOR >= 36
         Lutime = UV_FS_LUTIME,
+#endif
       };
 
       void cleanup() {
@@ -129,6 +131,7 @@ namespace uv {
       mkdtemp(loop, req, tpl, Error::safeReqCb<Rq, cb>);
     }
 
+#if UV_VERSION_MAJOR >= 1 && UV_VERSION_MINOR >= 34
     inline void mkstemp(const char *path) {
       Error::safe(uv_fs_mkstemp(nullptr, nullptr, path, nullptr));
     }
@@ -139,6 +142,7 @@ namespace uv {
     inline void mkstemp(Loop *loop, Rq *req, const char *tpl) {
       mkstemp(loop, req, tpl, Error::safeReqCb<Rq, cb>);
     }
+#endif
 
     inline void rmdir(const char *path) {
       Error::safe(uv_fs_rmdir(nullptr, nullptr, path, nullptr));
@@ -175,6 +179,7 @@ namespace uv {
       lstat(loop, req, path, Error::safeReqCb<Rq, cb>);
     }
 
+#if UV_VERSION_MAJOR >= 1 && UV_VERSION_MINOR >= 31
     inline void statfs(Loop *loop, Rq *req, const char *path, Cb cb = nullptr) {
       Error::safe(uv_fs_statfs(loop, req, path, reinterpret_cast<uv_fs_cb>(cb)));
     }
@@ -182,6 +187,7 @@ namespace uv {
     inline void statfs(Loop *loop, Rq *req, const char *path) {
       fstatfs(loop, req, path, Error::safeReqCb<Rq, cb>);
     }
+#endif
   
     inline void rename(const char *path, const char *new_path) {
       Error::safe(uv_fs_rename(nullptr, nullptr, path, new_path, nullptr));
@@ -194,6 +200,7 @@ namespace uv {
       rename(loop, req, path, new_path, Error::safeReqCb<Rq, cb>);
     }
 
+#if UV_VERSION_MAJOR >= 1 && UV_VERSION_MINOR >= 14
     inline void copyfile(const char *path, const char *new_path, int flags) {
       Error::safe(uv_fs_copyfile(nullptr, nullptr, path, new_path, flags, nullptr));
     }
@@ -204,6 +211,7 @@ namespace uv {
     inline void copyfile(Loop *loop, Rq *req, const char *path, const char *new_path, int flags) {
       copyfile(loop, req, path, new_path, flags, Error::safeReqCb<Rq, cb>);
     }
+#endif
 
     inline int access(const char *path, int mode) {
       return Error::safe(uv_fs_access(nullptr, nullptr, path, mode, nullptr));
@@ -238,6 +246,7 @@ namespace uv {
       utime(loop, req, path, atime, mtime, Error::safeReqCb<Rq, cb>);
     }
 
+#if UV_VERSION_MAJOR >= 1 && UV_VERSION_MINOR >= 36
     inline void lutime(const char *path, double atime, double mtime) {
       Error::safe(uv_fs_lutime(nullptr, nullptr, path, atime, mtime, nullptr));
     }
@@ -248,6 +257,7 @@ namespace uv {
     inline void lutime(Loop *loop, Rq *req, const char *path, double atime, double mtime) {
       lutime(loop, req, path, atime, mtime, Error::safeReqCb<Rq, cb>);
     }
+#endif
 
     inline void link(const char *path, const char *new_path) {
       Error::safe(uv_fs_link(nullptr, nullptr, path, new_path, nullptr));
@@ -283,6 +293,7 @@ namespace uv {
       }));
     }
 
+#if UV_VERSION_MAJOR >= 1 && UV_VERSION_MINOR >= 8
     using RealpathCb = void (*)(Rq *req, const char *target);
     inline void realpath(Loop *loop, Rq *req, const char *path, RealpathCb cb) {
       Error::safe(uv_fs_realpath(loop, req, path, reinterpret_cast<uv_fs_cb>(cb)));
@@ -294,6 +305,7 @@ namespace uv {
         cb(reinterpret_cast<Rq *>(req), static_cast<char *>(req->ptr));
       }));
     }
+#endif
 
     inline void chown(const char *path, int uid, int gid) {
       Error::safe(uv_fs_chown(nullptr, nullptr, path, uid, gid, nullptr));
@@ -306,6 +318,7 @@ namespace uv {
       chown(loop, req, path, uid, gid, Error::safeReqCb<Rq, cb>);
     }
 
+#if UV_VERSION_MAJOR >= 1 && UV_VERSION_MINOR >= 21
     inline void lchown(const char *path, int uid, int gid) {
       Error::safe(uv_fs_lchown(nullptr, nullptr, path, uid, gid, nullptr));
     }
@@ -316,6 +329,8 @@ namespace uv {
     inline void lchown(Loop *loop, Rq *req, const char *path, int uid, int gid) {
       lchown(loop, req, path, uid, gid, Error::safeReqCb<Rq, cb>);
     }
+#endif
+
   };
 
   struct File {
@@ -445,6 +460,7 @@ namespace uv {
     }
   };
 
+#if UV_VERSION_MAJOR >= 1 && UV_VERSION_MINOR >= 28
   struct Dir : uv_dir_t {
 
     struct Entry : uv_dirent_t {
@@ -531,5 +547,6 @@ namespace uv {
       Error::safe(uv_fs_scandir(loop, req, path, 0, reinterpret_cast<uv_fs_cb>(cb)));
     }
   };
+#endif
 
 }

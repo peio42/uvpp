@@ -16,9 +16,11 @@ namespace uv {
       Error::safe(uv_tcp_init(loop, this));
     }
 
+#if UV_VERSION_MAJOR >= 1 && UV_VERSION_MINOR >= 7
     Tcp(Loop *loop, unsigned int flags) {
       Error::safe(uv_tcp_init_ex(loop, this, flags));
     }
+#endif
 
 
     // template<class V = void>
@@ -69,6 +71,7 @@ namespace uv {
       connect(req, addr, Error::safeCb<ConnectRq, cb>);
     }
 
+#if UV_VERSION_MAJOR >= 1 && UV_VERSION_MINOR >= 32
     void close_reset(CloseCb cb) {
       Error::safe(uv_tcp_close_reset(this, reinterpret_cast<uv_close_cb>(cb)));
     }
@@ -76,10 +79,14 @@ namespace uv {
     void close_reset() {
       close_reset(cb);
     }
+#endif
 
-    static void socketpair(int type, int protocol, uv_os_sock_t socket_vector[2], int flags0, int flags1) {
+#if UV_VERSION_MAJOR >= 1 && UV_VERSION_MINOR >= 41
+    static inline void socketpair(int type, int protocol, uv_os_sock_t socket_vector[2], int flags0, int flags1) {
       Error::safe(uv_socketpair(type, protocol, socket_vector, flags0, flags1));
     }
+#endif
+
   };
 
 }

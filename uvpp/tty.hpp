@@ -28,6 +28,7 @@ namespace uv {
       Error::safe(uv_tty_get_winsize(this, &width, &height));
     }
 
+#if UV_VERSION_MAJOR >= 1 && UV_VERSION_MINOR >= 33
     static void setVtermState(uv_tty_vtermstate_t state) {
       uv_tty_set_vterm_state(state);
     }
@@ -35,6 +36,8 @@ namespace uv {
     static void getVtermState(uv_tty_vtermstate_t &state) {
       Error::safe(uv_tty_get_vterm_state(&state));
     }
+#endif
+
   };
 
 }

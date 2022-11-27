@@ -44,9 +44,11 @@ namespace uv {
       Error::safe(uv_pipe_getsockname(this, buffer, size));
     }
 
+#if UV_VERSION_MAJOR >= 1 && UV_VERSION_MINOR >= 3
     void getpeername(char *buffer, size_t *size) {
       Error::safe(uv_pipe_getpeername(this, buffer, size));
     }
+#endif
 
     void pending_instances(int count) {
       uv_pipe_pending_instances(this, count);
@@ -60,13 +62,17 @@ namespace uv {
       return static_cast<Handle::Type>(uv_pipe_pending_type(this));
     }
 
+#if UV_VERSION_MAJOR >= 1 && UV_VERSION_MINOR >= 16
     void chmod(int flags) {
       Error::safe(uv_pipe_chmod(this, flags));
     }
+#endif
 
+#if UV_VERSION_MAJOR >= 1 && UV_VERSION_MINOR >= 41
     static void pipe(File fds[2], int read_flags, int write_flags) {
       Error::safe(uv_pipe(reinterpret_cast<uv_file *>(fds), read_flags, write_flags));
     }
+#endif
 
   };
 

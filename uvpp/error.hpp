@@ -48,34 +48,40 @@ namespace uv {
       return uv_strerror(code);
     }
 
-    char *message(char *buf, size_t buflen) const {
-      return uv_strerror_r(code, buf, buflen);
-    }
-
 #ifdef __cpp_lib_string_view
     std::string str() const {
       return uv_strerror(code);
     }
+#endif
 
+#if UV_VERSION_MAJOR >= 1 && UV_VERSION_MINOR >= 22
+    char *message(char *buf, size_t buflen) const {
+      return uv_strerror_r(code, buf, buflen);
+    }
+
+# ifdef __cpp_lib_string_view
     std::string &message(std::string &buf) const {
       uv_strerror_r(code, &buf.front(), buf.capacity());
       return buf;
     }
+# endif
 #endif
 
     const char *name() const {
       return uv_err_name(code);
     }
 
+#if UV_VERSION_MAJOR >= 1 && UV_VERSION_MINOR >=  22
     char *name(char *buf, size_t buflen) const {
       return uv_err_name_r(code, buf, buflen);
     }
 
-#ifdef __cpp_lib_string_view
+# ifdef __cpp_lib_string_view
     std::string &name(std::string &buf) const {
       uv_err_name_r(code, &buf.front(), buf.capacity());
       return buf;
     }
+# endif
 #endif
 
     int translate() {
