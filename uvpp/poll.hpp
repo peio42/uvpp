@@ -15,15 +15,15 @@ namespace uv {
       Prioritized = UV_PRIORITIZED,
     };
 
-    using PollCb = void (*)(Poll *handle, int status, int events);
-    using SafePollCb = void (*)(Poll *handle, int events);
-
     bool castable(Handle &h) { return h.getType() == Handle::Type::Poll; }
 
 
     Poll(Loop *loop, int fd) {
-      _safe(uv_poll_init(loop, this, fd));
+      Error::safe(uv_poll_init(loop, this, fd));
     }
+//    Poll(Loop *loop, uv_os_sock_t sock) {
+//      Error::safe(uv_poll_init_socket(loop, this, sock));
+//    }
 
     // template<class V = void>
     // Poll(Loop *loop, int fd, V *data = nullptr) {
@@ -32,22 +32,24 @@ namespace uv {
     // }
 
     // Poll(Loop *loop, uv_os_sock_t sock) {
-    //   uv_poll_init_socket(loop, this, sock);
+    //   Error::safe(uv_poll_init_socket(loop, this, sock));
     // }
 
-    void start(Event events, PollCb cb) {
-      _safe(uv_poll_start(this, static_cast<int>(events), reinterpret_cast<uv_poll_cb>(cb)));
+    using StartCb = void (*)(Poll *handle, int status, int events);
+    using SafeStartCb = void (*)(Poll *handle, int events);
+    void start(Event events, StartCb cb) {
+      Error::safe(uv_poll_start(this, static_cast<int>(events), reinterpret_cast<uv_poll_cb>(cb)));
     }
-    template<SafePollCb cb>
+    template<SafeStartCb cb>
     void start(Event events) {
       start(events, [](Poll *handle, int status, int events) {
-          _safe(status);
+          Error::safe(status);
           cb(handle, events);
         });
     }
 
     void stop() {
-      _safe(uv_poll_stop(this));
+      Error::safe(uv_poll_stop(this));
     }
   };
 

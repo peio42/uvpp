@@ -8,13 +8,11 @@
 namespace uv {
 
   struct Prepare : THandle<uv_prepare_t, Prepare> {
-    using PrepareCb = void (*)(Prepare *handle);
-
     bool castable(Handle &h) { return h.getType() == Handle::Type::Prepare; }
 
 
     Prepare(Loop *loop) {
-      _safe(uv_prepare_init(loop, this));
+      Error::safe(uv_prepare_init(loop, this));
     }
 
     // template<class V = void>
@@ -23,16 +21,17 @@ namespace uv {
     //   this->data = static_cast<void *>(data);
     // }
 
-    void start(PrepareCb cb) {
-      _safe(uv_prepare_start(this, reinterpret_cast<uv_prepare_cb>(cb)));
+    using StartCb = void (*)(Prepare *handle);
+    void start(StartCb cb) {
+      Error::safe(uv_prepare_start(this, reinterpret_cast<uv_prepare_cb>(cb)));
     }
-    template<PrepareCb cb>
+    template<StartCb cb>
     void start() {
       start(cb);
     }
 
     void stop() {
-      _safe(uv_prepare_stop(this));
+      Error::safe(uv_prepare_stop(this));
     }
   };
 

@@ -13,11 +13,11 @@ namespace uv {
 
 
     Tcp(Loop *loop) {
-      _safe(uv_tcp_init(loop, this));
+      Error::safe(uv_tcp_init(loop, this));
     }
 
     Tcp(Loop *loop, unsigned int flags) {
-      _safe(uv_tcp_init_ex(loop, this, flags));
+      Error::safe(uv_tcp_init_ex(loop, this, flags));
     }
 
 
@@ -33,61 +33,52 @@ namespace uv {
     //   this->data = static_cast<void *>(data);
     // }
 
-    // void open(uv_os_sock_t sock) {
-    //   uv_tcp_open(this, sock);
-    // }
-
-    void nodelay(bool enable) {
-      _safe(uv_tcp_nodelay(this, enable));
+    void open(uv_os_sock_t sock) {
+      uv_tcp_open(this, sock);
     }
 
-    void keepalive(bool enable, unsigned int delay) {
-      _safe(uv_tcp_keepalive(this, enable, delay));
+    void nodelay(bool enable) {
+      Error::safe(uv_tcp_nodelay(this, enable));
+    }
+
+    void keepalive(bool enable, unsigned int delay = 0) {
+      Error::safe(uv_tcp_keepalive(this, enable, delay));
     }
 
     void simultaneous_accepts(bool enable) {
-      _safe(uv_tcp_simultaneous_accepts(this, enable));
+      Error::safe(uv_tcp_simultaneous_accepts(this, enable));
     }
 
-    void bind(const sockaddr *addr, unsigned int flags = 0) {
-      _safe(uv_tcp_bind(this, addr, flags));
+    void bind(const auto *addr, unsigned int flags = 0) {
+      Error::safe(uv_tcp_bind(this, addr->sa(), flags));
     }
 
-    template<class Z>
-    void bind(const Z *addr, unsigned int flags = 0) {
-      _safe(uv_tcp_bind(this, addr->sa(), flags));
+    void sockname(auto *name, int *namelen) {
+      Error::safe(uv_tcp_getsockname(this, name->sa(), namelen));
     }
 
-    void sockname(sockaddr *name, int *namelen) {
-      _safe(uv_tcp_getsockname(this, name, namelen));
+    void peername(auto *name, int *namelen) {
+      Error::safe(uv_tcp_getpeername(this, name->sa(), namelen));
     }
 
-    void peername(sockaddr *name, int *namelen) {
-      _safe(uv_tcp_getpeername(this, name, namelen));
+    void connect(ConnectRq *req, auto *addr, ConnectCb cb) {
+      Error::safe(uv_tcp_connect(req, this, addr->sa(), reinterpret_cast<uv_connect_cb>(cb)));
     }
-
-    void connect(ConnectRq *req, sockaddr *addr, ConnectCb cb) {
-      _safe(uv_tcp_connect(req, this, addr, reinterpret_cast<uv_connect_cb>(cb)));
-    }
-    // template<SafeConnectCb cb>
-    // void connect(ConnectRq *req, sockaddr *addr) {
-    //   connect(req, addr, _safeCb<ConnectRq, cb>);
-    // }
-    template<class Z>
-    void connect(ConnectRq *req, Z *addr, ConnectCb cb) {
-      _safe(uv_tcp_connect(req, this, addr->sa(), reinterpret_cast<uv_connect_cb>(cb)));
-    }
-    template<SafeConnectCb cb, class Z>
-    void connect(ConnectRq *req, Z *addr) {
-      connect(req, addr, _safeCb<ConnectRq, cb>);
+    template<SafeConnectCb cb>
+    void connect(ConnectRq *req, auto *addr) {
+      connect(req, addr, Error::safeCb<ConnectRq, cb>);
     }
 
     void close_reset(CloseCb cb) {
-      _safe(uv_tcp_close_reset(this, reinterpret_cast<uv_close_cb>(cb)));
+      Error::safe(uv_tcp_close_reset(this, reinterpret_cast<uv_close_cb>(cb)));
     }
     template<CloseCb cb>
     void close_reset() {
       close_reset(cb);
+    }
+
+    static void socketpair(int type, int protocol, uv_os_sock_t socket_vector[2], int flags0, int flags1) {
+      Error::safe(uv_socketpair(type, protocol, socket_vector, flags0, flags1));
     }
   };
 

@@ -9,37 +9,39 @@ namespace uv {
 
 
   struct Loop : uv_loop_t {
-    template<class P>
-    using WalkCb = void (*)(Handle *handle, P *arg);
-
     enum class RunMode {
       Default = UV_RUN_DEFAULT,
       Once = UV_RUN_ONCE,
       NoWait = UV_RUN_NOWAIT,
     };
 
-    enum class OptionBlockSignalClass;
-    static OptionBlockSignalClass OptionBlockSignal;
-
 
     Loop() {
-      _safe(uv_loop_init(this));
+      Error::safe(uv_loop_init(this));
     }
 
-    void configure(const OptionBlockSignalClass __attribute__((unused)) option, const int sig) {
-      _safe(uv_loop_configure(this, UV_LOOP_BLOCK_SIGNAL, sig));
+    enum class OptionLoopBlockSignalClass;
+    static OptionLoopBlockSignalClass OptionLoopBlockSignal;
+    void configure(const OptionLoopBlockSignalClass __attribute__((unused)) option, const int sig) {
+      Error::safe(uv_loop_configure(this, UV_LOOP_BLOCK_SIGNAL, sig));
+    }
+
+    enum class OptionMetricsIdleTimeClass;
+    static OptionMetricsIdleTimeClass OptionMetricsIdleTime;
+    void configure(const OptionMetricsIdleTimeClass __attribute__((unused)) option) {
+      Error::safe(uv_loop_configure(this, UV_METRICS_IDLE_TIME));
     }
 
     void close() {
-      _safe(uv_loop_close(this));
+      Error::safe(uv_loop_close(this));
     }
 
     static Loop *getDefault() {
       return static_cast<Loop *>(uv_default_loop());
     }
 
-    void run(const RunMode mode = RunMode::Default) {
-      _safe(uv_run(this, static_cast<uv_run_mode>(mode)));
+    bool run(const RunMode mode = RunMode::Default) {
+      return Error::safe(uv_run(this, static_cast<uv_run_mode>(mode)));
     }
 
     bool alive() {
@@ -66,20 +68,22 @@ namespace uv {
       uv_update_time(this);
     }
 
+    template<class P>
+    using WalkCb = void (*)(Handle *handle, P *arg);
     template<class P = void>
     void walk(const WalkCb<P> cb, P *arg = nullptr) {
       uv_walk(this, reinterpret_cast<uv_walk_cb>(cb), static_cast<void *>(arg));
     }
 
     void fork() {
-      _safe(uv_loop_fork(this));
+      Error::safe(uv_loop_fork(this));
     }
 
     template<class V = void>
-    void set(V *data) { this->data = static_cast<void *>(data); }
+    void setData(V *data) { this->data = static_cast<void *>(data); }
 
     template<class V>
-    V *get() { return static_cast<V *>(this->data); }
+    V *getData() { return static_cast<V *>(this->data); }
   };
 
 }

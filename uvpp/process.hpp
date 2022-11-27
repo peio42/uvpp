@@ -8,8 +8,6 @@
 namespace uv {
 
   struct Process : THandle<uv_process_t, Process> {
-    using ExitCb = void (*)(Process *handle, int64_t exit_status, int term_signal);
-
     enum class Flags : unsigned int {
       SetUID = UV_PROCESS_SETUID,
       SetGID = UV_PROCESS_SETGID,
@@ -24,19 +22,21 @@ namespace uv {
 
     enum class StdioFlags {
       Ignore = UV_IGNORE,
-      Create_Pipe = UV_CREATE_PIPE,
-      Inherit_Fd = UV_INHERIT_FD,
-      Inherit_Stream = UV_INHERIT_STREAM,
-      Readable_Pipe = UV_READABLE_PIPE,
-      Writable_Pipe = UV_WRITABLE_PIPE,
-      Overlapped_Pipe = UV_OVERLAPPED_PIPE,
+      CreatePipe = UV_CREATE_PIPE,
+      InheritFd = UV_INHERIT_FD,
+      InheritStream = UV_INHERIT_STREAM,
+      ReadablePipe = UV_READABLE_PIPE,
+      WritablePipe = UV_WRITABLE_PIPE,
+      NonblockPipe = UV_NONBLOCK_PIPE,
     };
 
+    using ExitCb = void (*)(Process *handle, int64_t exit_status, int term_signal);
     struct Options : uv_process_options_t {
       Options() {
         exit_cb = nullptr;
         file = nullptr;
         flags = 0;
+        stdio_count = 0;
       }
 
       Options &onExit(ExitCb cb) {
@@ -64,6 +64,12 @@ namespace uv {
         return *this;
       }
 
+      Options &SetStdio(StdioContainer *_stdio, int _stdio_count) {
+        stdio = _stdio;
+        stdio_count = _stdio_count;
+        return *this;
+      }
+
       Options &setUid(int _uid) {
         flags |= UV_PROCESS_SETUID;
         uid = _uid;
@@ -72,7 +78,7 @@ namespace uv {
 
       Options &setGid(int _gid) {
         flags |= UV_PROCESS_SETGID;
-        uid = _gid;
+        gid = _gid;
         return *this;
       }
 
@@ -96,7 +102,7 @@ namespace uv {
     }
 
     Process(Loop *loop, const Options *options) {
-      _safe(uv_spawn(loop, this, options));
+      Error::safe(uv_spawn(loop, this, options));
     }
 
     // template<class V = void>
@@ -106,14 +112,14 @@ namespace uv {
     // }
 
     void kill(int signum) {
-      _safe(uv_process_kill(this, signum));
+      Error::safe(uv_process_kill(this, signum));
     }
 
     static void kill(int pid, int signum) {
-      _safe(uv_kill(pid, signum));
+      Error::safe(uv_kill(pid, signum));
     }
 
-    uv_pid_t pid() {
+    uv_pid_t getPid() {
       return uv_process_get_pid(this);
     }
   };

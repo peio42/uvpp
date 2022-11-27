@@ -2,6 +2,7 @@
 
 #include "uv.h"
 #include "error.hpp"
+#include "fs.hpp"
 #include "loop.hpp"
 #include "request.hpp"
 #include "stream.hpp"
@@ -15,19 +16,19 @@ namespace uv {
     Pipe() = default;
 
     Pipe(Loop *loop, bool ipc = false) {
-      _safe(uv_pipe_init(loop, this, ipc));
+      Error::safe(uv_pipe_init(loop, this, ipc));
     }
 
     void init(Loop *loop, bool ipc = false) {
-      _safe(uv_pipe_init(loop, this, ipc));
+      Error::safe(uv_pipe_init(loop, this, ipc));
     }
 
-    void open(uv_file file) {
-      _safe(uv_pipe_open(this, file));
+    void open(File file) {
+      Error::safe(uv_pipe_open(this, file));
     }
 
     void bind(const char *name) {
-      _safe(uv_pipe_bind(this, name));
+      Error::safe(uv_pipe_bind(this, name));
     }
 
     void connect(ConnectRq *req, const char *name, ConnectCb cb) {
@@ -35,16 +36,16 @@ namespace uv {
     }
     template<SafeConnectCb cb>
     void connect(ConnectRq *req, const char *name) {
-      connect(req, name, _safeCb<ConnectRq, cb>);
+      connect(req, name, Error::safeCb<ConnectRq, cb>);
     }
 
 
     void getsockname(char *buffer, size_t *size) {
-      _safe(uv_pipe_getsockname(this, buffer, size));
+      Error::safe(uv_pipe_getsockname(this, buffer, size));
     }
 
     void getpeername(char *buffer, size_t *size) {
-      _safe(uv_pipe_getpeername(this, buffer, size));
+      Error::safe(uv_pipe_getpeername(this, buffer, size));
     }
 
     void pending_instances(int count) {
@@ -60,8 +61,13 @@ namespace uv {
     }
 
     void chmod(int flags) {
-      _safe(uv_pipe_chmod(this, flags));
+      Error::safe(uv_pipe_chmod(this, flags));
     }
+
+    static void pipe(File fds[2], int read_flags, int write_flags) {
+      Error::safe(uv_pipe(reinterpret_cast<uv_file *>(fds), read_flags, write_flags));
+    }
+
   };
 
 }

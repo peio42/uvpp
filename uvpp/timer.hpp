@@ -8,36 +8,35 @@
 namespace uv {
 
   struct Timer : THandle<uv_timer_t, Timer> {
-    using TimerCb = void (*)(Timer *handle);
-
     bool castable(Handle &h) { return h.getType() == Handle::Type::Timer; }
 
     Timer() = default;
 
     Timer(Loop *loop) {
-      _safe(uv_timer_init(loop, this));
+      Error::safe(uv_timer_init(loop, this));
     }
 
     // template<class V = void>
     // Timer(Loop *loop, V *data = nullptr) {
-    //   _safe(uv_timer_init(loop, this));
+    //   Error::safe(uv_timer_init(loop, this));
     //   this->data = static_cast<void *>(data);
     // }
 
-    void start(TimerCb cb, uint64_t timeout, uint64_t repeat = 0) {
-      _safe(uv_timer_start(this, reinterpret_cast<uv_timer_cb>(cb), timeout, repeat));
+    using StartCb = void (*)(Timer *handle);
+    void start(StartCb cb, uint64_t timeout, uint64_t repeat = 0) {
+      Error::safe(uv_timer_start(this, reinterpret_cast<uv_timer_cb>(cb), timeout, repeat));
     }
-    template<TimerCb cb>
+    template<StartCb cb>
     void start(uint64_t timeout, uint64_t repeat = 0) {
       start(cb, timeout, repeat);
     }
 
     void stop() {
-      _safe(uv_timer_stop(this));
+      Error::safe(uv_timer_stop(this));
     }
 
     void again() {
-      _safe(uv_timer_again(this));
+      Error::safe(uv_timer_again(this));
     }
 
     void set_repeat(uint64_t repeat) {
@@ -46,6 +45,10 @@ namespace uv {
 
     uint64_t get_repeat() {
       return uv_timer_get_repeat(this);
+    }
+
+    uint64_t get_due_in() {
+      return uv_timer_get_due_in(this);
     }
   };
 

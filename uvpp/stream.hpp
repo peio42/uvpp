@@ -13,55 +13,47 @@ namespace uv {
   template<class T, class S>
   struct TStream : THandle<T, S> {
     using ConnectRq = Request<uv_connect_t, S>;
-    using ShutdownRq = Request<uv_shutdown_t, S>;
-    struct WriteRq : Request<uv_write_t, S> {
-      S *send_handle() { return reinterpret_cast<S *>(this->send_handle); }
-    };
-
-    using AllocCb = typename THandle<T, S>::AllocCb;
-    using ReadCb = void (*)(S *stream, ssize_t nread, const Buffer *buf);
-    using WriteCb = void (*)(WriteRq *req, int status);
     using ConnectCb = void (*)(ConnectRq *req, int status);
-    using ShutdownCb = void (*)(ShutdownRq *req, int status);
-    using ConnectionCb = void (*)(S *server, int status);
-
-    using SafeReadCb = void (*)(S *stream, ssize_t nread, const Buffer *buf);
-    using SafeEofCb = void (*)(S *server, const Buffer *buf);
-    using SafeWriteCb = void (*)(WriteRq *req);
     using SafeConnectCb = void (*)(ConnectRq *req);
-    using SafeShutdownCb = void (*)(ShutdownRq *req);
-    using SafeConnectionCb = void (*)(S *server);
 
     const static int DEFAULT_BACKLOG = 64;
 
 
-    // uv_stream_t *as_stream() { return reinterpret_cast<uv_stream_t *>(this); }
-    Stream *as_stream() { return reinterpret_cast<Stream *>(this); }
+    Stream *as_Stream() { return reinterpret_cast<Stream *>(this); }
 
 
+    using ShutdownRq = Request<uv_shutdown_t, S>;
+    using ShutdownCb = void (*)(ShutdownRq *req, int status);
+    using SafeShutdownCb = void (*)(ShutdownRq *req);
     void shutdown(ShutdownRq *req, ShutdownCb cb) {
-      _safe(uv_shutdown(req, as_stream(), reinterpret_cast<uv_shutdown_cb>(cb)));
+      Error::safe(uv_shutdown(req, as_Stream(), reinterpret_cast<uv_shutdown_cb>(cb)));
     }
     template<SafeShutdownCb cb>
     void shutdown(ShutdownRq *req) {
-      shutdown(req, _safeCb<req, cb>);
+      shutdown(req, Error::safeCb<req, cb>);
     }
 
+    using ConnectionCb = void (*)(S *server, int status);
+    using SafeConnectionCb = void (*)(S *server);
     void listen(ConnectionCb cb, int backlog = DEFAULT_BACKLOG) {
-      _safe(uv_listen(as_stream(), backlog, reinterpret_cast<uv_connection_cb>(cb)));
+      Error::safe(uv_listen(as_Stream(), backlog, reinterpret_cast<uv_connection_cb>(cb)));
     }
     template<SafeConnectionCb cb>
     void listen(int backlog = DEFAULT_BACKLOG) {
-      listen(_safeCb<S, cb>, backlog);
+      listen(Error::safeCb<S, cb>, backlog);
     }
 
     template<class Z>
     void accept(Z *client) {
-      _safe(uv_accept(as_stream(), client->as_stream()));
+      Error::safe(uv_accept(as_Stream(), client->as_Stream()));
     }
 
+    using AllocCb = typename THandle<T, S>::AllocCb;
+    using ReadCb = void (*)(S *stream, ssize_t nread, const Buffer *buf);
+    using SafeReadCb = void (*)(S *stream, ssize_t nread, const Buffer *buf);
+    using SafeEofCb = void (*)(S *server, const Buffer *buf);
     void read_start(AllocCb alloc_cb, ReadCb read_cb) {
-      _safe(uv_read_start(as_stream(), reinterpret_cast<uv_alloc_cb>(alloc_cb), reinterpret_cast<uv_read_cb>(read_cb)));
+      Error::safe(uv_read_start(as_Stream(), reinterpret_cast<uv_alloc_cb>(alloc_cb), reinterpret_cast<uv_read_cb>(read_cb)));
     }
     template<AllocCb acb, SafeReadCb rcb, SafeEofCb ecb>
     void read_start() {
@@ -70,47 +62,65 @@ namespace uv {
             if (nread == UV_EOF)
               ecb(stream, buf);
             else
-              _safe(nread);
+              Error::safe(nread);
           } else
             rcb(stream, nread, buf);
         });
     }
 
-    void read_stop() {
-      _safe(uv_read_stop(as_stream()));
+    bool read_stop() {
+      return uv_read_stop(as_Stream());
     }
 
+    struct WriteRq : Request<uv_write_t, S> {
+      S *sendHandle() { return reinterpret_cast<S *>(this->send_handle); }
+    };
+    using WriteCb = void (*)(WriteRq *req, int status);
+    using SafeWriteCb = void (*)(WriteRq *req);
     void write(WriteRq *req, const Buffer bufs[], unsigned int nbufs, WriteCb cb) {
-      _safe(uv_write(req, as_stream(), bufs, nbufs, reinterpret_cast<uv_write_cb>(cb)));
+      Error::safe(uv_write(req, as_Stream(), bufs, nbufs, reinterpret_cast<uv_write_cb>(cb)));
     }
     template<SafeWriteCb cb>
     void write(WriteRq *req, const Buffer bufs[], unsigned int nbufs) {
-      write(req, bufs, nbufs, _safeCb<WriteRq, cb>);
+      write(req, bufs, nbufs, Error::safeCb<WriteRq, cb>);
     }
 
     template<class Z>
-    void write(WriteRq *req, const Buffer bufs[], unsigned int nbufs, Z *send_handle, WriteCb cb) {
-      _safe(uv_write2(req, as_stream(), bufs, nbufs, send_handle->as_stream(), _safeCb<WriteRq, cb>));
+    void write(WriteRq *req, const Buffer bufs[], unsigned int nbufs, Z *sendHandle, WriteCb cb) {
+      Error::safe(uv_write2(req, as_Stream(), bufs, nbufs, sendHandle->as_stream(), Error::safeCb<WriteRq, cb>));
     }
     template<SafeWriteCb cb, class Z>
-    void write(WriteRq *req, const Buffer bufs[], unsigned int nbufs, Z *send_handle) {
-      write(req, bufs, nbufs, send_handle, _safeCb<req, cb>);
+    void write(WriteRq *req, const Buffer bufs[], unsigned int nbufs, Z *sendHandle) {
+      write(req, bufs, nbufs, sendHandle, Error::safeCb<req, cb>);
     }
 
     int try_write(const Buffer bufs[], unsigned int nbufs) {
-      return _safe(uv_try_write(as_stream(), bufs, nbufs));
+      return Error::safe(uv_try_write(as_Stream(), bufs, nbufs));
+    }
+
+    template<class Z>
+    int try_write(const Buffer bufs[], unsigned int nbufs, Z *sendHandle) {
+      return Error::safe(uv_try_write2(as_Stream(), bufs, nbufs, sendHandle->as_stream()));
     }
 
     bool readable() {
-      return uv_is_readable(as_stream());
+      return uv_is_readable(as_Stream());
     }
 
     bool writable() {
-      return uv_is_writable(as_stream());
+      return uv_is_writable(as_Stream());
     }
 
     void blocking(bool bl) {
-      _safe(uv_stream_set_blocking(as_stream(), bl));
+      Error::safe(uv_stream_set_blocking(as_Stream(), bl));
+    }
+
+    bool blocking() {
+      return uv_stream_get_blocking(as_Stream());
+    }
+
+    size_t write_queue_size() {
+      return uv_stream_get_write_queue_size(as_Stream());
     }
   };
 

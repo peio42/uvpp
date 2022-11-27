@@ -7,7 +7,7 @@ static uv::Mutex *g_mutex;
 static uv::Prepare *g_prepare;
 static uv::Async *g_async;
 
-static volatile int async_cb_called;
+static /* volatile */ int async_cb_called;
 static int prepare_cb_called;
 static int close_cb_called;
 
@@ -39,7 +39,7 @@ TEST_F(AsyncTest, async) {
         return ;
 
       g_thread = new uv::Thread([](void *arg) {
-          while(42) {
+          while(true) {
             g_mutex->lock();
             auto n = async_cb_called;
             g_mutex->unlock();
@@ -60,7 +60,7 @@ TEST_F(AsyncTest, async) {
       g_mutex->lock();
       auto n = ++async_cb_called;
       g_mutex->unlock();
-
+  
       if (n == 3) {
         g_async->close([](uv::Async *async) { close_cb_called++; });
         g_prepare->close([](uv::Prepare *prepare) { close_cb_called++; });
@@ -69,6 +69,7 @@ TEST_F(AsyncTest, async) {
   g_async = &async;
 
   loop->run();
+  g_thread->join();
 
   ASSERT_GT(prepare_cb_called, 0);
   ASSERT_EQ(async_cb_called, 3);

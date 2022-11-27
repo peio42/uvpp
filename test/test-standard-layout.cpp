@@ -3,7 +3,7 @@
 #include "uvpp/uv.hpp"
 
 
-TEST(StandardLayout, standardlayout) {
+TEST(StandardLayoutTest, standardlayout) {
   EXPECT_TRUE(std::is_standard_layout_v<uv::Loop>);
   EXPECT_TRUE(std::is_standard_layout_v<uv::Handle>);
   EXPECT_TRUE(std::is_standard_layout_v<uv::Timer>);
@@ -44,4 +44,12 @@ TEST(StandardLayout, standardlayout) {
 
 
   EXPECT_TRUE(std::is_standard_layout_v<uv::Thread::Options>);
+
+  EXPECT_TRUE(std::is_standard_layout_v<uv::Process::Options>);
+
+
+  EXPECT_TRUE(std::is_standard_layout_v<uv::SockAddr>);
+  EXPECT_TRUE(std::is_standard_layout_v<uv::IPv4>);
+  EXPECT_TRUE(std::is_standard_layout_v<uv::IPv6>);
+  EXPECT_TRUE(std::is_standard_layout_v<uv::AnyAddress>);
 }

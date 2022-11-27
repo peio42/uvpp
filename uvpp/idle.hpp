@@ -8,13 +8,11 @@
 namespace uv {
 
   struct Idle : THandle<uv_idle_t, Idle> {
-    using IdleCb = void (*)(Idle *handle);
-
     bool castable(Handle &h) { return h.getType() == Handle::Type::Idle; }
 
 
     Idle(Loop *loop) {
-      _safe(uv_idle_init(loop, this));
+      Error::safe(uv_idle_init(loop, this));
     }
 
     // template<class V = void>
@@ -23,16 +21,17 @@ namespace uv {
     //   this->data = static_cast<void *>(data);
     // }
 
-    void start(IdleCb cb) {
-      _safe(uv_idle_start(this, reinterpret_cast<uv_idle_cb>(cb)));
+    using StartCb = void (*)(Idle *handle);
+    void start(StartCb cb) {
+      Error::safe(uv_idle_start(this, reinterpret_cast<uv_idle_cb>(cb)));
     }
-    template<IdleCb cb>
+    template<StartCb cb>
     void start() {
       start(cb);
     }
 
     void stop() {
-      _safe(uv_idle_stop(this));
+      Error::safe(uv_idle_stop(this));
     }
   };
 

@@ -8,14 +8,15 @@
 namespace uv {
 
   struct Async : THandle<uv_async_t, Async> {
-    using AsyncCb = void (*)(Async *handle);
-
     bool castable(Handle &h) { return h.getType() == Handle::Type::Async; }
 
 
+    using AsyncCb = void (*)(Async *handle);
     Async(Loop *loop, AsyncCb cb) {
-      _safe(uv_async_init(loop, this, reinterpret_cast<uv_async_cb>(cb)));
+      Error::safe(uv_async_init(loop, this, reinterpret_cast<uv_async_cb>(cb)));
     }
+    template<AsyncCb cb>
+    Async(Loop *loop) : Async(loop, cb) {}
 
     // template<class V = void>
     // Async(Loop *loop, AsyncCb cb, V *data = nullptr) {
@@ -24,7 +25,7 @@ namespace uv {
     // }
 
     void send() {
-      _safe(uv_async_send(this));
+      Error::safe(uv_async_send(this));
     }
   };
 

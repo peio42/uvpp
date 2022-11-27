@@ -26,14 +26,21 @@ which the handles will be attached. A default loop is available.
 
     auto loop = uv::Loop::getDefault();
 
-or you can create one, for example with
+or you can create one, by just instanciate a new Loop object, for
+example with
 
-> uv::Loop loop();
+    uv::Loop loop();
 
 Then create Handles object as needed, and you can directly call the
 methods from the objects.
+For example, an Idle is a simple handle that will call its callback
+on each loop iteration. To instanciate one in a local variable, use
 
     uv::Idle idle(loop);
+
+To allocate a new object instead of using a local variable, use
+
+    auto idle = new uv::Idle(loop);
 
 ###### Memory management
 _uvpp doesn't allocate any object for you. You can allocate them
@@ -56,15 +63,21 @@ a simple function pointer.
 
 Of course, you can also reference any function.
 
-_When you execute a function you need to pass a callback to, you have
-two options. You can use the raw libuv function, or you can call a
-"safe" uvpp function, which will just check the result value and
-raise an exception if needed, before calling your callback._
+_When you need to pass a callback to a function, you usually have
+two options. You can pass it as a function parameter, or you can ask
+uvpp to take care or errors and raise an exception for you if needed.
+This way, you don't need to manage with libuv status inside your
+callbacks (but still need to manage exceptions in C++ way)_
 
 This safe way require you to use template version of the functions.
-Not every callback will be given a status error code, but as a general
-rule, any callback can be written in a template-style to keep
-consistency.
+Even if not every callback will be given a status error code, any
+callback can be written in a template-style to keep consistency, as
+a general rule.
+
+To be able to use a lambda as a template parameter, you might have to
+use a C++20 compiler. As of 2022, g++ still has bug, even compiling
+with "std=c++20", as it considers the lambda has no linkage. But
+clang manages very well.
 
     Loop *loop = Loop::getDefault();
 
@@ -87,11 +100,9 @@ consistency.
     }
 
 ###### Under development
-_You can notice the sockaddr helper `IPv4`. The library is just starting
-its development and doesn't have a lot of them yet. When its API starts
-to be stable, expect to see more.._
-_Also more C++ oriented types will be proposed, like `std::string` for
-example._
+_You can notice the sockaddr helper `IPv4`. The library has some of them.
+Expect to see more in the future, as well as more C++ oriented types,
+like `std::string` for example._
 
 ###### Differences with libuv
 The same objects and Handles have been mirrored. But the first noticeable

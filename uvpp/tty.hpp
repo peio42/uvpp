@@ -12,28 +12,28 @@ namespace uv {
     bool castable(Handle &h) { return h.getType() == Handle::Type::Tty; }
 
 
-    Tty(Loop *loop, uv_file fd) {
-      _safe(uv_tty_init(loop, this, fd, 0));
+    Tty(Loop *loop, File fd) {
+      Error::safe(uv_tty_init(loop, this, fd, 0));
     }
 
-    void set_mode(uv_tty_mode_t mode) {
-      _safe(uv_tty_set_mode(this, mode));
+    void setMode(uv_tty_mode_t mode) {
+      Error::safe(uv_tty_set_mode(this, mode));
     }
 
-    static void reset_mode() {
-      _safe(uv_tty_reset_mode());
+    static void resetMode() {
+      Error::safe(uv_tty_reset_mode());
     }
 
-    void get_winsize(int &width, int &height) {
-      _safe(uv_tty_get_winsize(this, &width, &height));
+    void getWinsize(int &width, int &height) {
+      Error::safe(uv_tty_get_winsize(this, &width, &height));
     }
 
-    static void set_vterm_state(uv_tty_vtermstate_t state) {
+    static void setVtermState(uv_tty_vtermstate_t state) {
       uv_tty_set_vterm_state(state);
     }
 
-    static void get_vterm_state(uv_tty_vtermstate_t &state) {
-      _safe(uv_tty_get_vterm_state(&state));
+    static void getVtermState(uv_tty_vtermstate_t &state) {
+      Error::safe(uv_tty_get_vterm_state(&state));
     }
   };
 

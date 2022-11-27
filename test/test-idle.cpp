@@ -59,3 +59,22 @@ TEST_F(IdleTest, idle_starvation) {
   ASSERT_EQ(timer_cb_called, 1);
   ASSERT_EQ(closed_cb_called, 3);
 }
+
+TEST_F(IdleTest, idle_check) {
+  uv::Idle idle(loop);
+  idle_handle = &idle;
+  idle.start([](uv::Idle *idle) { idle->stop(); });
+
+  uv::Check check(loop);
+  check_handle = &check;
+  check.start([](uv::Check *check) { check_cb_called++; });
+
+  ASSERT_TRUE(loop->run(uv::Loop::RunMode::NoWait));
+  ASSERT_EQ(check_cb_called, 1);
+  ASSERT_EQ(closed_cb_called, 0);
+
+  idle.close([](uv::Idle *idle) { closed_cb_called++; });
+  check.close([](uv::Check *check) { closed_cb_called++; });
+  ASSERT_FALSE(loop->run(uv::Loop::RunMode::Once));
+  ASSERT_EQ(closed_cb_called, 2);
+}

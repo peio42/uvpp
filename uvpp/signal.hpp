@@ -8,13 +8,11 @@
 namespace uv {
 
   struct Signal : THandle<uv_signal_t, Signal> {
-    using SignalCb = void (*)(Signal *handle, int signum);
-
     bool castable(Handle &h) { return h.getType() == Handle::Type::Signal; }
 
 
     Signal(Loop *loop) {
-      _safe(uv_signal_init(loop, this));
+      Error::safe(uv_signal_init(loop, this));
     }
 
     // template<class V = void>
@@ -23,20 +21,21 @@ namespace uv {
     //   this->data = static_cast<void *>(data);
     // }
 
-    void start(SignalCb cb, int signum) {
-      _safe(uv_signal_start(this, reinterpret_cast<uv_signal_cb>(cb), signum));
+    using StartCb = void (*)(Signal *handle, int signum);
+    void start(StartCb cb, int signum) {
+      Error::safe(uv_signal_start(this, reinterpret_cast<uv_signal_cb>(cb), signum));
     }
-    template<SignalCb cb>
+    template<StartCb cb>
     void start(int signum) {
       start(cb, signum);
     }
 
-    void start_oneshot(SignalCb cb, int signum) {
-      _safe(uv_signal_start_oneshot(this, reinterpret_cast<uv_signal_cb>(cb), signum));
+    void start_oneshot(StartCb cb, int signum) {
+      Error::safe(uv_signal_start_oneshot(this, reinterpret_cast<uv_signal_cb>(cb), signum));
     }
 
     void stop() {
-      _safe(uv_signal_stop(this));
+      Error::safe(uv_signal_stop(this));
     }
   };
 

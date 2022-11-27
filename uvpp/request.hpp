@@ -22,21 +22,22 @@ namespace uv {
     };
 
 
-    void cancel() {
-      _safe(uv_cancel(this));
-    }
-
-    template<class W>
-    void set(W *data) { this->data = reinterpret_cast<void *>(data); }
-
-    template<class W>
-    W *get() { return static_cast<W *>(this->data); }
-
-    Type type() {
-      return type;
-    }
-
     S *getHandle() { return reinterpret_cast<S *>(this->handle); }
+
+
+    void cancel() {
+      Error::safe(uv_cancel(this));
+    }
+
+    template<class W>
+    void setData(W *data) { this->data = reinterpret_cast<void *>(data); }
+
+    template<class W>
+    W *getData() { return static_cast<W *>(this->data); }
+
+    Type getType() {
+      return this->type;
+    }
   };
 
 }

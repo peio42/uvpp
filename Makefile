@@ -2,17 +2,18 @@
 
 CXX = clang++
 CC = $(CXX)
-CXXFLAGS = -Wall -std=c++17 -I.
+CXXFLAGS = -Wall -std=c++20 -I.
 LDLIBS = -luv -lfmt -ldl -pthread -lgtest
 
-# Lambda build error in examples SRCS: = test/main.cpp $(wildcard test/test-*.cpp) $(wildcard examples/*.cpp) 
 SRCS = test/main.cpp $(wildcard test/test-*.cpp)
 OBJS = $(SRCS:.cpp=.o)
 
 test: build
 	./test/main
 
-build: $(OBJS)
+test/main: $(OBJS)
+
+build: test/main
 
 clean:
 	rm -f $(OBJS)

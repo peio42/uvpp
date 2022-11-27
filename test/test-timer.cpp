@@ -83,7 +83,7 @@ protected:
 
 
   static void order_cb(uv::Timer *timer) {
-    ASSERT_EQ(order_cb_called++, * timer->get<int>());
+    ASSERT_EQ(order_cb_called++, * timer->getData<int>());
   }
 
   static void tiny_timer_cb(uv::Timer *timer) {
@@ -165,12 +165,12 @@ TEST_F(TimerTest, timer_init) {
 TEST_F(TimerTest, timer_order) {
   uv::Timer timer_a(loop);
   int first = 0;
-  timer_a.set(&first);
+  timer_a.setData(&first);
   timer_a.start(order_cb, 0);
 
   uv::Timer timer_b(loop);
   int second = 1;
-  timer_b.set(&second);
+  timer_b.setData(&second);
   timer_b.start(order_cb, 0);
 
   loop->run();
@@ -232,7 +232,7 @@ TEST_F(TimerTest, timer_is_closing) {
     FAIL();
   }
   catch (uv::Error &e) {
-    ASSERT_EQ(e.err, UV_EINVAL);
+    ASSERT_EQ(e.code, UV_EINVAL);
   }
   catch (...) {
     FAIL();
@@ -251,7 +251,7 @@ TEST_F(TimerTest, timer_null_callback) {
     FAIL();
   }
   catch (uv::Error &e) {
-    ASSERT_EQ(e.err, UV_EINVAL);
+    ASSERT_EQ(e.code, UV_EINVAL);
   }
   catch (...) {
     FAIL();
@@ -293,7 +293,7 @@ TEST_F(TimerTest, timer_again) {
     FAIL();
   }
   catch (uv::Error &e) {
-    ASSERT_EQ(e.err, UV_EINVAL);
+    ASSERT_EQ(e.code, UV_EINVAL);
   }
   catch (...) {
     FAIL();
