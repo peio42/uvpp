@@ -47,7 +47,9 @@ namespace uv {
         Readdir = UV_FS_READDIR,
         Closedir = UV_FS_CLOSEDIR,
         Mkstemp = UV_FS_MKSTEMP,
+#if UV_VERSION_MAJOR >= 1 && UV_VERSION_MINOR >= 36
         Lutime = UV_FS_LUTIME,
+#endif
       };
 
       void cleanup() {
@@ -244,6 +246,7 @@ namespace uv {
       utime(loop, req, path, atime, mtime, Error::safeReqCb<Rq, cb>);
     }
 
+#if UV_VERSION_MAJOR >= 1 && UV_VERSION_MINOR >= 36
     inline void lutime(const char *path, double atime, double mtime) {
       Error::safe(uv_fs_lutime(nullptr, nullptr, path, atime, mtime, nullptr));
     }
@@ -254,6 +257,7 @@ namespace uv {
     inline void lutime(Loop *loop, Rq *req, const char *path, double atime, double mtime) {
       lutime(loop, req, path, atime, mtime, Error::safeReqCb<Rq, cb>);
     }
+#endif
 
     inline void link(const char *path, const char *new_path) {
       Error::safe(uv_fs_link(nullptr, nullptr, path, new_path, nullptr));

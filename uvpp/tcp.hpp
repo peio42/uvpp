@@ -85,7 +85,8 @@ namespace uv {
     static inline void socketpair(int type, int protocol, uv_os_sock_t socket_vector[2], int flags0, int flags1) {
       Error::safe(uv_socketpair(type, protocol, socket_vector, flags0, flags1));
     }
-  };
 #endif
+
+  };
 
 }

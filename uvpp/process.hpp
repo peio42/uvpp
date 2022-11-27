@@ -29,7 +29,9 @@ namespace uv {
       InheritStream = UV_INHERIT_STREAM,
       ReadablePipe = UV_READABLE_PIPE,
       WritablePipe = UV_WRITABLE_PIPE,
+#if UV_VERSION_MAJOR >= 1 && UV_VERSION_MINOR >= 41
       NonblockPipe = UV_NONBLOCK_PIPE,
+#endif
     };
 
     using ExitCb = void (*)(Process *handle, int64_t exit_status, int term_signal);
