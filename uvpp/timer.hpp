@@ -47,9 +47,12 @@ namespace uv {
       return uv_timer_get_repeat(this);
     }
 
-    uint64_t get_due_in() {
+#if UV_VERSION_MAJOR >= 1 && UV_VERSION_MINOR >= 40
+    uint64_t due_in() {
       return uv_timer_get_due_in(this);
     }
+#endif
+
   };
 
 }

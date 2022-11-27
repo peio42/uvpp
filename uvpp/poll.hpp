@@ -11,8 +11,12 @@ namespace uv {
     enum class Event : int {
       Readable = UV_READABLE,
       Writable = UV_WRITABLE,
+#if UV_VERSION_MAJOR >= 1 && UV_VERSION_MINOR >= 9
       Disconnect = UV_DISCONNECT,
+#endif
+#if UV_VERSION_MAJOR >= 1 && UV_VERSION_MINOR >= 14
       Prioritized = UV_PRIORITIZED,
+#endif
     };
 
     bool castable(Handle &h) { return h.getType() == Handle::Type::Poll; }

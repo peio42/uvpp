@@ -114,9 +114,12 @@ namespace uv {
       return static_cast<Type>(this->type);
     }
 
+#if UV_VERSION_MAJOR >= 1 && UV_VERSION_MINOR >= 19
     const char *getTypeName() {
       return uv_handle_type_name(this->type);
     }
+#endif
+
  };
 
 }

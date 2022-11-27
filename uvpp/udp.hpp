@@ -16,18 +16,14 @@ namespace uv {
       IPv6_Only = UV_UDP_IPV6ONLY,
       Partial = UV_UDP_PARTIAL,
       ReuseAddr = UV_UDP_REUSEADDR,
-#  ifdef UV_UDP_MMSG_CHUNK
+#if UV_VERSION_MAJOR >= 1 && UV_VERSION_MINOR >= 40
       MMSG_Chunk = UV_UDP_MMSG_CHUNK,
-#  endif
-#  ifdef UV_UDP_MMSG_FREE
       MMSG_Free = UV_UDP_MMSG_FREE,
-#  endif
-#  ifdef UV_UDP_LINUX_RECVERR
       Linux_RecvErr = UV_UDP_LINUX_RECVERR,
-#  endif
-#  ifdef UV_UDP_RECVMMSG
+#endif
+#if UV_VERSION_MAJOR >= 1 && UV_VERSION_MINOR >= 37
       RecvMMSG = UV_UDP_RECVMMSG,
-#  endif
+#endif
     };
 
     bool castable(Handle &h) { return h.getType() == Handle::Type::Udp; }
@@ -39,9 +35,11 @@ namespace uv {
       Error::safe(uv_udp_init(loop, this));
     }
 
+#if UV_VERSION_MAJOR >= 1 && UV_VERSION_MINOR >= 7
     Udp(Loop *loop, unsigned flags) {
       Error::safe(uv_udp_init_ex(loop, this, flags));
     }
+#endif
 
     void init(Loop *loop) {
       Error::safe(uv_udp_init(loop, this));
@@ -59,13 +57,17 @@ namespace uv {
       Error::safe(uv_udp_bind(this, addr->sa(), static_cast<unsigned int>(flags)));
     }
 
+#if UV_VERSION_MAJOR >= 1 && UV_VERSION_MINOR >= 27
     void connect(const auto *addr) {
       Error::safe(uv_udp_connect(this, addr->sa()));
     }
+#endif
 
+#if UV_VERSION_MAJOR >= 1 && UV_VERSION_MINOR >= 27
     void get_peername(auto *name, int *namelen) {
       Error::safe(uv_udp_getpeername(this, name->sa(), namelen));
     }
+#endif
 
     void get_sockname(auto *name, int *namelen) {
       Error::safe(uv_udp_getsockname(this, name->sa(), namelen));
@@ -75,9 +77,11 @@ namespace uv {
       Error::safe(uv_udp_set_membership(this, multicast_addr, interface_addr, membership));
     }
 
+#if UV_VERSION_MAJOR >= 1 && UV_VERSION_MINOR >= 32
     void set_source_membership(const char* multicast_addr, const char* interface_addr, const char* source_addr, uv_membership membership) {
       Error::safe(uv_udp_set_source_membership(this, multicast_addr, interface_addr, source_addr, membership));
     }
+#endif
 
     void set_multicast_loop(bool on) {
       Error::safe(uv_udp_set_multicast_loop(this, on));
@@ -134,14 +138,26 @@ namespace uv {
         });
     }
 
-
+#if UV_VERSION_MAJOR >= 1 && UV_VERSION_MINOR >= 39
     bool using_recvmmsg() {
       return uv_udp_using_recvmmsg(this);
     }
+#endif
 
     void recvStop() {
       Error::safe(uv_udp_recv_stop(this));
     }
+
+#if UV_VERSION_MAJOR >= 1 && UV_VERSION_MINOR >= 19
+    size_t send_queue_size() {
+      return uv_udp_get_send_queue_size(this);
+    }
+
+    size_t send_queue_count() {
+      return uv_udp_get_send_queue_count(this);
+    }
+#endif
+
   };
 
   inline Udp::Flags operator | (Udp::Flags lhs, Udp::Flags rhs) {

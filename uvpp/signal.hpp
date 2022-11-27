@@ -30,9 +30,15 @@ namespace uv {
       start(cb, signum);
     }
 
+#if UV_VERSION_MAJOR >= 1 && UV_VERSION_MINOR >= 12
     void start_oneshot(StartCb cb, int signum) {
       Error::safe(uv_signal_start_oneshot(this, reinterpret_cast<uv_signal_cb>(cb), signum));
     }
+    template<StartCb cb>
+    void start_oneshot(int signum) {
+      start_oneshot(cb, signum);
+    }
+#endif
 
     void stop() {
       Error::safe(uv_signal_stop(this));

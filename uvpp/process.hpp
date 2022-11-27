@@ -14,8 +14,10 @@ namespace uv {
       WindowsVerbatimArguments = UV_PROCESS_WINDOWS_VERBATIM_ARGUMENTS,
       Detached = UV_PROCESS_DETACHED,
       WindowsHide = UV_PROCESS_WINDOWS_HIDE,
+#if UV_VERSION_MAJOR >= 1 && UV_VERSION_MINOR >= 24
       WindowsHideConsole = UV_PROCESS_WINDOWS_HIDE_CONSOLE,
       WindowsHideGUI = UV_PROCESS_WINDOWS_HIDE_GUI,
+#endif
     };
 
     using StdioContainer = uv_stdio_container_t;
@@ -119,9 +121,12 @@ namespace uv {
       Error::safe(uv_kill(pid, signum));
     }
 
+#if UV_VERSION_MAJOR >= 1 && UV_VERSION_MINOR >= 19
     uv_pid_t getPid() {
       return uv_process_get_pid(this);
     }
+#endif
+
   };
 
 }

@@ -98,10 +98,12 @@ namespace uv {
       return Error::safe(uv_try_write(as_Stream(), bufs, nbufs));
     }
 
+#if UV_VERSION_MAJOR >= 1 && UV_VERSION_MINOR >= 42
     template<class Z>
     int try_write(const Buffer bufs[], unsigned int nbufs, Z *sendHandle) {
       return Error::safe(uv_try_write2(as_Stream(), bufs, nbufs, sendHandle->as_stream()));
     }
+#endif
 
     bool readable() {
       return uv_is_readable(as_Stream());
@@ -119,9 +121,12 @@ namespace uv {
       return uv_stream_get_blocking(as_Stream());
     }
 
+#if UV_VERSION_MAJOR >= 1 && UV_VERSION_MINOR >= 19
     size_t write_queue_size() {
       return uv_stream_get_write_queue_size(as_Stream());
     }
+#endif
+
   };
 
 
