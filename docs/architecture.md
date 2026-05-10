@@ -27,55 +27,55 @@ The project should not add compatibility shims for C++17 or earlier in the v2 co
 ## Directory Layout
 
 ```text
-uvpp2/
-  docs/
-    architecture.md
-    api-principles.md
-    callbacks.md
-    error-handling.md
-    ownership.md
-    migration-from-v1.md
-    thread-safety.md
-  include/uvpp/
-    uv.hpp
-    core/
-      error.hpp
-      loop.hpp
-      native.hpp
-      callback.hpp
-    handles/
-      handle.hpp
-      stream.hpp
-      tcp.hpp
-      pipe.hpp
-      tty.hpp
-      udp.hpp
-      timer.hpp
-      async.hpp
-      prepare.hpp
-      check.hpp
-      idle.hpp
-      signal.hpp
-      poll.hpp
-      fs_event.hpp
-      fs_poll.hpp
-      process.hpp
-    requests/
-      request.hpp
-      connect.hpp
-      write.hpp
-      shutdown.hpp
-      udp_send.hpp
-      fs.hpp
-    net/
-      address.hpp
-      buffer.hpp
-    fs/
-      file.hpp
-      dir.hpp
-      operations.hpp
-  tests/
-  examples/
+docs/
+  architecture.md
+  api-principles.md
+  callbacks.md
+  error-handling.md
+  ownership.md
+  process.md
+  migration-from-v1.md
+  thread-safety.md
+include/uvpp/
+  uv.hpp
+  core/
+    error.hpp
+    loop.hpp
+    native.hpp
+    callback.hpp
+  handles/
+    handle.hpp
+    stream.hpp
+    tcp.hpp
+    pipe.hpp
+    tty.hpp
+    udp.hpp
+    timer.hpp
+    async.hpp
+    prepare.hpp
+    check.hpp
+    idle.hpp
+    signal.hpp
+    poll.hpp
+    process.hpp
+    fs_event.hpp
+    fs_poll.hpp
+  requests/
+    request.hpp
+    connect.hpp
+    write.hpp
+    shutdown.hpp
+    udp_send.hpp
+    fs.hpp
+  net/
+    address.hpp
+    buffer.hpp
+  fs/
+    file.hpp
+    dir.hpp
+    operations.hpp
+tests/
+examples/
 ```
 
 The current v1 code remains a reference implementation and compatibility target only where useful. v2 is allowed to break API compatibility.

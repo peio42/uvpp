@@ -101,10 +101,35 @@ private:
 Buffer taxonomy is fixed:
 
 - `buffer_view` is a non-owning `uv_buf_t`-compatible view;
-- `owned_buffer` owns bytes and can produce a `buffer_view`;
+- `owned_buffer` owns bytes and can explicitly produce a `buffer_view` with `view()`;
 - `std::span<std::byte>` / `std::span<const std::byte>` are accepted for generic byte ranges where `uv_buf_t` compatibility is not required at the call site.
 
 A single buffer type must not sometimes own memory and sometimes only view it. Ownership is represented by the type name.
+
+Example:
+
+```cpp
+owned_buffer storage{4096};
+buffer_view view = storage.view();
+```
+
+The conversion is intentionally named rather than implicit. Producing a `buffer_view` creates a borrowed view into the owned storage, and async libuv operations still require the storage to outlive the operation.
+
+## Bitmask Options
+
+Where libuv exposes compact bitmasks, v2 should prefer thin typed helpers without hiding the native model.
+
+`poll_event` is the current pattern:
+
+```cpp
+poll.start(poll_event::readable | poll_event::disconnect, callback);
+
+if (has_poll_event(events, poll_event::readable)) {
+  // fd is readable
+}
+```
+
+The wrapper still accepts raw `int` events for native interop. The enum helpers document common flags and avoid spelling libuv constants in ordinary C++ call sites.
 
 ## Minimal Surprises
 

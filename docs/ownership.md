@@ -54,10 +54,32 @@ The higher-level API may allocate operation state internally. That cost must be 
 Separate owning buffers from non-owning views. The v2 taxonomy is:
 
 - `buffer_view`: non-owning `uv_buf_t`-compatible view used by low-level libuv-facing APIs;
-- `owned_buffer`: owns memory and can produce `buffer_view`;
+- `owned_buffer`: owns bytes and can explicitly produce a `buffer_view`;
 - `std::span<std::byte>` for generic byte ranges.
 
 Do not provide a single `buffer::cleanup()` style API in v2. Ownership should be represented by type, not by convention.
+
+`owned_buffer` is a convenience owner, not an asynchronous operation owner. A `buffer_view` produced by `owned_buffer::view()` remains valid only while the `owned_buffer` is alive and has not been resized or destroyed.
+
+```cpp
+owned_buffer storage{4096};
+auto view = storage.view();
+```
+
+For asynchronous writes and UDP sends, the memory referenced by the submitted `buffer_view` or byte span must outlive the operation completion callback. uvpp does not copy buffer contents in low-level APIs.
+
+```cpp
+owned_buffer payload{4};
+std::memcpy(payload.data(), "ping", 4);
+auto view = payload.view();
+
+write_request req;
+stream.write(req, view, [](write_request&, result status) {
+  // payload must still be alive here
+});
+```
+
+For read and UDP receive allocation callbacks, returning a `buffer_view` does not transfer ownership to uvpp. The allocator must ensure that the backing storage remains valid until the corresponding read/receive callback has run and released or reused it.
 
 ## Callback State
 

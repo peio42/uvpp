@@ -11,6 +11,7 @@
 #include "uvpp/core/error.hpp"
 #include "uvpp/handles/handle.hpp"
 #include "uvpp/net/buffer.hpp"
+#include "uvpp/requests/shutdown.hpp"
 #include "uvpp/requests/write.hpp"
 
 namespace uvpp {
@@ -87,6 +88,18 @@ namespace uvpp {
       throw_if_error(uv_read_stop(native_stream()));
     }
 
+    void shutdown(shutdown_request &request, shutdown_request::callback callback) {
+      request.set_callback(std::move(callback));
+      throw_if_error(uv_shutdown(request.native(), native_stream(), &stream::shutdown_trampoline));
+    }
+
+    template<auto Callback>
+    void shutdown_static(shutdown_request &request) {
+      throw_if_error(uv_shutdown(request.native(), native_stream(), [](uv_shutdown_t *raw, int status) noexcept {
+        detail::invoke_static_callback<Callback>(shutdown_request::from_native(raw), result{status});
+      }));
+    }
+
     void write(write_request &request, std::span<const buffer_view> buffers, write_request::callback callback) {
       request.set_callback(std::move(callback));
       throw_if_error(uv_write(request.native(), native_stream(), reinterpret_cast<const uv_buf_t *>(buffers.data()),
@@ -147,6 +160,10 @@ namespace uvpp {
 
     static void write_trampoline(uv_write_t *raw, int status) noexcept {
       write_request::from_native(raw).invoke(status);
+    }
+
+    static void shutdown_trampoline(uv_shutdown_t *raw, int status) noexcept {
+      shutdown_request::from_native(raw).invoke(status);
     }
 
     allocate_callback allocate_callback_{};

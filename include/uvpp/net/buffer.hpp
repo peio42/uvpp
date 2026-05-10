@@ -2,6 +2,7 @@
 
 #include <cstddef>
 #include <span>
+#include <vector>
 
 #include <uv.h>
 
@@ -37,5 +38,43 @@ namespace uvpp {
 
   static_assert(sizeof(buffer_view) == sizeof(uv_buf_t));
   static_assert(alignof(buffer_view) == alignof(uv_buf_t));
+
+  class owned_buffer {
+  public:
+    owned_buffer() = default;
+
+    explicit owned_buffer(std::size_t size)
+      : storage_(size) {}
+
+    explicit owned_buffer(std::span<const std::byte> bytes)
+      : storage_(bytes.begin(), bytes.end()) {}
+
+    std::byte *data() noexcept { return storage_.data(); }
+    const std::byte *data() const noexcept { return storage_.data(); }
+
+    std::size_t size() const noexcept { return storage_.size(); }
+    bool empty() const noexcept { return storage_.empty(); }
+
+    void resize(std::size_t size) { storage_.resize(size); }
+
+    std::span<std::byte> bytes() noexcept {
+      return storage_;
+    }
+
+    std::span<const std::byte> bytes() const noexcept {
+      return storage_;
+    }
+
+    std::span<char> chars() noexcept {
+      return {reinterpret_cast<char *>(storage_.data()), storage_.size()};
+    }
+
+    buffer_view view() noexcept {
+      return {reinterpret_cast<char *>(storage_.data()), storage_.size()};
+    }
+
+  private:
+    std::vector<std::byte> storage_;
+  };
 
 }

@@ -41,6 +41,15 @@ This mode is appropriate for low-level wrappers and performance-sensitive code.
 
 Use static callbacks when the callback can recover all state from explicit objects, globals, `user_data<T>()`, or protocol state already attached to the handle/request.
 
+Most handles expose static callback mode as `start_static<Callback>()`, `listen_static<Callback>()`, `read_start_static<Callback>()`, or an operation-specific equivalent. A few libuv callbacks are fixed when the native object is initialized or spawned. Those wrappers use an explicit tag constructor instead:
+
+```cpp
+uvpp::async wakeup(loop, uvpp::async::static_callback<on_wakeup>{});
+uvpp::process child(loop, options, uvpp::process::static_callback<on_exit>{});
+```
+
+The tag form keeps the same zero-overhead property: the wrapper stores no runtime callable for that callback path.
+
 Example with explicit user data:
 
 ```cpp
@@ -143,10 +152,16 @@ Low-level wrappers expose one callback slot per active libuv callback family.
 Rules:
 
 - `timer.start(...)` replaces the previous timer callback slot before calling `uv_timer_start`;
+- `idle.start(...)`, `prepare.start(...)`, and `check.start(...)` replace their callback slot before calling the corresponding libuv start function;
+- `async.set_callback(...)` replaces the runtime callback slot used by an `async` object constructed without a static callback tag;
 - `stream.listen(...)` replaces the connection callback slot before calling `uv_listen`;
 - `stream.read_start(...)` replaces both allocation and read callback slots before calling `uv_read_start`;
+- `udp.receive_start(...)` replaces both allocation and receive callback slots before calling `uv_udp_recv_start`;
+- `signal.start(...)` and `signal.start_oneshot(...)` replace the signal callback slot before calling the corresponding libuv function;
+- `poll.start(...)` replaces the poll callback slot before calling `uv_poll_start`;
+- `process` stores its exit callback at construction because `uv_spawn` receives the exit callback when the process is created;
 - `handle.close(callback)` replaces the close callback slot and must only be called once for a given handle close lifecycle;
-- request callbacks such as `write_request` and `connect_request` are one-shot slots owned by the request object and replaced when submitting a new operation with that request.
+- request callbacks such as `write_request`, `connect_request`, `shutdown_request`, and `udp_send_request` are one-shot slots owned by the request object and replaced when submitting a new operation with that request.
 
 Calling a start/listen/read API a second time follows libuv's underlying validity rules. If libuv rejects the operation immediately, uvpp throws `uvpp::error`. If libuv accepts it, the stored callback slot has already been replaced.
 
@@ -161,7 +176,7 @@ Example:
 ```cpp
 static void on_timer_raw(uv_timer_t* raw) noexcept {
   auto& self = timer::from_native(raw);
-  self.invoke_timer_callback();
+  detail::invoke_callback(self.callback_, self);
 }
 ```
 

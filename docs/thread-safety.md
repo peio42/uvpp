@@ -20,9 +20,9 @@ This keeps the core wrapper zero-overhead and avoids implying guarantees libuv d
 
 ## Cross-Thread Communication
 
-Cross-thread work should use libuv mechanisms designed for it, such as `uv_async_t`, once uvpp exposes the corresponding wrapper.
+Cross-thread work should use libuv mechanisms designed for it, primarily `uvpp::async`.
 
-The intended shape is:
+The supported shape is:
 
 ```cpp
 uvpp::async wakeup(loop, callback);
@@ -31,7 +31,11 @@ uvpp::async wakeup(loop, callback);
 wakeup.send();
 ```
 
-Only the specific cross-thread entry points documented by libuv should be callable from other threads. The callback still runs on the loop thread.
+`async::send()` is the cross-thread entry point. The callback still runs on the loop thread.
+
+Only the specific cross-thread entry points documented by libuv and by uvpp should be called from other threads. Installing or replacing the async callback, closing the handle, changing `user_data`, and destroying the wrapper remain loop-thread operations.
+
+If another thread publishes data before calling `send()`, synchronization is still the application's responsibility. uvpp does not add memory fences or queues around `uv_async_send`.
 
 ## Future High-Level Layer
 
