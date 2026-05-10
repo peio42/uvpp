@@ -1,56 +1,65 @@
-#include <fmt/core.h>
+#include <array>
+#include <iostream>
 
 #include "uvpp/uv.hpp"
 
-using namespace uv;
+namespace {
 
-int main(int ac, char* av[]) {
-  Loop *loop = Loop::getDefault();
+uvpp::buffer_view allocate(uvpp::tcp &, std::size_t suggested) {
+  auto *data = new char[suggested];
+  return uvpp::buffer_view{data, suggested};
+}
 
-  Tcp server(loop);
+}
 
-  IPv4 addr("0.0.0.0", 2345);
-  server.bind(&addr);
+int main() {
+  uvpp::loop loop;
+  uvpp::tcp server(loop);
 
-  server.listen<[](Tcp *server) {
-    fmt::print("New connection\n");
+  uvpp::ipv4 address{"0.0.0.0", 2345};
+  server.bind(address);
 
-    auto client = new Tcp(server->getLoop());
-    server->accept(client);
+  server.listen([&](uvpp::tcp &srv, uvpp::result status) {
+    if (!status) {
+      std::cerr << status.error_code().message() << '\n';
+      return;
+    }
 
-    client->read_start([](Tcp *client, size_t suggested_size, Buffer *buf) {
-        buf->allocate(suggested_size);
-      }, [](Tcp *client, ssize_t nread, const Buffer *buf) {
-        if (nread > 0) {
-          auto req = new Tcp::WriteRq;
-          auto buf2 = new Buffer(buf->base, nread);
-          req->set(buf2);
+    auto *client = new uvpp::tcp(loop);
+    srv.accept(*client);
 
-          client->write(req, buf2, 1, [](Tcp::WriteRq *req, int status) {
-              _safe(status);
+    client->read_start(allocate, [client](uvpp::tcp &stream, uvpp::read_result read) {
+      auto storage = read.storage();
 
-              auto buf2 = req->get<Buffer>();
-              delete buf2->base;
-              delete buf2;
-              delete req;
-            });
+      if (read.eof()) {
+        delete[] storage.data();
+        stream.close([client](uvpp::tcp &) {
+          delete client;
+        });
+        return;
+      }
 
-          return ;
+      if (!read.ok()) {
+        delete[] storage.data();
+        stream.close([client](uvpp::tcp &) {
+          delete client;
+        });
+        return;
+      }
+
+      auto *request = new uvpp::write_request;
+      auto bytes = read.bytes();
+
+      stream.write(*request, bytes, [request, storage](uvpp::write_request &, uvpp::result status) {
+        if (!status) {
+          std::cerr << status.error_code().message() << '\n';
         }
-        if (nread < 0) {
-          if (nread != UV_EOF)
-            _safe(nread);
-
-          fmt::print("Disconnection\n");
-
-          client->close();
-        }
-
-        delete buf->base;
+        delete[] storage.data();
+        delete request;
       });
-  }>();
+    });
+  });
 
-  loop->run();
-
+  loop.run();
   return 0;
 }

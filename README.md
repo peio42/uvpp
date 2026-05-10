@@ -1,186 +1,176 @@
-![C/C++ CI](https://github.com/peio42/uvpp/workflows/C/C++%20CI/badge.svg) [![Quality Gate Status](https://sonarcloud.io/api/project_badges/measure?project=org.blutch%3Auvpp&metric=alert_status)](https://sonarcloud.io/dashboard?id=org.blutch%3Auvpp)
+[![CI](https://github.com/peio42/uvpp/actions/workflows/ci-tests.yml/badge.svg)](https://github.com/peio42/uvpp/actions/workflows/ci-tests.yml)
 
-# uvpp
-uvpp is a Modern C++ wrapper for the wonderful libuv library.
+# uvpp v2
 
-## Why uvpp
-libuv has been developed with object oriented design. When you use the
-library into your C project, its class hierarchy is clear.
-But if you want to use it inside a C++ project, you will actually have
-to deal with a big amount of reinterpret_cast everywhere.
-uvw might be an option, but it's more an event library, based on libuv
-than a simple wrapper, and the overhead isn't so negligible.
+uvpp v2 is a modern, header-only C++20 wrapper around [libuv](https://libuv.org/).
 
-uvpp wants to be a simple wrapper over libuv, with limited overhead,
-proposing a clean Modern C++ interface with exception management.
+The goal of v2 is to keep libuv's model visible while providing a cleaner C++ API:
 
-## Usage
-uvpp is a header-only C++ library. You will need a C++17 compiler.
-Just include "uvpp/uv.hpp".
+- no inheritance from libuv C structs;
+- no user-facing casts in callbacks;
+- explicit ownership and lifetime rules;
+- modern C++ vocabulary types such as `std::chrono`, `std::span`, and `std::string_view`;
+- explicit error handling through `uvpp::error` and `uvpp::result`.
 
-    #include <uvpp/uv.hpp>
+## Status
 
-For everything else, you can stick to libuv engine for the
-implementation. So you'll mainly need a Loop object, the Reactor, from
-which the handles will be attached. A default loop is available.
+uvpp v2 is under active construction on the `v2` branch.
 
-    auto loop = uv::Loop::getDefault();
+It is already usable for the current vertical slice, but it is not feature-complete yet. The API should still be considered evolving until v2 is finalized.
 
-or you can create one, by just instanciate a new Loop object, for
-example with
+## Requirements
 
-    uv::Loop loop();
+- C++20 compiler
+- libuv
 
-Then create Handles object as needed, and you can directly call the
-methods from the objects.
-For example, an Idle is a simple handle that will call its callback
-on each loop iteration. To instanciate one in a local variable, use
+For repository builds and tests, the current setup also uses Google Test.
 
-    uv::Idle idle(loop);
+## Integration
 
-To allocate a new object instead of using a local variable, use
+uvpp v2 is header-only. Add the `include/` directory to your include path and link against libuv.
 
-    auto idle = new uv::Idle(loop);
-
-###### Memory management
-_uvpp doesn't allocate any object for you. You can allocate them
-yourself or use local variable, but it's your programmer's duty to
-correctly manage memory. Don't hesitate to use smart-pointers if
-you want._
-
-###### Callbacks
-You can use Modern C++ lambda function, but then be careful you can't
-capture any variable, as the compiler will have to translate it into
-a simple function pointer.
-
-    idle.start([](uv::Idle *idle) {
-      static int64_t counter = 0;
-
-      counter++;
-      if (counter >= 1000000)
-        idle->close();
-    });
-
-Of course, you can also reference any function.
-
-_When you need to pass a callback to a function, you usually have
-two options. You can pass it as a function parameter, or you can ask
-uvpp to take care or errors and raise an exception for you if needed.
-This way, you don't need to manage with libuv status inside your
-callbacks (but still need to manage exceptions in C++ way)_
-
-This safe way require you to use template version of the functions.
-Even if not every callback will be given a status error code, any
-callback can be written in a template-style to keep consistency, as
-a general rule.
-
-To be able to use a lambda as a template parameter, you might have to
-use a C++20 compiler. As of 2022, g++ still has bug, even compiling
-with "std=c++20", as it considers the lambda has no linkage. But
-clang manages very well.
-
-    Loop *loop = Loop::getDefault();
-
-    Tcp server(loop);
-
-    try {
-      IPv4 addr("0.0.0.0", 2345);
-      server.bind(&addr);
-
-      server.listen<[](Tcp *server) {
-        // ... Some useful stuff
-        //
-        // No need to check status. If there is an error during the
-        // listen, an exception should raise during the loop->run()
-      }>();
-
-      loop->run();
-    } catch (uv::Error &e) {
-      // ... An error occured
-    }
-
-###### Under development
-_You can notice the sockaddr helper `IPv4`. The library has some of them.
-Expect to see more in the future, as well as more C++ oriented types,
-like `std::string` for example._
-
-###### Differences with libuv
-The same objects and Handles have been mirrored. But the first noticeable
-difference, aside of object methods instead of global functions, is that
-the handles keep their types inside the callbacks. No need to cast
-anything.
-
-Also, the `read` method (or `start_read`) has an additional callback, for
-EoF event, in its template form:
-
-    uv::fs::read<on_read, on_eof>(loop, &req, fd, &iov, 1, -1);
-
-# Example
-
-This is a simple TCP echo server using uvpp
-
-    #include <fmt/core.h>
-
-    #include "uvpp/uv.hpp"
-
-    using namespace uv;
-
-    int main(int ac, char* av[]) {
-      Loop *loop = Loop::getDefault();
-
-      Tcp server(loop);
-
-      try {
-        IPv4 addr("0.0.0.0", 2345);
-        server.bind(&addr);
-
-        server.listen<[](Tcp *server) {
-          fmt::print("New connection\n");
-
-          auto client = new Tcp(server->getLoop());
-          server->accept(client);
-
-          client->read_start<[](Tcp *client, size_t suggested_size, Buffer *buf) {
-            buf->allocate(suggested_size);
-          }, [](Tcp *client, ssize_t nread, const Buffer *buf) {
-            auto req = new Tcp::WriteRq;
-            auto buf2 = new Buffer(buf->base, nread);
-            req->set(buf2);
-
-            client->write<[](Tcp::WriteRq *req) {
-              auto buf2 = req->get<Buffer>();
-              delete buf2->base;
-              delete buf2;
-              delete req;
-            }>(req, buf2, 1);
-          }, [](Tcp *client, const Buffer *buf) {
-            fmt::print("Disconnection\n");
-
-            client->close();
-            delete buf->base;
-          }>();
-        }>();
-
-        loop->run();
-      } catch (uv::Error &e) {
-        fmt::print(stderr, "Error {}\n", e.message());
-      }
-
-      return 0;
-    }
-
-# Testing process
-
-Install [Clang](https://clang.llvm.org/) compiler, [Google Test](https://github.com/google/googletest), [fmt](https://github.com/fmtlib/fmt) library and [libuv](https://github.com/libuv/libuv) version to test.
-
-On Ubuntu:
-
-```shell
-sudo apt install clang libgtest-dev libfmt-dev libuv1-dev
+```cpp
+#include <uvpp/uv.hpp>
 ```
 
-And run from working directory:
+Typical compile command:
 
-```shell
-make
+```sh
+clang++ -std=c++20 -I/path/to/uvpp/include app.cpp -luv -pthread
 ```
+
+## Current surface
+
+The current v2 slice includes:
+
+- loop types: `uvpp::loop`, `uvpp::loop_view`, `uvpp::default_loop()`
+- error types: `uvpp::error`, `uvpp::result`
+- networking helpers: `uvpp::ipv4`, `uvpp::ipv6`, `uvpp::buffer_view`
+- requests: `uvpp::connect_request`, `uvpp::write_request`
+- handles: `uvpp::async`, `uvpp::check`, `uvpp::idle`, `uvpp::pipe`, `uvpp::prepare`, `uvpp::tcp`, `uvpp::timer`, `uvpp::tty`
+
+## Core usage patterns
+
+### Create or access a loop
+
+```cpp
+uvpp::loop loop;
+auto default_loop = uvpp::default_loop();
+```
+
+### Runtime callbacks
+
+Runtime callbacks accept lambdas with captures and receive typed wrapper references.
+
+```cpp
+using namespace std::chrono_literals;
+
+uvpp::loop loop;
+uvpp::timer timer(loop);
+
+int ticks = 0;
+
+timer.start(100ms, 100ms, [&](uvpp::timer& self) {
+  if (++ticks == 3) {
+    self.close();
+  }
+});
+
+loop.run();
+loop.close();
+```
+
+### Static callbacks
+
+For zero-allocation callback paths, use the `*_static` APIs.
+
+```cpp
+using namespace std::chrono_literals;
+
+static void on_tick(uvpp::timer& self) {
+  self.close();
+}
+
+uvpp::loop loop;
+uvpp::timer timer(loop);
+
+timer.start_static<on_tick>(250ms);
+loop.run();
+loop.close();
+```
+
+### Explicit close and lifetime
+
+`uv_close()` is asynchronous in libuv, so uvpp v2 keeps that visible. Handles do not auto-close in destructors.
+
+```cpp
+auto* client = new uvpp::tcp(loop);
+
+client->close([client](uvpp::tcp&) {
+  delete client;
+});
+```
+
+### Error handling
+
+- immediate libuv submission failures throw `uvpp::error`;
+- asynchronous completion status is delivered as `uvpp::result`;
+- EOF is represented explicitly in `uvpp::read_result`.
+
+```cpp
+try {
+  uvpp::tcp server(loop);
+  server.bind(uvpp::ipv4{"0.0.0.0", 2345});
+} catch (const uvpp::error& e) {
+  std::cerr << e.what() << '\n';
+}
+```
+
+## Example
+
+The repository ships a TCP echo server example in `examples/tcp-echo-server.cpp`.
+
+Minimal server setup:
+
+```cpp
+uvpp::loop loop;
+uvpp::tcp server(loop);
+
+server.bind(uvpp::ipv4{"0.0.0.0", 2345});
+server.listen([&](uvpp::tcp& srv, uvpp::result status) {
+  if (!status) {
+    return;
+  }
+
+  auto* client = new uvpp::tcp(loop);
+  srv.accept(*client);
+  // start reading and writing...
+});
+
+loop.run();
+```
+
+## Building and testing this repository
+
+Ubuntu packages:
+
+```sh
+sudo apt-get update
+sudo apt-get install -y clang libgtest-dev libuv1-dev
+```
+
+Then build the example and run the test suite:
+
+```sh
+make test
+```
+
+## Documentation
+
+- [Architecture](docs/architecture.md)
+- [API principles](docs/api-principles.md)
+- [Callbacks](docs/callbacks.md)
+- [Error handling](docs/error-handling.md)
+- [Ownership and lifetime](docs/ownership.md)
+- [Thread safety](docs/thread-safety.md)
+- [Migration from v1](docs/migration-from-v1.md)

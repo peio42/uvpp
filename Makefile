@@ -1,19 +1,25 @@
-.PHONY: clean build test 
+.PHONY: clean build test examples
 
 CXX = clang++
-CC = $(CXX)
-CXXFLAGS = -Wall -std=c++20 -I.
-LDLIBS = -luv -lfmt -ldl -pthread -lgtest
+CXXFLAGS = -Wall -std=c++20 -Iinclude -I..
+LDLIBS = -luv -pthread -lgtest
+EXAMPLE_LDLIBS = -luv -pthread
 
-SRCS = test/main.cpp $(wildcard test/test-*.cpp)
+SRCS = tests/main.cpp $(wildcard tests/test-*.cpp)
 OBJS = $(SRCS:.cpp=.o)
 
+build: tests/main examples
+
+tests/main: $(OBJS)
+	$(CXX) $(OBJS) $(LDLIBS) -o $@
+
+examples: examples/tcp-echo-server
+
+examples/tcp-echo-server: examples/tcp-echo-server.cpp
+	$(CXX) $(CXXFLAGS) $< $(EXAMPLE_LDLIBS) -o $@
+
 test: build
-	./test/main
-
-test/main: $(OBJS)
-
-build: test/main
+	./tests/main
 
 clean:
-	rm -f $(OBJS)
+	rm -f $(OBJS) tests/main examples/tcp-echo-server
