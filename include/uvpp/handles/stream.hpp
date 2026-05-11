@@ -57,6 +57,22 @@ namespace uvpp {
       return reinterpret_cast<const uv_stream_t *>(this->native());
     }
 
+    std::size_t write_queue_size() const noexcept {
+      return uv_stream_get_write_queue_size(native_stream());
+    }
+
+    bool readable() const noexcept {
+      return uv_is_readable(native_stream()) != 0;
+    }
+
+    bool writable() const noexcept {
+      return uv_is_writable(native_stream()) != 0;
+    }
+
+    void blocking(bool enable) {
+      throw_if_error(uv_stream_set_blocking(native_stream(), enable ? 1 : 0));
+    }
+
     template<class Client>
     void accept(Client &client) {
       throw_if_error(uv_accept(native_stream(), client.native_stream()));
@@ -90,7 +106,12 @@ namespace uvpp {
 
     void shutdown(shutdown_request &request, shutdown_request::callback callback) {
       request.set_callback(std::move(callback));
-      throw_if_error(uv_shutdown(request.native(), native_stream(), &stream::shutdown_trampoline));
+      try {
+        throw_if_error(uv_shutdown(request.native(), native_stream(), &stream::shutdown_trampoline));
+      } catch (...) {
+        request.set_callback({});
+        throw;
+      }
     }
 
     template<auto Callback>
@@ -102,8 +123,13 @@ namespace uvpp {
 
     void write(write_request &request, std::span<const buffer_view> buffers, write_request::callback callback) {
       request.set_callback(std::move(callback));
-      throw_if_error(uv_write(request.native(), native_stream(), reinterpret_cast<const uv_buf_t *>(buffers.data()),
-                     static_cast<unsigned int>(buffers.size()), &stream::write_trampoline));
+      try {
+        throw_if_error(uv_write(request.native(), native_stream(), reinterpret_cast<const uv_buf_t *>(buffers.data()),
+                       static_cast<unsigned int>(buffers.size()), &stream::write_trampoline));
+      } catch (...) {
+        request.set_callback({});
+        throw;
+      }
     }
 
     void write(write_request &request, const buffer_view &buf, write_request::callback callback) {
@@ -114,7 +140,12 @@ namespace uvpp {
       auto raw = uv_buf_init(const_cast<char *>(reinterpret_cast<const char *>(bytes.data())),
                              static_cast<unsigned int>(bytes.size()));
       request.set_callback(std::move(callback));
-      throw_if_error(uv_write(request.native(), native_stream(), &raw, 1, &stream::write_trampoline));
+      try {
+        throw_if_error(uv_write(request.native(), native_stream(), &raw, 1, &stream::write_trampoline));
+      } catch (...) {
+        request.set_callback({});
+        throw;
+      }
     }
 
     template<auto Callback>

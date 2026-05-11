@@ -1,4 +1,6 @@
 #include <array>
+#include <memory>
+#include <span>
 
 #include "gtest/gtest.h"
 #include "uvpp/uv.hpp"
@@ -53,9 +55,8 @@ TEST(Uvpp2StreamRequests, tcpShutdownReportsCompletionAndRemoteEof) {
     });
   });
 
-  sockaddr_in bound{};
-  server.sockname(bound);
-  uvpp::ipv4 connect_addr{"127.0.0.1", ntohs(bound.sin_port)};
+  auto bound = server.sockname();
+  uvpp::ipv4 connect_addr{"127.0.0.1", bound.port()};
 
   client.connect(connect_req, connect_addr, [&](uvpp::connect_request &, uvpp::result status) {
     ASSERT_TRUE(status);
@@ -132,9 +133,8 @@ TEST(Uvpp2StreamRequests, tcpShutdownRunsStaticCallback) {
     });
   });
 
-  sockaddr_in bound{};
-  server.sockname(bound);
-  uvpp::ipv4 connect_addr{"127.0.0.1", ntohs(bound.sin_port)};
+  auto bound2 = server.sockname();
+  uvpp::ipv4 connect_addr{"127.0.0.1", bound2.port()};
 
   client.connect(connect_req, connect_addr, [&](uvpp::connect_request &, uvpp::result status) {
     ASSERT_TRUE(status);
@@ -149,5 +149,41 @@ TEST(Uvpp2StreamRequests, tcpShutdownRunsStaticCallback) {
   EXPECT_TRUE(server_closed);
 
   static_shutdown_client = nullptr;
+  loop.close();
+}
+
+TEST(Uvpp2StreamRequests, immediateWriteFailureClearsCallback) {
+  uvpp::loop loop;
+  uvpp::tcp tcp(loop);
+  uvpp::write_request request;
+  std::array payload{'f', 'a', 'i', 'l'};
+  auto token = std::make_shared<int>(1);
+  std::weak_ptr<int> weak = token;
+
+  EXPECT_THROW(tcp.write(request, std::as_bytes(std::span{payload}),
+    [token](uvpp::write_request&, uvpp::result) {}), uvpp::error);
+
+  token.reset();
+  EXPECT_TRUE(weak.expired());
+
+  tcp.close();
+  loop.run();
+  loop.close();
+}
+
+TEST(Uvpp2StreamRequests, immediateShutdownFailureClearsCallback) {
+  uvpp::loop loop;
+  uvpp::tcp tcp(loop);
+  uvpp::shutdown_request request;
+  auto token = std::make_shared<int>(1);
+  std::weak_ptr<int> weak = token;
+
+  EXPECT_THROW(tcp.shutdown(request, [token](uvpp::shutdown_request&, uvpp::result) {}), uvpp::error);
+
+  token.reset();
+  EXPECT_TRUE(weak.expired());
+
+  tcp.close();
+  loop.run();
   loop.close();
 }

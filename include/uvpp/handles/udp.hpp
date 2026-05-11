@@ -15,6 +15,7 @@
 #include "uvpp/handles/handle.hpp"
 #include "uvpp/net/address.hpp"
 #include "uvpp/net/buffer.hpp"
+#include "uvpp/net/socket_address.hpp"
 #include "uvpp/requests/udp_send.hpp"
 
 namespace uvpp {
@@ -81,14 +82,28 @@ namespace uvpp {
       throw_if_error(uv_udp_bind(native(), addr.native_sockaddr(), flags));
     }
 
-    void sockname(sockaddr_in &addr) {
-      int len = sizeof(addr);
-      throw_if_error(uv_udp_getsockname(native(), reinterpret_cast<sockaddr *>(&addr), &len));
+    void connect(const ipv4 &addr) {
+      throw_if_error(uv_udp_connect(native(), addr.native_sockaddr()));
     }
 
-    void sockname(sockaddr_in6 &addr) {
-      int len = sizeof(addr);
-      throw_if_error(uv_udp_getsockname(native(), reinterpret_cast<sockaddr *>(&addr), &len));
+    void connect(const ipv6 &addr) {
+      throw_if_error(uv_udp_connect(native(), addr.native_sockaddr()));
+    }
+
+    void disconnect() {
+      throw_if_error(uv_udp_connect(native(), nullptr));
+    }
+
+    socket_address sockname() {
+      socket_address addr;
+      throw_if_error(uv_udp_getsockname(native(), addr.native(), addr.native_len()));
+      return addr;
+    }
+
+    socket_address peername() {
+      socket_address addr;
+      throw_if_error(uv_udp_getpeername(native(), addr.native(), addr.native_len()));
+      return addr;
     }
 
     void receive_start(allocate_callback allocator, receive_callback receiver) {
@@ -104,8 +119,13 @@ namespace uvpp {
     void send(udp_send_request &request, std::span<const buffer_view> buffers, const sockaddr *addr,
               udp_send_request::callback callback) {
       request.set_callback(std::move(callback));
-      throw_if_error(uv_udp_send(request.native(), native(), reinterpret_cast<const uv_buf_t *>(buffers.data()),
-                                 static_cast<unsigned int>(buffers.size()), addr, &udp::send_trampoline));
+      try {
+        throw_if_error(uv_udp_send(request.native(), native(), reinterpret_cast<const uv_buf_t *>(buffers.data()),
+                                   static_cast<unsigned int>(buffers.size()), addr, &udp::send_trampoline));
+      } catch (...) {
+        request.set_callback({});
+        throw;
+      }
     }
 
     void send(udp_send_request &request, std::span<const buffer_view> buffers, const ipv4 &addr,
@@ -138,7 +158,12 @@ namespace uvpp {
       auto raw = uv_buf_init(const_cast<char *>(reinterpret_cast<const char *>(bytes.data())),
                              static_cast<unsigned int>(bytes.size()));
       request.set_callback(std::move(callback));
-      throw_if_error(uv_udp_send(request.native(), native(), &raw, 1, addr, &udp::send_trampoline));
+      try {
+        throw_if_error(uv_udp_send(request.native(), native(), &raw, 1, addr, &udp::send_trampoline));
+      } catch (...) {
+        request.set_callback({});
+        throw;
+      }
     }
 
     void send(udp_send_request &request, std::span<const std::byte> bytes, const ipv4 &addr,
@@ -180,6 +205,23 @@ namespace uvpp {
 
     int send_now(const buffer_view &buf, const ipv6 &addr) {
       return send_now(std::span<const buffer_view>{&buf, 1}, addr.native_sockaddr());
+    }
+
+    int send_now(std::span<const buffer_view> buffers) {
+      return throw_if_error(uv_udp_try_send(native(), reinterpret_cast<const uv_buf_t *>(buffers.data()),
+                                            static_cast<unsigned int>(buffers.size()), nullptr));
+    }
+
+    int send_now(const buffer_view &buf) {
+      return send_now(std::span<const buffer_view>{&buf, 1});
+    }
+
+    std::size_t send_queue_size() const noexcept {
+      return uv_udp_get_send_queue_size(native());
+    }
+
+    std::size_t send_queue_count() const noexcept {
+      return uv_udp_get_send_queue_count(native());
     }
 
     void set_membership(std::string_view multicast_addr, std::string_view interface_addr, membership m) {

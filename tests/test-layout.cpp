@@ -7,6 +7,8 @@
 TEST(Uvpp2Layout, reconstructsHandlesFromNativePointers) {
   static_assert(std::is_standard_layout_v<uvpp::async::native_storage>);
   static_assert(std::is_standard_layout_v<uvpp::check::native_storage>);
+  static_assert(std::is_standard_layout_v<uvpp::fs_event::native_storage>);
+  static_assert(std::is_standard_layout_v<uvpp::fs_poll::native_storage>);
   static_assert(std::is_standard_layout_v<uvpp::idle::native_storage>);
   static_assert(std::is_standard_layout_v<uvpp::pipe::native_storage>);
   static_assert(std::is_standard_layout_v<uvpp::poll::native_storage>);
@@ -21,6 +23,8 @@ TEST(Uvpp2Layout, reconstructsHandlesFromNativePointers) {
   uvpp::loop loop;
   uvpp::async async(loop);
   uvpp::check check(loop);
+  uvpp::fs_event fs_event(loop);
+  uvpp::fs_poll fs_poll(loop);
   uvpp::idle idle(loop);
   uvpp::pipe pipe(loop);
   int fds[2]{};
@@ -36,6 +40,10 @@ TEST(Uvpp2Layout, reconstructsHandlesFromNativePointers) {
   EXPECT_EQ(&async, &uvpp::async::from_native(async.native_handle()));
   EXPECT_EQ(&check, &uvpp::check::from_native(check.native()));
   EXPECT_EQ(&check, &uvpp::check::from_native(check.native_handle()));
+  EXPECT_EQ(&fs_event, &uvpp::fs_event::from_native(fs_event.native()));
+  EXPECT_EQ(&fs_event, &uvpp::fs_event::from_native(fs_event.native_handle()));
+  EXPECT_EQ(&fs_poll, &uvpp::fs_poll::from_native(fs_poll.native()));
+  EXPECT_EQ(&fs_poll, &uvpp::fs_poll::from_native(fs_poll.native_handle()));
   EXPECT_EQ(&idle, &uvpp::idle::from_native(idle.native()));
   EXPECT_EQ(&idle, &uvpp::idle::from_native(idle.native_handle()));
   EXPECT_EQ(&pipe, &uvpp::pipe::from_native(pipe.native()));
@@ -55,6 +63,8 @@ TEST(Uvpp2Layout, reconstructsHandlesFromNativePointers) {
 
   async.close();
   check.close();
+  fs_event.close();
+  fs_poll.close();
   idle.close();
   pipe.close();
   poll.close();
@@ -88,11 +98,13 @@ TEST(Uvpp2Layout, reconstructsTtyFromNativePointersWhenAvailable) {
 TEST(Uvpp2Layout, reconstructsRequestsFromNativePointers) {
   static_assert(std::is_standard_layout_v<uvpp::write_request::native_storage>);
   static_assert(std::is_standard_layout_v<uvpp::connect_request::native_storage>);
+  static_assert(std::is_standard_layout_v<uvpp::fs::raw::request::native_storage>);
   static_assert(std::is_standard_layout_v<uvpp::shutdown_request::native_storage>);
   static_assert(std::is_standard_layout_v<uvpp::udp_send_request::native_storage>);
 
   uvpp::write_request write;
   uvpp::connect_request connect;
+  uvpp::fs::raw::request fs;
   uvpp::shutdown_request shutdown;
   uvpp::udp_send_request udp_send;
 
@@ -100,6 +112,8 @@ TEST(Uvpp2Layout, reconstructsRequestsFromNativePointers) {
   EXPECT_EQ(&write, &uvpp::write_request::from_native(write.native_request()));
   EXPECT_EQ(&connect, &uvpp::connect_request::from_native(connect.native()));
   EXPECT_EQ(&connect, &uvpp::connect_request::from_native(connect.native_request()));
+  EXPECT_EQ(&fs, &uvpp::fs::raw::request::from_native(fs.native()));
+  EXPECT_EQ(&fs, &uvpp::fs::raw::request::from_native(fs.native_request()));
   EXPECT_EQ(&shutdown, &uvpp::shutdown_request::from_native(shutdown.native()));
   EXPECT_EQ(&shutdown, &uvpp::shutdown_request::from_native(shutdown.native_request()));
   EXPECT_EQ(&udp_send, &uvpp::udp_send_request::from_native(udp_send.native()));

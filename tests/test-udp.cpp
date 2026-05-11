@@ -1,5 +1,7 @@
 #include <array>
 #include <cstring>
+#include <memory>
+#include <span>
 
 #include "gtest/gtest.h"
 #include "uvpp/uv.hpp"
@@ -75,9 +77,8 @@ TEST(Uvpp2Udp, sendsAndReceivesDatagrams) {
     });
   });
 
-  sockaddr_in server_addr{};
-  server.sockname(server_addr);
-  uvpp::ipv4 destination{"127.0.0.1", ntohs(server_addr.sin_port)};
+  auto bound_addr = server.sockname();
+  uvpp::ipv4 destination{"127.0.0.1", bound_addr.port()};
 
   static char payload[] = "ping";
   uvpp::buffer_view out{payload, 4};
@@ -138,9 +139,8 @@ TEST(Uvpp2Udp, runsStaticSendCallback) {
     });
   });
 
-  sockaddr_in server_addr{};
-  server.sockname(server_addr);
-  uvpp::ipv4 destination{"127.0.0.1", ntohs(server_addr.sin_port)};
+  auto bound_addr2 = server.sockname();
+  uvpp::ipv4 destination{"127.0.0.1", bound_addr2.port()};
 
   static char payload[] = "ping";
   uvpp::buffer_view out{payload, 4};
@@ -165,6 +165,25 @@ TEST(Uvpp2Udp, appliesSocketOptions) {
   udp.set_ttl(64);
   udp.set_multicast_loop(true);
   udp.set_multicast_ttl(1);
+
+  udp.close();
+  loop.run();
+  loop.close();
+}
+
+TEST(Uvpp2Udp, immediateSendFailureClearsCallback) {
+  uvpp::loop loop;
+  uvpp::udp udp(loop);
+  uvpp::udp_send_request request;
+  std::array payload{'f', 'a', 'i', 'l'};
+  auto token = std::make_shared<int>(1);
+  std::weak_ptr<int> weak = token;
+
+  EXPECT_THROW(udp.send(request, std::as_bytes(std::span{payload}), static_cast<const sockaddr *>(nullptr),
+    [token](uvpp::udp_send_request&, uvpp::result) {}), uvpp::error);
+
+  token.reset();
+  EXPECT_TRUE(weak.expired());
 
   udp.close();
   loop.run();

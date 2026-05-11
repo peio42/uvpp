@@ -1,10 +1,19 @@
 #include <system_error>
+#include <memory>
 
 #include <uv.h>
 
 #include "gtest/gtest.h"
 #include "uvpp/core/callback.hpp"
 #include "uvpp/uv.hpp"
+
+namespace {
+
+void leak_opendir_result_for_death_test() {
+  uvpp::fs::raw::opendir_result result{0, reinterpret_cast<void *>(1)};
+}
+
+}
 
 TEST(Uvpp2Core, mapsLibuvStatusesToErrorCodes) {
   auto success = uvpp::make_error_code(0);
@@ -56,10 +65,81 @@ TEST(Uvpp2Core, loopCloseIsExplicitAndReportsBusyLoops) {
   EXPECT_FALSE(loop.try_close());
 }
 
+TEST(Uvpp2Core, requestCallbacksAreOneShot) {
+  {
+    uvpp::write_request request;
+    auto token = std::make_shared<int>(1);
+    std::weak_ptr<int> weak = token;
+    bool called = false;
+
+    request.set_callback([token, &called](uvpp::write_request&, uvpp::result) {
+      called = true;
+    });
+    token.reset();
+    EXPECT_FALSE(weak.expired());
+
+    request.invoke(0);
+    EXPECT_TRUE(called);
+    EXPECT_TRUE(weak.expired());
+  }
+
+  {
+    uvpp::connect_request request;
+    auto token = std::make_shared<int>(1);
+    std::weak_ptr<int> weak = token;
+    bool called = false;
+
+    request.set_callback([token, &called](uvpp::connect_request&, uvpp::result) {
+      called = true;
+    });
+    token.reset();
+
+    request.invoke(0);
+    EXPECT_TRUE(called);
+    EXPECT_TRUE(weak.expired());
+  }
+
+  {
+    uvpp::shutdown_request request;
+    auto token = std::make_shared<int>(1);
+    std::weak_ptr<int> weak = token;
+    bool called = false;
+
+    request.set_callback([token, &called](uvpp::shutdown_request&, uvpp::result) {
+      called = true;
+    });
+    token.reset();
+
+    request.invoke(0);
+    EXPECT_TRUE(called);
+    EXPECT_TRUE(weak.expired());
+  }
+
+  {
+    uvpp::udp_send_request request;
+    auto token = std::make_shared<int>(1);
+    std::weak_ptr<int> weak = token;
+    bool called = false;
+
+    request.set_callback([token, &called](uvpp::udp_send_request&, uvpp::result) {
+      called = true;
+    });
+    token.reset();
+
+    request.invoke(0);
+    EXPECT_TRUE(called);
+    EXPECT_TRUE(weak.expired());
+  }
+}
+
 #if GTEST_HAS_DEATH_TEST
 TEST(Uvpp2CoreDeathTest, callbackExceptionsTerminate) {
   EXPECT_DEATH(uvpp::detail::invoke_callback([] {
     throw 1;
   }), ".*");
+}
+
+TEST(Uvpp2CoreDeathTest, successfulOpendirResultMustBeConsumed) {
+  EXPECT_DEATH(leak_opendir_result_for_death_test(), ".*");
 }
 #endif

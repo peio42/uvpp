@@ -32,6 +32,7 @@ docs/
   api-principles.md
   callbacks.md
   error-handling.md
+  fs.md
   ownership.md
   process.md
   migration-from-v1.md
@@ -63,16 +64,18 @@ include/uvpp/
   requests/
     request.hpp
     connect.hpp
+    fs.hpp
     write.hpp
     shutdown.hpp
     udp_send.hpp
-    fs.hpp
   net/
     address.hpp
     buffer.hpp
+    socket_address.hpp
   fs/
     file.hpp
     dir.hpp
+    result.hpp
     operations.hpp
 tests/
 examples/
@@ -198,3 +201,17 @@ The first implementation should prove the architecture with:
 - focused tests for lifecycle, callbacks, errors, and basic TCP I/O
 
 Once this slice is stable, add wrappers one libuv object family at a time.
+
+## Loop Run Return Value
+
+`loop::run()` and `loop_view::run()` return `bool`. The return value is `true` if there are still active handles or requests pending after the loop exits (i.e., when run in `UV_RUN_NOWAIT` or `UV_RUN_ONCE` mode); it is `false` when the loop is empty. In the default `UV_RUN_DEFAULT` mode the loop runs until there is no more work and always returns `false`.
+
+## Filesystem Layering
+
+Filesystem operations are intentionally split from normal request wrappers.
+
+`uvpp::fs` is the public C++ layer: it owns the internal `uv_fs_t`, performs cleanup automatically, and returns scalar or owned result values.
+
+`uvpp::fs::raw` is the direct libuv-facing layer: it exposes `raw::request`, manual cleanup, request reuse, caller-owned buffers, request-scoped result views, and static callbacks.
+
+This is the preferred pattern when libuv exposes a protocol that cannot be made safe with a thin wrapper alone: keep the raw protocol available, but do not make it the default public API.

@@ -20,8 +20,11 @@ namespace uvpp {
     }
 
     void invoke(int status) noexcept {
-      if (callback_) {
-        detail::invoke_callback(callback_, *this, result{status});
+      auto callback = std::move(callback_);
+      callback_ = {};
+
+      if (callback) {
+        detail::invoke_callback(callback, *this, result{status});
       }
     }
 

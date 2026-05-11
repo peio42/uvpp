@@ -1,6 +1,6 @@
 .PHONY: clean build test examples
 
-CXX = clang++
+CXX = g++
 CXXFLAGS = -Wall -std=c++20 -Iinclude -I..
 LDLIBS = -luv -pthread -lgtest
 EXAMPLE_LDLIBS = -luv -pthread

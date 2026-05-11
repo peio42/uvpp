@@ -3,6 +3,7 @@
 #include <string>
 #include <string_view>
 #include <utility>
+#include <vector>
 
 #include <uv.h>
 
@@ -13,6 +14,19 @@
 #include "uvpp/requests/connect.hpp"
 
 namespace uvpp {
+
+  enum class pipe_chmod_flag : int {
+    readable = UV_READABLE,
+    writable = UV_WRITABLE
+  };
+
+  constexpr int operator|(pipe_chmod_flag lhs, pipe_chmod_flag rhs) noexcept {
+    return static_cast<int>(lhs) | static_cast<int>(rhs);
+  }
+
+  constexpr int operator|(int lhs, pipe_chmod_flag rhs) noexcept {
+    return lhs | static_cast<int>(rhs);
+  }
 
   class pipe final : public stream<pipe, uv_pipe_t> {
   public:
@@ -27,6 +41,18 @@ namespace uvpp {
     void bind(std::string_view name) {
       std::string storage{name};
       throw_if_error(uv_pipe_bind(native(), storage.c_str()));
+    }
+
+    std::string sockname() const {
+      return get_name([this](char *buffer, std::size_t *size) {
+        return uv_pipe_getsockname(native(), buffer, size);
+      });
+    }
+
+    std::string peername() const {
+      return get_name([this](char *buffer, std::size_t *size) {
+        return uv_pipe_getpeername(native(), buffer, size);
+      });
     }
 
     void connect(connect_request &request, std::string_view name, connect_request::callback callback) {
@@ -59,7 +85,37 @@ namespace uvpp {
       return uv_pipe_pending_type(const_cast<uv_pipe_t *>(native()));
     }
 
+    void chmod(int flags) {
+      throw_if_error(uv_pipe_chmod(native(), flags));
+    }
+
+    void chmod(pipe_chmod_flag flag) {
+      chmod(static_cast<int>(flag));
+    }
+
   private:
+    template<class Getter>
+    static std::string get_name(Getter getter) {
+      std::vector<char> buffer(256);
+
+      for (;;) {
+        auto size = buffer.size();
+        auto status = getter(buffer.data(), &size);
+
+        if (status == UV_ENOBUFS) {
+          buffer.resize(size);
+          continue;
+        }
+
+        throw_if_error(status);
+        if (size > 0 && buffer[size - 1] == '\0') {
+          --size;
+        }
+
+        return std::string{buffer.data(), size};
+      }
+    }
+
     static void connect_trampoline(uv_connect_t *raw, int status) noexcept {
       connect_request::from_native(raw).invoke(status);
     }

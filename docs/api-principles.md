@@ -59,6 +59,26 @@ uv_stream_t* stream = tcp.native_stream();
 
 There should be no implicit conversion operator to raw libuv pointers in the primary API. Implicit conversions make call sites short, but they reintroduce the same ambiguity v2 is meant to remove.
 
+## Thin Native Operations
+
+Low-level wrappers may expose immediate libuv operations directly when they do not change ownership semantics.
+
+Examples:
+
+```cpp
+tcp.no_delay(true);
+tcp.keep_alive(true, 60);
+tcp.simultaneous_accepts(true);
+
+auto fd = tcp.fileno();
+auto bytes = stream.write_queue_size();
+
+udp.connect(ipv4{"127.0.0.1", 1234});
+pipe.pending_instances(4);
+```
+
+These functions should remain thin: validate through libuv, throw `uvpp::error` on immediate failure, and avoid storing extra state in uvpp.
+
 ## User Data
 
 The native `data` field is reserved for the application, not for uvpp internals.
@@ -153,3 +173,5 @@ Or a higher-level convenience that clearly owns the operation state:
 ```cpp
 tcp.async_write(data, callback);
 ```
+
+Filesystem operations use this second shape by default. `uvpp::fs` owns the internal request and buffers/results needed for safe callback delivery, while `uvpp::fs::raw` exposes the manual libuv request protocol for callers that explicitly want it.

@@ -30,6 +30,8 @@ Valid patterns:
 
 The low-level handle destructor does not call `uv_close()`. Destroying a handle while libuv can still reference it is a user lifetime error.
 
+Some handle callback result objects expose data borrowed from libuv or from caller-provided callback storage for the duration of the callback. For example, `fs_event_result::filename()` is a borrowed string view, `fs_poll_result::previous()` / `current()` are borrowed stat pointers, `read_result::raw_buffer()` points to the buffer returned by the stream allocation callback, and `udp_receive_result::address()` / `raw_buffer()` are borrowed from the receive callback arguments. Copy those values inside the callback if they must survive it.
+
 ## Requests
 
 Requests have operation-specific lifetimes. The request must outlive the asynchronous operation that uses it.
@@ -48,6 +50,10 @@ tcp.async_write(buffers, callback);
 ```
 
 The higher-level API may allocate operation state internally. That cost must be visible in the API name or documentation.
+
+`fs::raw::request` is a special case because libuv uses `uv_fs_t` for every filesystem operation and requires `uv_fs_req_cleanup()` after completion. uvpp keeps that cleanup explicit in the raw API. The callback must call `req.cleanup()` after consuming the result and before reusing or destroying the request. `req.scoped_cleanup()` is an opt-in stack guard for that call.
+
+The public `uvpp::fs` API owns the raw request internally, cleans it automatically, and returns scalar or owned result values. Use `fs::raw` when the caller needs exact libuv control, request reuse, caller-owned buffers, static callbacks, or request-scoped directory iteration.
 
 ## Buffers
 

@@ -79,9 +79,8 @@ TEST(Uvpp2Tcp, acceptsReadsAndWrites) {
     });
   });
 
-  sockaddr_in bound{};
-  server.sockname(bound);
-  uvpp::ipv4 connect_addr{"127.0.0.1", ntohs(bound.sin_port)};
+  auto bound = server.sockname();
+  uvpp::ipv4 connect_addr{"127.0.0.1", bound.port()};
 
   client.connect(connect_req, connect_addr, [&](uvpp::connect_request &request, uvpp::result status) {
     ASSERT_TRUE(status);
