@@ -95,6 +95,13 @@ namespace uvpp::fs::raw {
       return readdir_result{request.raw_result()};
     }
 
+    template<class Submit>
+    void submit_closedir(directory &dir, Submit submit) {
+      auto *native_dir = dir.native();
+      submit(native_dir);
+      dir.release();
+    }
+
   }
 
   inline void open(loop_view loop, request &request, std::string_view path, int flags, int mode,
@@ -556,9 +563,9 @@ namespace uvpp::fs::raw {
 
   inline void closedir(loop_view loop, request &request, directory &&dir, status_callback callback) {
     detail::set_callback(request, std::move(callback), detail::make_status_result);
-    auto *native_dir = dir.native();
-    detail::submit(request, uv_fs_closedir(loop.native(), request.native(), native_dir, detail::trampoline));
-    dir.release();
+    detail::submit_closedir(dir, [&](uv_dir_t *native_dir) {
+      detail::submit(request, uv_fs_closedir(loop.native(), request.native(), native_dir, detail::trampoline));
+    });
   }
 
   inline void closedir(loop &loop, request &request, directory &&dir, status_callback callback) {
@@ -567,14 +574,14 @@ namespace uvpp::fs::raw {
 
   template<auto Callback>
   void closedir_static(loop_view loop, request &request, directory &&dir) {
-    auto *native_dir = dir.native();
-    detail::submit(request, uv_fs_closedir(loop.native(), request.native(), native_dir,
-      [](uv_fs_t *raw) noexcept {
-        auto &req = request::from_native(raw);
-        auto result = detail::make_status_result(req);
-        uvpp::detail::invoke_static_callback<Callback>(req, result);
-      }));
-    dir.release();
+    detail::submit_closedir(dir, [&](uv_dir_t *native_dir) {
+      detail::submit(request, uv_fs_closedir(loop.native(), request.native(), native_dir,
+        [](uv_fs_t *raw) noexcept {
+          auto &req = request::from_native(raw);
+          auto result = detail::make_status_result(req);
+          uvpp::detail::invoke_static_callback<Callback>(req, result);
+        }));
+    });
   }
 
   template<auto Callback>

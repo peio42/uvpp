@@ -419,6 +419,17 @@ TEST(Uvpp2Fs, opensReadsAndClosesDirectory) {
   std::filesystem::remove_all(path);
 }
 
+TEST(Uvpp2Fs, failedClosedirSubmissionKeepsDirectoryOwnership) {
+  uvpp::fs::raw::directory dir{reinterpret_cast<uv_dir_t *>(0x1)};
+
+  EXPECT_THROW(uvpp::fs::raw::detail::submit_closedir(dir, [](uv_dir_t *) {
+    throw uvpp::error{UV_EINVAL};
+  }), uvpp::error);
+
+  EXPECT_TRUE(dir);
+  static_cast<void>(dir.release());
+}
+
 TEST(Uvpp2Fs, runsStaticCopyfileCallback) {
   auto source = temp_path("static-copy-source.txt");
   auto copied = temp_path("static-copy-destination.txt");
