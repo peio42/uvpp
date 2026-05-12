@@ -1,4 +1,4 @@
-name: Release Package
+name: Release
 
 on:
   workflow_dispatch:
@@ -9,16 +9,16 @@ on:
         type: string
 
 concurrency:
-  group: release-package-${{ inputs.version }}
+  group: release-${{ inputs.version }}
   cancel-in-progress: false
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
-  validate-and-package:
+  validate-and-release:
     runs-on: ubuntu-latest
-    name: Validate and package
+    name: Validate and release
 
     steps:
       - name: Check out repository
@@ -48,12 +48,30 @@ jobs:
           UVPP_VERSION: ${{ inputs.version }}
         run: make package VERSION="$UVPP_VERSION"
 
-      - name: Upload package artifact
-        uses: actions/upload-artifact@v4
+      - name: Create release tag
+        env:
+          UVPP_VERSION: ${{ inputs.version }}
+        run: |
+          tag="v$UVPP_VERSION"
+          if git ls-remote --exit-code --tags origin "refs/tags/$tag" >/dev/null 2>&1; then
+            echo "Tag already exists: $tag"
+            exit 1
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -a "$tag" -m "uvpp $UVPP_VERSION"
+          git push origin "refs/tags/$tag"
+
+      - name: Publish GitHub release
+        uses: softprops/action-gh-release@v2
         with:
-          name: uvpp-${{ inputs.version }}
-          path: |
+          tag_name: v${{ inputs.version }}
+          name: uvpp ${{ inputs.version }}
+          target_commitish: ${{ github.sha }}
+          prerelease: ${{ contains(inputs.version, '-') }}
+          generate_release_notes: true
+          fail_on_unmatched_files: true
+          files: |
             dist/uvpp-${{ inputs.version }}.tar.gz
             dist/SHA256SUMS
-          if-no-files-found: error
-          retention-days: 90
