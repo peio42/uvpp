@@ -7,12 +7,18 @@ on:
         description: Version to package, for example 2.0.0 or 2.0.0-rc.1
         required: true
         type: string
+      run_tests:
+        description: Run GCC and Clang tests again instead of requiring existing CI checks
+        required: false
+        type: boolean
+        default: false
 
 concurrency:
   group: release-${{ inputs.version }}
   cancel-in-progress: false
 
 permissions:
+  checks: read
   contents: write
 
 jobs:
@@ -40,7 +46,24 @@ jobs:
             exit 1
           fi
 
+      - name: Verify existing CI checks
+        if: ${{ !inputs.run_tests }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          api="repos/$GITHUB_REPOSITORY/commits/$GITHUB_SHA/check-runs"
+          for check in GCC Clang; do
+            conclusion="$(gh api "$api" --jq ".check_runs[] | select(.name == \"$check\") | .conclusion" | tail -n 1)"
+            if [ "$conclusion" != "success" ]; then
+              echo "Required CI check is not successful for $GITHUB_SHA: $check ($conclusion)"
+              echo "Run the CI workflow for this commit, or dispatch the release with run_tests=true."
+              exit 1
+            fi
+            echo "$check: $conclusion"
+          done
+
       - name: Run validation tests
+        if: ${{ inputs.run_tests }}
         run: make clean test-all
 
       - name: Build package

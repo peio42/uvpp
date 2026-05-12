@@ -289,7 +289,9 @@ This produces:
 - `dist/uvpp-2.0.0.tar.gz`
 - `dist/checksums.txt`
 
-The manual release workflow takes a version, runs the GCC and Clang validation suites, creates the same package, pushes an annotated `v<version>` tag, and publishes a GitHub Release for that tag.
+The CI workflow runs the GCC and Clang suites on pull requests and on pushes to `main`. Branch pushes are intentionally not tested separately to avoid duplicating the same commit validation when a pull request is open.
+
+The manual release workflow takes a version, verifies that the GCC and Clang CI checks already passed for the commit, creates the same package, pushes an annotated `v<version>` tag, and publishes a GitHub Release for that tag. If the checks are missing, dispatch the release with `run_tests=true` to run the full validation suite inside the release workflow.
 
 Release assets:
 
