@@ -1,4 +1,6 @@
 /.project
+/build/
+/dist/
 /**/*.o
 /**/main
 /.scannerwork/

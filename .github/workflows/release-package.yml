@@ -1,0 +1,59 @@
+name: Release Package
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Version to package, for example 2.0.0 or 2.0.0-rc.1
+        required: true
+        type: string
+
+concurrency:
+  group: release-package-${{ inputs.version }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  validate-and-package:
+    runs-on: ubuntu-latest
+    name: Validate and package
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y g++ clang libgtest-dev libuv1-dev
+
+      - name: Validate version
+        env:
+          UVPP_VERSION: ${{ inputs.version }}
+        run: |
+          version="$UVPP_VERSION"
+          if ! printf '%s\n' "$version" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+([-.][0-9A-Za-z.-]+)?$'; then
+            echo "Invalid version: $version"
+            echo "Expected semver-like value, example: 2.0.0 or 2.0.0-rc.1"
+            exit 1
+          fi
+
+      - name: Run validation tests
+        run: make clean test-all
+
+      - name: Build package
+        env:
+          UVPP_VERSION: ${{ inputs.version }}
+        run: make package VERSION="$UVPP_VERSION"
+
+      - name: Upload package artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: uvpp-${{ inputs.version }}
+          path: |
+            dist/uvpp-${{ inputs.version }}.tar.gz
+            dist/SHA256SUMS
+          if-no-files-found: error
+          retention-days: 90

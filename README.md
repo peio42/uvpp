@@ -252,10 +252,24 @@ Build examples and run tests:
 make test
 ```
 
+Run the same suite with both supported compilers:
+
+```sh
+make test-all
+```
+
+Or target one compiler explicitly:
+
+```sh
+make test-gcc
+make test-clang
+```
+
 Build only:
 
 ```sh
 make build
+make build-all
 ```
 
 Remove generated objects and binaries:
@@ -263,6 +277,19 @@ Remove generated objects and binaries:
 ```sh
 make clean
 ```
+
+Create a local header-only package:
+
+```sh
+make package VERSION=2.0.0
+```
+
+This produces:
+
+- `dist/uvpp-2.0.0.tar.gz`
+- `dist/SHA256SUMS`
+
+The release workflow runs the GCC and Clang validation suites before producing the same package as a GitHub Actions artifact.
 
 ## Documentation
 
