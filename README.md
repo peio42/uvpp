@@ -287,14 +287,14 @@ make package VERSION=2.0.0
 This produces:
 
 - `dist/uvpp-2.0.0.tar.gz`
-- `dist/SHA256SUMS`
+- `dist/checksums.txt`
 
 The manual release workflow takes a version, runs the GCC and Clang validation suites, creates the same package, pushes an annotated `v<version>` tag, and publishes a GitHub Release for that tag.
 
 Release assets:
 
 - `uvpp-<version>.tar.gz`
-- `SHA256SUMS`
+- `checksums.txt`
 
 Versions containing a prerelease suffix such as `2.0.0-rc.1` are published as GitHub prereleases.
 

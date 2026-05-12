@@ -64,6 +64,7 @@ jobs:
           git push origin "refs/tags/$tag"
 
       - name: Publish GitHub release
+        id: release
         uses: softprops/action-gh-release@v3
         with:
           tag_name: v${{ inputs.version }}
@@ -74,4 +75,21 @@ jobs:
           fail_on_unmatched_files: true
           files: |
             dist/uvpp-${{ inputs.version }}.tar.gz
-            dist/SHA256SUMS
+            dist/checksums.txt
+
+      - name: Write release summary
+        env:
+          RELEASE_URL: ${{ steps.release.outputs.url }}
+          UVPP_VERSION: ${{ inputs.version }}
+        run: |
+          {
+            echo "## Release published"
+            echo
+            echo "- Version: \`$UVPP_VERSION\`"
+            echo "- Tag: \`v$UVPP_VERSION\`"
+            echo "- URL: $RELEASE_URL"
+            echo
+            echo "Assets:"
+            echo "- \`uvpp-$UVPP_VERSION.tar.gz\`"
+            echo "- \`checksums.txt\`"
+          } >> "$GITHUB_STEP_SUMMARY"
