@@ -14,7 +14,7 @@
 #include "uvpp/requests/shutdown.hpp"
 #include "uvpp/requests/write.hpp"
 
-namespace uvpp {
+namespace uv {
 
   class read_result {
   public:

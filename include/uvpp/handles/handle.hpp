@@ -9,7 +9,7 @@
 #include "uvpp/core/error.hpp"
 #include "uvpp/core/native.hpp"
 
-namespace uvpp {
+namespace uv {
 
   template<class Derived, class Raw>
   class basic_handle : public detail::native_storage<Derived, Raw, uv_handle_t> {

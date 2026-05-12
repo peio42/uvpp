@@ -18,7 +18,7 @@
 #include "uvpp/net/socket_address.hpp"
 #include "uvpp/requests/udp_send.hpp"
 
-namespace uvpp {
+namespace uv {
 
   class udp_receive_result {
   public:

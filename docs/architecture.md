@@ -6,6 +6,17 @@ uvpp v2 is a header-only C++ wrapper over libuv with a small compiled footprint 
 
 The v2 architecture treats libuv as the native engine and uvpp as a typed C++ facade around it.
 
+The project, repository, and include root keep the `uvpp` name. The public C++ API lives in namespace `uv`:
+
+```cpp
+#include <uvpp/uv.hpp>
+
+uv::loop loop;
+uv::tcp server(loop);
+```
+
+v2 does not provide a compatibility alias from `uvpp` to `uv`.
+
 ## Language Baseline
 
 uvpp v2 requires C++20.
@@ -173,7 +184,7 @@ These functions are the only sanctioned locations for raw pointer reinterpretati
 
 ## User Data
 
-libuv's `data` fields remain user-owned in v2. uvpp must not store `this` in `raw.data` for handles or requests.
+libuv's `data` fields remain user-owned in v2. Wrapper objects must not store `this` in `raw.data` for handles or requests.
 
 Expose them through typed non-owning helpers:
 
@@ -210,8 +221,8 @@ Once this slice is stable, add wrappers one libuv object family at a time.
 
 Filesystem operations are intentionally split from normal request wrappers.
 
-`uvpp::fs` is the public C++ layer: it owns the internal `uv_fs_t`, performs cleanup automatically, and returns scalar or owned result values.
+`uv::fs` is the public C++ layer: it owns the internal `uv_fs_t`, performs cleanup automatically, and returns scalar or owned result values.
 
-`uvpp::fs::raw` is the direct libuv-facing layer: it exposes `raw::request`, manual cleanup, request reuse, caller-owned buffers, request-scoped result views, and static callbacks.
+`uv::fs::raw` is the direct libuv-facing layer: it exposes `raw::request`, manual cleanup, request reuse, caller-owned buffers, request-scoped result views, and static callbacks.
 
 This is the preferred pattern when libuv exposes a protocol that cannot be made safe with a thin wrapper alone: keep the raw protocol available, but do not make it the default public API.

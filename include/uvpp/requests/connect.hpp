@@ -9,7 +9,7 @@
 #include "uvpp/core/error.hpp"
 #include "uvpp/requests/request.hpp"
 
-namespace uvpp {
+namespace uv {
 
   class connect_request final : public basic_request<connect_request, uv_connect_t> {
   public:

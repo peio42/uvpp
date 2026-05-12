@@ -4,7 +4,7 @@
 
 #include <uv.h>
 
-namespace uvpp {
+namespace uv {
 
   class error_category final : public std::error_category {
   public:

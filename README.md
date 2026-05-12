@@ -2,167 +2,266 @@
 
 # uvpp v2
 
-uvpp v2 is a modern, header-only C++20 wrapper around [libuv](https://libuv.org/).
+uvpp v2 is a header-only C++20 wrapper around [libuv](https://libuv.org/).
 
-The goal of v2 is to keep libuv's model visible while providing a cleaner C++ API:
+The project keeps the `uvpp` name for the repository and include path, while the public C++ API lives in namespace `uv`:
 
-- no inheritance from libuv C structs;
-- no user-facing casts in callbacks;
-- explicit ownership and lifetime rules;
-- modern C++ vocabulary types such as `std::chrono`, `std::span`, and `std::string_view`;
-- explicit error handling through `uvpp::error` and `uvpp::result`.
+```cpp
+#include <uvpp/uv.hpp>
+
+uv::loop loop;
+uv::timer timer(loop);
+```
+
+v2 is not a compatibility layer for uvpp v1. It is a cleaner C++ API over libuv with explicit lifetime rules, typed callbacks, native interop, and a small compiled footprint.
+
+## Why uvpp v2?
+
+- Header-only integration: add `include/` to your include path and link with libuv.
+- C++20 vocabulary: `std::chrono`, `std::span`, `std::string_view`, typed value wrappers, and move-aware result types.
+- No user-facing casts in normal callbacks: callbacks receive `uv::tcp&`, `uv::write_request&`, `uv::fs::read_result`, etc.
+- Explicit native interop: use `native()`, `native_handle()`, or `native_stream()` when you need raw libuv access.
+- Application-owned `data`: libuv `data` fields remain available through `user_data<T>()`.
+- Two callback styles: ergonomic runtime callables and zero-overhead `template<auto Callback>` static callbacks.
+- Explicit async lifetime: handles do not pretend that `uv_close()` is synchronous.
+- Filesystem layering: `uv::fs` is safe-by-default, while `uv::fs::raw` exposes the exact libuv request protocol.
 
 ## Status
 
-uvpp v2 is under active construction on the `v2` branch.
+uvpp v2 is under active development. The current implementation covers the core loop, main handle families, stream requests, UDP, filesystem operations, watchers, process spawning, and focused tests.
 
-It is already usable for the current vertical slice, but it is not feature-complete yet. The API should still be considered evolving until v2 is finalized.
+The API is usable for experimentation and early integration, but should still be considered evolving until v2 is finalized.
 
 ## Requirements
 
 - C++20 compiler
 - libuv
-
-For repository builds and tests, the current setup also uses Google Test.
-
-## Integration
-
-uvpp v2 is header-only. Add the `include/` directory to your include path and link against libuv.
-
-```cpp
-#include <uvpp/uv.hpp>
-```
+- Google Test, only for building this repository's test suite
 
 Typical compile command:
 
 ```sh
-clang++ -std=c++20 -I/path/to/uvpp/include app.cpp -luv -pthread
+g++ -std=c++20 -I/path/to/uvpp/include app.cpp -luv -pthread
 ```
 
-## Current surface
-
-The current v2 slice includes:
-
-- loop types: `uvpp::loop`, `uvpp::loop_view`, `uvpp::default_loop()`
-- error types: `uvpp::error`, `uvpp::result`
-- networking helpers: `uvpp::ipv4`, `uvpp::ipv6`, `uvpp::buffer_view`
-- requests: `uvpp::connect_request`, `uvpp::write_request`
-- handles: `uvpp::async`, `uvpp::check`, `uvpp::idle`, `uvpp::pipe`, `uvpp::prepare`, `uvpp::tcp`, `uvpp::timer`, `uvpp::tty`
-
-## Core usage patterns
-
-### Create or access a loop
+## Quick Start
 
 ```cpp
-uvpp::loop loop;
-auto default_loop = uvpp::default_loop();
-```
+#include <chrono>
+#include <iostream>
 
-### Runtime callbacks
+#include <uvpp/uv.hpp>
 
-Runtime callbacks accept lambdas with captures and receive typed wrapper references.
-
-```cpp
 using namespace std::chrono_literals;
 
-uvpp::loop loop;
-uvpp::timer timer(loop);
+int main() {
+  uv::loop loop;
+  uv::timer timer(loop);
 
+  int ticks = 0;
+
+  timer.start(100ms, 100ms, [&](uv::timer& self) {
+    std::cout << "tick\n";
+
+    if (++ticks == 3) {
+      self.close();
+    }
+  });
+
+  loop.run();
+  loop.close();
+}
+```
+
+## Callback Models
+
+Runtime callbacks are the ergonomic default. They can capture state and are stored in the wrapper or request object.
+
+```cpp
+uv::timer timer(loop);
 int ticks = 0;
 
-timer.start(100ms, 100ms, [&](uvpp::timer& self) {
-  if (++ticks == 3) {
+timer.start(250ms, [&](uv::timer& self) {
+  if (++ticks == 1) {
     self.close();
   }
 });
-
-loop.run();
-loop.close();
 ```
 
-### Static callbacks
-
-For zero-allocation callback paths, use the `*_static` APIs.
+Static callbacks avoid storing a callable and are useful for zero-allocation paths.
 
 ```cpp
-using namespace std::chrono_literals;
-
-static void on_tick(uvpp::timer& self) {
-  self.close();
+static void on_tick(uv::timer& timer) {
+  timer.close();
 }
 
-uvpp::loop loop;
-uvpp::timer timer(loop);
-
+uv::timer timer(loop);
 timer.start_static<on_tick>(250ms);
-loop.run();
-loop.close();
 ```
 
-### Explicit close and lifetime
-
-`uv_close()` is asynchronous in libuv, so uvpp v2 keeps that visible. Handles do not auto-close in destructors.
-
-```cpp
-auto* client = new uvpp::tcp(loop);
-
-client->close([client](uvpp::tcp&) {
-  delete client;
-});
-```
-
-### Error handling
-
-- immediate libuv submission failures throw `uvpp::error`;
-- asynchronous completion status is delivered as `uvpp::result`;
-- EOF is represented explicitly in `uvpp::read_result`.
+Immediate submission failures throw `uv::error`. Asynchronous completion is reported through `uv::result` or a typed result object.
 
 ```cpp
 try {
-  uvpp::tcp server(loop);
-  server.bind(uvpp::ipv4{"0.0.0.0", 2345});
-} catch (const uvpp::error& e) {
-  std::cerr << e.what() << '\n';
+  uv::tcp server(loop);
+  server.bind(uv::ipv4{"0.0.0.0", 2345});
+} catch (const uv::error& error) {
+  std::cerr << error.what() << '\n';
 }
 ```
 
-## Example
+## Handles and Requests
 
-The repository ships a TCP echo server example in `examples/tcp-echo-server.cpp`.
+The implemented handle surface currently includes:
 
-Minimal server setup:
+- Streams: `uv::tcp`, `uv::pipe`, `uv::tty`
+- Datagram sockets: `uv::udp`
+- Simple loop handles: `uv::timer`, `uv::async`, `uv::prepare`, `uv::check`, `uv::idle`
+- System handles: `uv::signal`, `uv::poll`, `uv::process`
+- Filesystem watchers: `uv::fs_event`, `uv::fs_poll`
+
+Stream and UDP operations use explicit request objects when libuv requires an async request lifetime:
 
 ```cpp
-uvpp::loop loop;
-uvpp::tcp server(loop);
+uv::connect_request connect;
+uv::write_request write;
+uv::shutdown_request shutdown;
+uv::udp_send_request send;
+```
 
-server.bind(uvpp::ipv4{"0.0.0.0", 2345});
-server.listen([&](uvpp::tcp& srv, uvpp::result status) {
+This keeps ownership visible and avoids hidden per-operation allocation in the low-level API.
+
+## Streams
+
+Streams expose libuv's accept/read/write model with typed wrappers.
+
+```cpp
+uv::tcp server(loop);
+server.bind(uv::ipv4{"127.0.0.1", 2345});
+
+server.listen([&](uv::tcp& srv, uv::result status) {
   if (!status) {
     return;
   }
 
-  auto* client = new uvpp::tcp(loop);
+  auto* client = new uv::tcp(loop);
   srv.accept(*client);
-  // start reading and writing...
-});
 
-loop.run();
+  client->close([client](uv::tcp&) {
+    delete client;
+  });
+});
 ```
 
-## Building and testing this repository
+`uv_close()` is asynchronous. Handles therefore do not auto-close in their destructor; close explicitly and keep the wrapper alive until the close callback has run.
+
+## Buffers
+
+uvpp v2 separates owning storage from borrowed views:
+
+- `uv::buffer_view`: non-owning `uv_buf_t`-compatible view.
+- `uv::owned_buffer`: owning byte storage that can create a `buffer_view`.
+- `std::span<std::byte>` / `std::span<const std::byte>`: generic byte ranges.
+
+```cpp
+uv::owned_buffer storage{4096};
+uv::buffer_view view = storage.view();
+```
+
+Low-level async write and UDP send operations do not copy submitted buffers. The referenced memory must outlive the completion callback.
+
+## Filesystem
+
+Filesystem APIs are split into two layers.
+
+`uv::fs` is the recommended C++ layer. It owns the internal `uv_fs_t`, cleans it automatically, and returns scalar or owned results that may outlive the callback.
+
+```cpp
+#include <fcntl.h>
+#include <span>
+
+std::array payload{'o', 'k'};
+
+uv::fs::open(loop, "out.txt", O_CREAT | O_TRUNC | O_WRONLY, 0644,
+  [&](uv::fs::open_result open) {
+    if (!open) {
+      return;
+    }
+
+    uv::file_descriptor file = open.file();
+
+    uv::fs::write(loop, file, std::as_bytes(std::span{payload}), 0,
+      [&, file](uv::fs::byte_count_result written) {
+        uv::fs::close(loop, file, [](uv::fs::status_result) {});
+      });
+  });
+```
+
+`uv::fs::raw` is the libuv-shaped layer. It exposes `uv::fs::raw::request`, manual `cleanup()`, request reuse, static callbacks, and request-scoped result views.
+
+```cpp
+uv::fs::raw::request request;
+
+uv::fs::raw::stat(loop, request, "out.txt",
+  [](uv::fs::raw::request& request, uv::fs::raw::stat_result result) {
+    auto cleanup = request.scoped_cleanup();
+
+    if (result) {
+      auto size = result.native().st_size;
+      (void)size;
+    }
+  });
+```
+
+## Native Interop and User Data
+
+Raw libuv access is explicit:
+
+```cpp
+uv_tcp_t* raw_tcp = tcp.native();
+uv_stream_t* raw_stream = tcp.native_stream();
+uv_handle_t* raw_handle = tcp.native_handle();
+```
+
+libuv `data` fields are reserved for the application, not for wrapper internals.
+
+```cpp
+struct session {};
+
+session state;
+tcp.user_data(state);
+
+auto* current = tcp.user_data<session>();
+tcp.clear_user_data();
+```
+
+`user_data<T>()` is a typed cast convenience over libuv's `void*`. It is intentionally zero-overhead and does not make the field type-safe.
+
+## Building This Repository
 
 Ubuntu packages:
 
 ```sh
 sudo apt-get update
-sudo apt-get install -y clang libgtest-dev libuv1-dev
+sudo apt-get install -y g++ libgtest-dev libuv1-dev
 ```
 
-Then build the example and run the test suite:
+Build examples and run tests:
 
 ```sh
 make test
+```
+
+Build only:
+
+```sh
+make build
+```
+
+Remove generated objects and binaries:
+
+```sh
+make clean
 ```
 
 ## Documentation
@@ -171,6 +270,10 @@ make test
 - [API principles](docs/api-principles.md)
 - [Callbacks](docs/callbacks.md)
 - [Error handling](docs/error-handling.md)
+- [Filesystem](docs/fs.md)
 - [Ownership and lifetime](docs/ownership.md)
+- [Process](docs/process.md)
 - [Thread safety](docs/thread-safety.md)
 - [Migration from v1](docs/migration-from-v1.md)
+
+The repository also ships a TCP echo server in [`examples/tcp-echo-server.cpp`](examples/tcp-echo-server.cpp).

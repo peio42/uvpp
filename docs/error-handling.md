@@ -6,15 +6,15 @@ uvpp v2 should make libuv errors explicit and consistent. The library may offer 
 
 The grammar is:
 
-- immediate libuv submission errors throw `uvpp::error` in the primary low-level API;
+- immediate libuv submission errors throw `uv::error` in the primary low-level API;
 - optional non-throwing immediate APIs use the `try_` prefix and return `std::error_code`;
-- asynchronous callback statuses are delivered as `uvpp::result`;
-- `uvpp::result` exposes `status()` and `error_code()`, not `error()`;
+- asynchronous callback statuses are delivered as `uv::result`;
+- `uv::result` exposes `status()` and `error_code()`, not `error()`;
 - v2 does not use `result<void>` in the low-level API.
 
 ## Error Type
 
-Use a small `uvpp::error` type for exceptions and expose `std::error_code` for non-throwing APIs.
+Use a small `uv::error` type for exceptions and expose `std::error_code` for non-throwing APIs.
 
 ```cpp
 class error : public std::system_error {

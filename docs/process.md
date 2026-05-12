@@ -21,7 +21,7 @@ Rules:
 - `flags` is a raw `uv_process_flags` bitmask because the flag set is already compact and libuv-specific;
 - `stdio` is currently a `std::vector<uv_stdio_container_t>` as an explicit low-level escape hatch.
 
-`process_options` only needs to outlive the `process` constructor call. `uv_spawn` consumes the native options synchronously. After construction, uvpp stores only the process handle and the exit callback slot.
+`process_options` only needs to outlive the `process` constructor call. `uv_spawn` consumes the native options synchronously. After construction, the wrapper stores only the process handle and the exit callback slot.
 
 ## Stdio Policy
 
@@ -45,11 +45,11 @@ Until that layer exists, the low-level API keeps `stdio` native and explicit. Th
 The process exit callback is fixed when `uv_spawn` is called, so `process` cannot use a later `start_static<Callback>()` shape. It supports two construction paths instead:
 
 ```cpp
-uvpp::process child(loop, options, [](uvpp::process& child, uvpp::process_exit exit) {
+uv::process child(loop, options, [](uv::process& child, uv::process_exit exit) {
   child.close();
 });
 
-uvpp::process static_child(loop, options, uvpp::process::static_callback<on_exit>{});
+uv::process static_child(loop, options, uv::process::static_callback<on_exit>{});
 ```
 
 The runtime form stores one exit callback in the process object. The static form stores no callable.

@@ -13,7 +13,7 @@
 #include "uvpp/net/socket_address.hpp"
 #include "uvpp/requests/connect.hpp"
 
-namespace uvpp {
+namespace uv {
 
   class tcp final : public stream<tcp, uv_tcp_t> {
   public:

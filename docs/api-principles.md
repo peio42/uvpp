@@ -77,11 +77,11 @@ udp.connect(ipv4{"127.0.0.1", 1234});
 pipe.pending_instances(4);
 ```
 
-These functions should remain thin: validate through libuv, throw `uvpp::error` on immediate failure, and avoid storing extra state in uvpp.
+These functions should remain thin: validate through libuv, throw `uv::error` on immediate failure, and avoid storing extra state in the wrapper.
 
 ## User Data
 
-The native `data` field is reserved for the application, not for uvpp internals.
+The native `data` field is reserved for the application, not for wrapper internals.
 
 Expose it as a typed non-owning pointer API:
 
@@ -174,4 +174,4 @@ Or a higher-level convenience that clearly owns the operation state:
 tcp.async_write(data, callback);
 ```
 
-Filesystem operations use this second shape by default. `uvpp::fs` owns the internal request and buffers/results needed for safe callback delivery, while `uvpp::fs::raw` exposes the manual libuv request protocol for callers that explicitly want it.
+Filesystem operations use this second shape by default. `uv::fs` owns the internal request and buffers/results needed for safe callback delivery, while `uv::fs::raw` exposes the manual libuv request protocol for callers that explicitly want it.

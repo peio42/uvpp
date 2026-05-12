@@ -6,7 +6,7 @@
 
 #include "uvpp/core/error.hpp"
 
-namespace uvpp {
+namespace uv {
 
   class loop_view {
   public:

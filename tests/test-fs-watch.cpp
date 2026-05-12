@@ -22,14 +22,14 @@ void write_text(const std::filesystem::path &path, const char *text) {
 }
 
 struct static_poll_state {
-  uvpp::timer *modifier = nullptr;
-  uvpp::timer *timeout = nullptr;
+  uv::timer *modifier = nullptr;
+  uv::timer *timeout = nullptr;
   bool changed = false;
 };
 
 static_poll_state *current_static_poll = nullptr;
 
-void on_static_fs_poll(uvpp::fs_poll &poll, uvpp::fs_poll_result result) {
+void on_static_fs_poll(uv::fs_poll &poll, uv::fs_poll_result result) {
   ASSERT_TRUE(result);
   ASSERT_NE(result.previous(), nullptr);
   ASSERT_NE(result.current(), nullptr);
@@ -51,15 +51,15 @@ TEST(Uvpp2FsEvent, reportsDirectoryChanges) {
   std::filesystem::remove_all(dir);
   std::filesystem::create_directory(dir);
 
-  uvpp::loop loop;
-  uvpp::fs_event watcher(loop);
-  uvpp::timer modifier(loop);
-  uvpp::timer timeout(loop);
+  uv::loop loop;
+  uv::fs_event watcher(loop);
+  uv::timer modifier(loop);
+  uv::timer timeout(loop);
   bool changed = false;
 
-  watcher.start(dir.string(), [&](uvpp::fs_event &self, uvpp::fs_event_result event) {
+  watcher.start(dir.string(), [&](uv::fs_event &self, uv::fs_event_result event) {
     ASSERT_TRUE(event);
-    EXPECT_TRUE(event.has(uvpp::fs_event_kind::rename) || event.has(uvpp::fs_event_kind::change));
+    EXPECT_TRUE(event.has(uv::fs_event_kind::rename) || event.has(uv::fs_event_kind::change));
 
     changed = true;
     self.stop();
@@ -70,12 +70,12 @@ TEST(Uvpp2FsEvent, reportsDirectoryChanges) {
 
   EXPECT_EQ(watcher.path(), dir.string());
 
-  modifier.start(20ms, [&](uvpp::timer &timer) {
+  modifier.start(20ms, [&](uv::timer &timer) {
     write_text(file, "created");
     timer.stop();
   });
 
-  timeout.start(2s, [&](uvpp::timer &timer) {
+  timeout.start(2s, [&](uv::timer &timer) {
     if (!changed) {
       watcher.stop();
       watcher.close();
@@ -96,13 +96,13 @@ TEST(Uvpp2FsPoll, reportsFileChanges) {
   std::filesystem::remove(file);
   write_text(file, "a");
 
-  uvpp::loop loop;
-  uvpp::fs_poll watcher(loop);
-  uvpp::timer modifier(loop);
-  uvpp::timer timeout(loop);
+  uv::loop loop;
+  uv::fs_poll watcher(loop);
+  uv::timer modifier(loop);
+  uv::timer timeout(loop);
   bool changed = false;
 
-  watcher.start(file.string(), 10ms, [&](uvpp::fs_poll &self, uvpp::fs_poll_result result) {
+  watcher.start(file.string(), 10ms, [&](uv::fs_poll &self, uv::fs_poll_result result) {
     ASSERT_TRUE(result);
     ASSERT_NE(result.previous(), nullptr);
     ASSERT_NE(result.current(), nullptr);
@@ -118,12 +118,12 @@ TEST(Uvpp2FsPoll, reportsFileChanges) {
 
   EXPECT_EQ(watcher.path(), file.string());
 
-  modifier.start(30ms, [&](uvpp::timer &timer) {
+  modifier.start(30ms, [&](uv::timer &timer) {
     write_text(file, "changed");
     timer.stop();
   });
 
-  timeout.start(2s, [&](uvpp::timer &timer) {
+  timeout.start(2s, [&](uv::timer &timer) {
     if (!changed) {
       watcher.stop();
       watcher.close();
@@ -144,21 +144,21 @@ TEST(Uvpp2FsPoll, runsStaticCallback) {
   std::filesystem::remove(file);
   write_text(file, "a");
 
-  uvpp::loop loop;
-  uvpp::fs_poll watcher(loop);
-  uvpp::timer modifier(loop);
-  uvpp::timer timeout(loop);
+  uv::loop loop;
+  uv::fs_poll watcher(loop);
+  uv::timer modifier(loop);
+  uv::timer timeout(loop);
   static_poll_state state{&modifier, &timeout, false};
   current_static_poll = &state;
 
   watcher.start_static<on_static_fs_poll>(file.string(), 10ms);
 
-  modifier.start(30ms, [&](uvpp::timer &timer) {
+  modifier.start(30ms, [&](uv::timer &timer) {
     write_text(file, "changed");
     timer.stop();
   });
 
-  timeout.start(2s, [&](uvpp::timer &timer) {
+  timeout.start(2s, [&](uv::timer &timer) {
     if (!state.changed) {
       watcher.stop();
       watcher.close();

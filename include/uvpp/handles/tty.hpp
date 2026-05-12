@@ -8,7 +8,7 @@
 #include "uvpp/core/loop.hpp"
 #include "uvpp/handles/stream.hpp"
 
-namespace uvpp {
+namespace uv {
 
   enum class tty_mode {
     normal = UV_TTY_MODE_NORMAL,

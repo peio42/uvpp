@@ -2,7 +2,7 @@
 
 #include <uv.h>
 
-namespace uvpp {
+namespace uv {
 
   class file_descriptor {
   public:

@@ -10,7 +10,7 @@
 #include "uvpp/core/loop.hpp"
 #include "uvpp/handles/handle.hpp"
 
-namespace uvpp {
+namespace uv {
 
   class check final : public basic_handle<check, uv_check_t> {
   public:

@@ -12,7 +12,7 @@
 #include "uvpp/fs/dir.hpp"
 #include "uvpp/fs/file.hpp"
 
-namespace uvpp::fs::raw {
+namespace uv::fs::raw {
 
   class status_result {
   public:

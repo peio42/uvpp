@@ -10,7 +10,7 @@
 #include "uvpp/core/loop.hpp"
 #include "uvpp/handles/handle.hpp"
 
-namespace uvpp {
+namespace uv {
 
   enum class poll_event : int {
     readable = UV_READABLE,

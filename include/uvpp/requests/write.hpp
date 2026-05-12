@@ -9,7 +9,7 @@
 #include "uvpp/core/error.hpp"
 #include "uvpp/requests/request.hpp"
 
-namespace uvpp {
+namespace uv {
 
   class write_request final : public basic_request<write_request, uv_write_t> {
   public:

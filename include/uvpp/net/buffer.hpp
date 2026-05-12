@@ -6,7 +6,7 @@
 
 #include <uv.h>
 
-namespace uvpp {
+namespace uv {
 
   class buffer_view {
   public:

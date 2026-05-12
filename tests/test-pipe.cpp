@@ -10,9 +10,9 @@
 
 namespace {
 
-uvpp::buffer_view pipe_alloc(uvpp::pipe &, std::size_t) {
+uv::buffer_view pipe_alloc(uv::pipe &, std::size_t) {
   static std::array<char, 1024> storage{};
-  return uvpp::buffer_view{storage.data(), storage.size()};
+  return uv::buffer_view{storage.data(), storage.size()};
 }
 
 std::string pipe_path() {
@@ -25,14 +25,14 @@ TEST(Uvpp2Pipe, acceptsReadsAndWrites) {
   auto path = pipe_path();
   std::filesystem::remove(path);
 
-  uvpp::loop loop;
-  uvpp::pipe server(loop);
-  uvpp::pipe client(loop);
-  uvpp::connect_request connect_req;
-  uvpp::write_request client_write_req;
-  uvpp::write_request server_write_req;
+  uv::loop loop;
+  uv::pipe server(loop);
+  uv::pipe client(loop);
+  uv::connect_request connect_req;
+  uv::write_request client_write_req;
+  uv::write_request server_write_req;
 
-  std::unique_ptr<uvpp::pipe> accepted;
+  std::unique_ptr<uv::pipe> accepted;
   bool accepted_connection = false;
   bool client_connected = false;
   bool server_read = false;
@@ -43,14 +43,14 @@ TEST(Uvpp2Pipe, acceptsReadsAndWrites) {
   bool server_closed = false;
 
   server.bind(path);
-  server.listen([&](uvpp::pipe &srv, uvpp::result status) {
+  server.listen([&](uv::pipe &srv, uv::result status) {
     ASSERT_TRUE(status);
 
     accepted_connection = true;
-    accepted = std::make_unique<uvpp::pipe>(loop);
+    accepted = std::make_unique<uv::pipe>(loop);
     srv.accept(*accepted);
 
-    accepted->read_start(pipe_alloc, [&](uvpp::pipe &stream, uvpp::read_result read) {
+    accepted->read_start(pipe_alloc, [&](uv::pipe &stream, uv::read_result read) {
       if (read.eof()) {
         return;
       }
@@ -60,28 +60,28 @@ TEST(Uvpp2Pipe, acceptsReadsAndWrites) {
       server_read = true;
 
       static char response[] = "pong";
-      uvpp::buffer_view out{response, 4};
-      stream.write(server_write_req, out, [&](uvpp::write_request &, uvpp::result write_status) {
+      uv::buffer_view out{response, 4};
+      stream.write(server_write_req, out, [&](uv::write_request &, uv::result write_status) {
         ASSERT_TRUE(write_status);
         server_write_done = true;
-        stream.close([&](uvpp::pipe &) {
+        stream.close([&](uv::pipe &) {
           accepted_closed = true;
         });
       });
     });
   });
 
-  client.connect(connect_req, path, [&](uvpp::connect_request &, uvpp::result status) {
+  client.connect(connect_req, path, [&](uv::connect_request &, uv::result status) {
     ASSERT_TRUE(status);
     client_connected = true;
 
     static char payload[] = "ping";
-    uvpp::buffer_view out{payload, 4};
-    client.write(client_write_req, out, [&](uvpp::write_request &, uvpp::result write_status) {
+    uv::buffer_view out{payload, 4};
+    client.write(client_write_req, out, [&](uv::write_request &, uv::result write_status) {
       ASSERT_TRUE(write_status);
       client_write_done = true;
 
-      client.read_start(pipe_alloc, [&](uvpp::pipe &stream, uvpp::read_result read) {
+      client.read_start(pipe_alloc, [&](uv::pipe &stream, uv::read_result read) {
         if (read.eof()) {
           return;
         }
@@ -90,10 +90,10 @@ TEST(Uvpp2Pipe, acceptsReadsAndWrites) {
         auto bytes = read.bytes();
         ASSERT_EQ(bytes.size(), 4u);
         EXPECT_EQ(std::memcmp(bytes.data(), "pong", 4), 0);
-        stream.close([&](uvpp::pipe &) {
+        stream.close([&](uv::pipe &) {
           client_closed = true;
         });
-        server.close([&](uvpp::pipe &) {
+        server.close([&](uv::pipe &) {
           server_closed = true;
         });
       });
@@ -115,10 +115,10 @@ TEST(Uvpp2Pipe, acceptsReadsAndWrites) {
   std::filesystem::remove(path);
 }
 
-static uvpp::pipe *static_pipe_client = nullptr;
+static uv::pipe *static_pipe_client = nullptr;
 static bool static_pipe_failed = false;
 
-static void on_static_pipe_connect(uvpp::connect_request &, uvpp::result status) {
+static void on_static_pipe_connect(uv::connect_request &, uv::result status) {
   EXPECT_FALSE(status);
   static_pipe_failed = true;
   static_pipe_client->close();
@@ -128,9 +128,9 @@ TEST(Uvpp2Pipe, reportsStaticConnectFailureCallback) {
   auto path = pipe_path() + "-static";
   std::filesystem::remove(path);
 
-  uvpp::loop loop;
-  uvpp::pipe client(loop);
-  uvpp::connect_request connect_req;
+  uv::loop loop;
+  uv::pipe client(loop);
+  uv::connect_request connect_req;
   static_pipe_client = &client;
   static_pipe_failed = false;
 

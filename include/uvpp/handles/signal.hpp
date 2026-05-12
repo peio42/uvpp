@@ -10,7 +10,7 @@
 #include "uvpp/core/loop.hpp"
 #include "uvpp/handles/handle.hpp"
 
-namespace uvpp {
+namespace uv {
 
   class signal final : public basic_handle<signal, uv_signal_t> {
   public:

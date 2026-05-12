@@ -7,20 +7,20 @@
 
 namespace {
 
-uvpp::buffer_view test_alloc(uvpp::tcp &, std::size_t) {
+uv::buffer_view test_alloc(uv::tcp &, std::size_t) {
   static std::array<char, 1024> storage{};
-  return uvpp::buffer_view{storage.data(), storage.size()};
+  return uv::buffer_view{storage.data(), storage.size()};
 }
 
 }
 
 TEST(Uvpp2Tcp, acceptsReadsAndWrites) {
-  uvpp::loop loop;
-  uvpp::tcp server(loop);
-  uvpp::tcp client(loop);
-  uvpp::connect_request connect_req;
-  uvpp::write_request client_write_req;
-  uvpp::write_request server_write_req;
+  uv::loop loop;
+  uv::tcp server(loop);
+  uv::tcp client(loop);
+  uv::connect_request connect_req;
+  uv::write_request client_write_req;
+  uv::write_request server_write_req;
 
   int server_marker = 1;
   int client_marker = 2;
@@ -34,7 +34,7 @@ TEST(Uvpp2Tcp, acceptsReadsAndWrites) {
   client_write_req.user_data(client_write_marker);
   server_write_req.user_data(server_write_marker);
 
-  std::unique_ptr<uvpp::tcp> accepted;
+  std::unique_ptr<uv::tcp> accepted;
   bool accepted_connection = false;
   bool client_connected = false;
   bool server_read = false;
@@ -44,19 +44,19 @@ TEST(Uvpp2Tcp, acceptsReadsAndWrites) {
   bool client_closed = false;
   bool server_closed = false;
 
-  uvpp::ipv4 bind_addr{"127.0.0.1", 0};
+  uv::ipv4 bind_addr{"127.0.0.1", 0};
   server.bind(bind_addr);
 
-  server.listen([&](uvpp::tcp &srv, uvpp::result status) {
+  server.listen([&](uv::tcp &srv, uv::result status) {
     ASSERT_TRUE(status);
     EXPECT_EQ(srv.user_data<int>(), &server_marker);
 
     accepted_connection = true;
-    accepted = std::make_unique<uvpp::tcp>(loop);
+    accepted = std::make_unique<uv::tcp>(loop);
     srv.accept(*accepted);
     accepted->user_data(server_marker);
 
-    accepted->read_start(test_alloc, [&](uvpp::tcp &stream, uvpp::read_result read) {
+    accepted->read_start(test_alloc, [&](uv::tcp &stream, uv::read_result read) {
       if (read.eof()) {
         return;
       }
@@ -67,12 +67,12 @@ TEST(Uvpp2Tcp, acceptsReadsAndWrites) {
       server_read = true;
 
       static char response[] = "pong";
-      uvpp::buffer_view out{response, 4};
-      stream.write(server_write_req, out, [&](uvpp::write_request &request, uvpp::result write_status) {
+      uv::buffer_view out{response, 4};
+      stream.write(server_write_req, out, [&](uv::write_request &request, uv::result write_status) {
         ASSERT_TRUE(write_status);
         EXPECT_EQ(request.user_data<int>(), &server_write_marker);
         server_write_done = true;
-        stream.close([&](uvpp::tcp &) {
+        stream.close([&](uv::tcp &) {
           accepted_closed = true;
         });
       });
@@ -80,21 +80,21 @@ TEST(Uvpp2Tcp, acceptsReadsAndWrites) {
   });
 
   auto bound = server.sockname();
-  uvpp::ipv4 connect_addr{"127.0.0.1", bound.port()};
+  uv::ipv4 connect_addr{"127.0.0.1", bound.port()};
 
-  client.connect(connect_req, connect_addr, [&](uvpp::connect_request &request, uvpp::result status) {
+  client.connect(connect_req, connect_addr, [&](uv::connect_request &request, uv::result status) {
     ASSERT_TRUE(status);
     EXPECT_EQ(request.user_data<int>(), &connect_marker);
     client_connected = true;
 
     static char payload[] = "ping";
-    uvpp::buffer_view out{payload, 4};
-    client.write(client_write_req, out, [&](uvpp::write_request &request, uvpp::result write_status) {
+    uv::buffer_view out{payload, 4};
+    client.write(client_write_req, out, [&](uv::write_request &request, uv::result write_status) {
       ASSERT_TRUE(write_status);
       EXPECT_EQ(request.user_data<int>(), &client_write_marker);
       client_write_done = true;
 
-      client.read_start(test_alloc, [&](uvpp::tcp &stream, uvpp::read_result read) {
+      client.read_start(test_alloc, [&](uv::tcp &stream, uv::read_result read) {
         if (read.eof()) {
           return;
         }
@@ -105,10 +105,10 @@ TEST(Uvpp2Tcp, acceptsReadsAndWrites) {
         auto bytes = read.bytes();
         ASSERT_EQ(bytes.size(), 4u);
         EXPECT_EQ(std::memcmp(bytes.data(), "pong", 4), 0);
-        stream.close([&](uvpp::tcp &) {
+        stream.close([&](uv::tcp &) {
           client_closed = true;
         });
-        server.close([&](uvpp::tcp &) {
+        server.close([&](uv::tcp &) {
           server_closed = true;
         });
       });

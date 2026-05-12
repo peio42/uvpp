@@ -9,7 +9,7 @@
 #include "uvpp/core/error.hpp"
 #include "uvpp/requests/request.hpp"
 
-namespace uvpp {
+namespace uv {
 
   class udp_send_request final : public basic_request<udp_send_request, uv_udp_send_t> {
   public:

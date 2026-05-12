@@ -8,8 +8,8 @@ TEST(Uvpp2Tty, initializesWhenStdoutIsATty) {
     GTEST_SKIP() << "stdout is not a tty";
   }
 
-  uvpp::loop loop;
-  uvpp::tty tty(loop, STDOUT_FILENO, false);
+  uv::loop loop;
+  uv::tty tty(loop, STDOUT_FILENO, false);
 
   auto size = tty.size();
   EXPECT_GE(size.width, 0);

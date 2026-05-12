@@ -45,7 +45,7 @@ Examples:
 Copy those values inside the callback if they must survive it.
 
 ```cpp
-stream.read_start(allocator, [](uvpp::tcp&, uvpp::read_result read) {
+stream.read_start(allocator, [](uv::tcp&, uv::read_result read) {
   if (!read || read.eof()) {
     return;
   }
@@ -55,7 +55,7 @@ stream.read_start(allocator, [](uvpp::tcp&, uvpp::read_result read) {
 ```
 
 ```cpp
-udp.receive_start(allocator, [](uvpp::udp&, uvpp::udp_receive_result received) {
+udp.receive_start(allocator, [](uv::udp&, uv::udp_receive_result received) {
   if (!received || received.empty_event()) {
     return;
   }
@@ -69,7 +69,7 @@ udp.receive_start(allocator, [](uvpp::udp&, uvpp::udp_receive_result received) {
 });
 ```
 
-This is deliberately different from `uvpp::fs::read_result`, which owns an `owned_buffer` in the public `uvpp::fs` API.
+This is deliberately different from `uv::fs::read_result`, which owns an `owned_buffer` in the public `uv::fs` API.
 
 ## Requests
 
@@ -90,9 +90,9 @@ tcp.async_write(buffers, callback);
 
 The higher-level API may allocate operation state internally. That cost must be visible in the API name or documentation.
 
-`fs::raw::request` is a special case because libuv uses `uv_fs_t` for every filesystem operation and requires `uv_fs_req_cleanup()` after completion. uvpp keeps that cleanup explicit in the raw API. The callback must call `req.cleanup()` after consuming the result and before reusing or destroying the request. `req.scoped_cleanup()` is an opt-in stack guard for that call.
+`fs::raw::request` is a special case because libuv uses `uv_fs_t` for every filesystem operation and requires `uv_fs_req_cleanup()` after completion. The raw API keeps that cleanup explicit. The callback must call `req.cleanup()` after consuming the result and before reusing or destroying the request. `req.scoped_cleanup()` is an opt-in stack guard for that call.
 
-The public `uvpp::fs` API owns the raw request internally, cleans it automatically, and returns scalar or owned result values. Use `fs::raw` when the caller needs exact libuv control, request reuse, caller-owned buffers, static callbacks, or request-scoped directory iteration.
+The public `uv::fs` API owns the raw request internally, cleans it automatically, and returns scalar or owned result values. Use `fs::raw` when the caller needs exact libuv control, request reuse, caller-owned buffers, static callbacks, or request-scoped directory iteration.
 
 ## Buffers
 
@@ -111,7 +111,7 @@ owned_buffer storage{4096};
 auto view = storage.view();
 ```
 
-For asynchronous writes and UDP sends, the memory referenced by the submitted `buffer_view` or byte span must outlive the operation completion callback. uvpp does not copy buffer contents in low-level APIs.
+For asynchronous writes and UDP sends, the memory referenced by the submitted `buffer_view` or byte span must outlive the operation completion callback. Low-level APIs do not copy buffer contents.
 
 ```cpp
 owned_buffer payload{4};
@@ -138,7 +138,7 @@ Static callback mode does not own callback state.
 
 ## User Data
 
-`uv_handle_t::data` and `uv_req_t::data` are non-owning application pointers. uvpp exposes them through `user_data<T>()`, but does not manage their lifetime.
+`uv_handle_t::data` and `uv_req_t::data` are non-owning application pointers. The `uv` API exposes them through `user_data<T>()`, but does not manage their lifetime.
 
 Valid low-level pattern:
 
@@ -173,7 +173,7 @@ An owning `loop` should not be confused with the process-wide default loop.
 
 The initial low-level `loop` destructor does not call `uv_loop_close()`. Users must call `loop.close()` explicitly once all handles and requests associated with the loop are closed and the loop is no longer alive.
 
-`loop.close()` maps directly to `uv_loop_close()`: it succeeds only when libuv considers the loop closable, and throws `uvpp::error` on immediate failure. The destructor intentionally provides no hidden cleanup fallback because that would obscure leaked active handles.
+`loop.close()` maps directly to `uv_loop_close()`: it succeeds only when libuv considers the loop closable, and throws `uv::error` on immediate failure. The destructor intentionally provides no hidden cleanup fallback because that would obscure leaked active handles.
 
 ## Deallocation Rules
 

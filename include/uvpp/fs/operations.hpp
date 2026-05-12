@@ -17,7 +17,7 @@
 #include "uvpp/net/buffer.hpp"
 #include "uvpp/requests/fs.hpp"
 
-namespace uvpp::fs::raw {
+namespace uv::fs::raw {
 
   using open_callback = std::function<void(request&, open_result)>;
   using status_callback = std::function<void(request&, status_result)>;
@@ -125,7 +125,7 @@ namespace uvpp::fs::raw {
       [](uv_fs_t *raw) noexcept {
         auto &req = request::from_native(raw);
         auto result = detail::make_open_result(req);
-        uvpp::detail::invoke_static_callback<Callback>(req, result);
+        uv::detail::invoke_static_callback<Callback>(req, result);
       }));
   }
 
@@ -149,7 +149,7 @@ namespace uvpp::fs::raw {
       [](uv_fs_t *raw) noexcept {
         auto &req = request::from_native(raw);
         auto result = detail::make_status_result(req);
-        uvpp::detail::invoke_static_callback<Callback>(req, result);
+        uv::detail::invoke_static_callback<Callback>(req, result);
       }));
   }
 
@@ -203,7 +203,7 @@ namespace uvpp::fs::raw {
       [](uv_fs_t *raw) noexcept {
         auto &req = request::from_native(raw);
         auto result = detail::make_byte_count_result(req);
-        uvpp::detail::invoke_static_callback<Callback>(req, result);
+        uv::detail::invoke_static_callback<Callback>(req, result);
       }));
   }
 
@@ -271,7 +271,7 @@ namespace uvpp::fs::raw {
       [](uv_fs_t *raw) noexcept {
         auto &req = request::from_native(raw);
         auto result = detail::make_byte_count_result(req);
-        uvpp::detail::invoke_static_callback<Callback>(req, result);
+        uv::detail::invoke_static_callback<Callback>(req, result);
       }));
   }
 
@@ -311,7 +311,7 @@ namespace uvpp::fs::raw {
       [](uv_fs_t *raw) noexcept {
         auto &req = request::from_native(raw);
         auto result = detail::make_stat_result(req);
-        uvpp::detail::invoke_static_callback<Callback>(req, result);
+        uv::detail::invoke_static_callback<Callback>(req, result);
       }));
   }
 
@@ -338,7 +338,7 @@ namespace uvpp::fs::raw {
       [](uv_fs_t *raw) noexcept {
         auto &req = request::from_native(raw);
         auto result = detail::make_status_result(req);
-        uvpp::detail::invoke_static_callback<Callback>(req, result);
+        uv::detail::invoke_static_callback<Callback>(req, result);
       }));
   }
 
@@ -365,7 +365,7 @@ namespace uvpp::fs::raw {
       [](uv_fs_t *raw) noexcept {
         auto &req = request::from_native(raw);
         auto result = detail::make_path_result(req);
-        uvpp::detail::invoke_static_callback<Callback>(req, result);
+        uv::detail::invoke_static_callback<Callback>(req, result);
       }));
   }
 
@@ -392,7 +392,7 @@ namespace uvpp::fs::raw {
       [](uv_fs_t *raw) noexcept {
         auto &req = request::from_native(raw);
         auto result = detail::make_path_result(req);
-        uvpp::detail::invoke_static_callback<Callback>(req, result);
+        uv::detail::invoke_static_callback<Callback>(req, result);
       }));
   }
 
@@ -436,7 +436,7 @@ namespace uvpp::fs::raw {
       [](uv_fs_t *raw) noexcept {
         auto &req = request::from_native(raw);
         auto result = detail::make_status_result(req);
-        uvpp::detail::invoke_static_callback<Callback>(req, result);
+        uv::detail::invoke_static_callback<Callback>(req, result);
       }));
   }
 
@@ -466,7 +466,7 @@ namespace uvpp::fs::raw {
       [](uv_fs_t *raw) noexcept {
         auto &req = request::from_native(raw);
         auto result = detail::make_byte_count_result(req);
-        uvpp::detail::invoke_static_callback<Callback>(req, result);
+        uv::detail::invoke_static_callback<Callback>(req, result);
       }));
   }
 
@@ -497,7 +497,7 @@ namespace uvpp::fs::raw {
       [](uv_fs_t *raw) noexcept {
         auto &req = request::from_native(raw);
         auto result = detail::make_scandir_result(req);
-        uvpp::detail::invoke_static_callback<Callback>(req, result);
+        uv::detail::invoke_static_callback<Callback>(req, result);
       }));
   }
 
@@ -524,7 +524,7 @@ namespace uvpp::fs::raw {
       [](uv_fs_t *raw) noexcept {
         auto &req = request::from_native(raw);
         auto result = detail::make_opendir_result(req);
-        uvpp::detail::invoke_static_callback<Callback>(req, std::move(result));
+        uv::detail::invoke_static_callback<Callback>(req, std::move(result));
       }));
   }
 
@@ -552,7 +552,7 @@ namespace uvpp::fs::raw {
       [](uv_fs_t *raw) noexcept {
         auto &req = request::from_native(raw);
         auto result = detail::make_readdir_result(req);
-        uvpp::detail::invoke_static_callback<Callback>(req, result);
+        uv::detail::invoke_static_callback<Callback>(req, result);
       }));
   }
 
@@ -579,7 +579,7 @@ namespace uvpp::fs::raw {
         [](uv_fs_t *raw) noexcept {
           auto &req = request::from_native(raw);
           auto result = detail::make_status_result(req);
-          uvpp::detail::invoke_static_callback<Callback>(req, result);
+          uv::detail::invoke_static_callback<Callback>(req, result);
         }));
     });
   }
@@ -591,7 +591,7 @@ namespace uvpp::fs::raw {
 
 }
 
-namespace uvpp::fs {
+namespace uv::fs {
 
   using raw::copyfile_flag;
   using raw::directory_entry_type;

@@ -13,7 +13,7 @@
 #include "uvpp/core/loop.hpp"
 #include "uvpp/handles/handle.hpp"
 
-namespace uvpp {
+namespace uv {
 
   struct process_exit {
     int64_t status = 0;

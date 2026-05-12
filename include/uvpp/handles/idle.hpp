@@ -10,7 +10,7 @@
 #include "uvpp/core/loop.hpp"
 #include "uvpp/handles/handle.hpp"
 
-namespace uvpp {
+namespace uv {
 
   class idle final : public basic_handle<idle, uv_idle_t> {
   public:

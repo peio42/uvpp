@@ -16,14 +16,14 @@ Static callback mode uses `template<auto Callback>`.
 Example:
 
 ```cpp
-static void on_tick(uvpp::timer& timer) {
+static void on_tick(uv::timer& timer) {
   timer.close();
 }
 
 using namespace std::chrono_literals;
 
-uvpp::loop loop;
-uvpp::timer timer(loop);
+uv::loop loop;
+uv::timer timer(loop);
 
 timer.start_static<on_tick>(100ms);
 loop.run();
@@ -46,8 +46,8 @@ Most handles expose static callback mode as `start_static<Callback>()`, `listen_
 > **Note:** `read_start_static<Callback>()` for streams is **not yet implemented**. Use `read_start(allocator, reader)` with a runtime callable for stream reads.
 
 ```cpp
-uvpp::async wakeup(loop, uvpp::async::static_callback<on_wakeup>{});
-uvpp::process child(loop, options, uvpp::process::static_callback<on_exit>{});
+uv::async wakeup(loop, uv::async::static_callback<on_wakeup>{});
+uv::process child(loop, options, uv::process::static_callback<on_exit>{});
 ```
 
 The tag form keeps the same zero-overhead property: the wrapper stores no runtime callable for that callback path.
@@ -59,7 +59,7 @@ struct timer_state {
   int ticks = 0;
 };
 
-static void on_counted_tick(uvpp::timer& timer) {
+static void on_counted_tick(uv::timer& timer) {
   auto* state = timer.user_data<timer_state>();
   ++state->ticks;
 
@@ -70,8 +70,8 @@ static void on_counted_tick(uvpp::timer& timer) {
 
 using namespace std::chrono_literals;
 
-uvpp::loop loop;
-uvpp::timer timer(loop);
+uv::loop loop;
+uv::timer timer(loop);
 timer_state state;
 
 timer.user_data(state);
@@ -90,12 +90,12 @@ Example:
 ```cpp
 using namespace std::chrono_literals;
 
-uvpp::loop loop;
-uvpp::timer timer(loop);
+uv::loop loop;
+uv::timer timer(loop);
 
 int ticks = 0;
 
-timer.start(100ms, 100ms, [&](uvpp::timer& self) {
+timer.start(100ms, 100ms, [&](uv::timer& self) {
   ++ticks;
 
   if (ticks == 3) {
@@ -121,23 +121,23 @@ This path is appropriate for application code where captures make the ownership 
 Example with a TCP server connection callback:
 
 ```cpp
-uvpp::loop loop;
-uvpp::tcp server(loop);
+uv::loop loop;
+uv::tcp server(loop);
 
 int accepted_count = 0;
 
-server.bind(uvpp::ipv4{"0.0.0.0", 2345});
-server.listen([&](uvpp::tcp& listener, uvpp::result status) {
+server.bind(uv::ipv4{"0.0.0.0", 2345});
+server.listen([&](uv::tcp& listener, uv::result status) {
   if (!status) {
     return;
   }
 
   ++accepted_count;
 
-  auto* client = new uvpp::tcp(loop);
+  auto* client = new uv::tcp(loop);
   listener.accept(*client);
   listener.close();
-  client->close([client](uvpp::tcp&) {
+  client->close([client](uv::tcp&) {
     delete client;
   });
 });
@@ -168,9 +168,9 @@ Rules:
 - `fs::raw::request` also owns one operation callback slot, but raw FS callbacks must call `req.cleanup()` after consuming the result and before reusing the request.
 - `fs` operations own their internal raw request and cleanup it before invoking the public callback with an owned or scalar result.
 
-Calling a start/listen/read API a second time follows libuv's underlying validity rules. If libuv rejects the operation immediately, uvpp throws `uvpp::error`. If libuv accepts it, the stored callback slot has already been replaced.
+Calling a start/listen/read API a second time follows libuv's underlying validity rules. If libuv rejects the operation immediately, the wrapper throws `uv::error`. If libuv accepts it, the stored callback slot has already been replaced.
 
-After `close()` has been called on a handle, starting new operations on that handle is a logic error. uvpp does not try to recover from it beyond surfacing immediate libuv failures where libuv reports them.
+After `close()` has been called on a handle, starting new operations on that handle is a logic error. The wrapper does not try to recover from it beyond surfacing immediate libuv failures where libuv reports them.
 
 ## Trampolines
 
@@ -253,7 +253,7 @@ UDP receive follows the same allocation model as streams. The allocator returns 
 Additional UDP rule: `udp_receive_result::address()` is the source address pointer supplied by libuv and is valid only during the receive callback.
 
 ```cpp
-udp.receive_start(allocator, [](uvpp::udp&, uvpp::udp_receive_result received) {
+udp.receive_start(allocator, [](uv::udp&, uv::udp_receive_result received) {
   if (!received || received.empty_event()) {
     return;
   }

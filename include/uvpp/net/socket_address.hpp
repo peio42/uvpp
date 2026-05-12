@@ -6,7 +6,7 @@
 
 #include "uvpp/net/address.hpp"
 
-namespace uvpp {
+namespace uv {
 
   class socket_address {
   public:

@@ -7,7 +7,7 @@
 #include "uvpp/uv.hpp"
 
 TEST(Uvpp2Buffer, ownedBufferOwnsBytesAndProducesExplicitView) {
-  uvpp::owned_buffer buffer{4};
+  uv::owned_buffer buffer{4};
   std::memcpy(buffer.data(), "ping", 4);
 
   auto view = buffer.view();
@@ -22,7 +22,7 @@ TEST(Uvpp2Buffer, ownedBufferOwnsBytesAndProducesExplicitView) {
 TEST(Uvpp2Buffer, ownedBufferCopiesByteRanges) {
   std::array input{'p', 'o', 'n', 'g'};
 
-  uvpp::owned_buffer buffer{std::as_bytes(std::span{input})};
+  uv::owned_buffer buffer{std::as_bytes(std::span{input})};
 
   auto bytes = buffer.bytes();
   EXPECT_EQ(bytes.size(), 4u);

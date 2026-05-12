@@ -11,7 +11,7 @@
 #include "uvpp/core/loop.hpp"
 #include "uvpp/handles/handle.hpp"
 
-namespace uvpp {
+namespace uv {
 
   class timer final : public basic_handle<timer, uv_timer_t> {
   public:

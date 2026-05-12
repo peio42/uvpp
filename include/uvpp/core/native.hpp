@@ -4,7 +4,7 @@
 
 #include <uv.h>
 
-namespace uvpp::detail {
+namespace uv::detail {
 
   template<class Derived, class Raw, class BaseRaw>
   class native_storage {

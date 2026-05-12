@@ -6,18 +6,18 @@
 using namespace std::chrono_literals;
 
 TEST(Uvpp2Timer, runsRuntimeCallback) {
-  uvpp::loop loop;
-  uvpp::timer timer(loop);
+  uv::loop loop;
+  uv::timer timer(loop);
 
   int called = 0;
   int marker = 42;
   bool closed = false;
 
   timer.user_data(marker);
-  timer.start(1ms, [&](uvpp::timer &self) {
+  timer.start(1ms, [&](uv::timer &self) {
     called++;
     EXPECT_EQ(self.user_data<int>(), &marker);
-    self.close([&](uvpp::timer &) {
+    self.close([&](uv::timer &) {
       closed = true;
     });
   });
@@ -29,17 +29,17 @@ TEST(Uvpp2Timer, runsRuntimeCallback) {
 }
 
 TEST(Uvpp2Timer, startReplacesRuntimeCallbackSlot) {
-  uvpp::loop loop;
-  uvpp::timer timer(loop);
+  uv::loop loop;
+  uv::timer timer(loop);
 
   int replaced = 0;
   int called = 0;
 
-  timer.start(50ms, [&](uvpp::timer &) {
+  timer.start(50ms, [&](uv::timer &) {
     replaced++;
   });
 
-  timer.start(1ms, [&](uvpp::timer &self) {
+  timer.start(1ms, [&](uv::timer &self) {
     called++;
     self.close();
   });
@@ -53,15 +53,15 @@ TEST(Uvpp2Timer, startReplacesRuntimeCallbackSlot) {
 static int static_timer_called = 0;
 static int static_timer_marker = 0;
 
-static void on_static_timer(uvpp::timer &timer) {
+static void on_static_timer(uv::timer &timer) {
   static_timer_called++;
   EXPECT_EQ(timer.user_data<int>(), &static_timer_marker);
   timer.close();
 }
 
 TEST(Uvpp2Timer, runsStaticCallback) {
-  uvpp::loop loop;
-  uvpp::timer timer(loop);
+  uv::loop loop;
+  uv::timer timer(loop);
   static_timer_called = 0;
   static_timer_marker = 7;
   timer.user_data(static_timer_marker);

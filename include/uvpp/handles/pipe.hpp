@@ -13,7 +13,7 @@
 #include "uvpp/handles/stream.hpp"
 #include "uvpp/requests/connect.hpp"
 
-namespace uvpp {
+namespace uv {
 
   enum class pipe_chmod_flag : int {
     readable = UV_READABLE,

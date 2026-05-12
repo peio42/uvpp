@@ -45,8 +45,8 @@ timer.start(callback, 1000);
 
 ```cpp
 // v2
-uvpp::loop_view loop = uvpp::default_loop();
-uvpp::timer timer(loop);
+uv::loop_view loop = uv::default_loop();
+uv::timer timer(loop);
 timer.start(1s, callback);
 ```
 
@@ -59,8 +59,8 @@ server.bind(&addr);
 
 ```cpp
 // v2
-uvpp::tcp server(loop);
-server.bind(uvpp::ipv4{"0.0.0.0", 2345});
+uv::tcp server(loop);
+server.bind(uv::ipv4{"0.0.0.0", 2345});
 ```
 
 ## Compatibility Layer

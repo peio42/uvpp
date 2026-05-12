@@ -16,10 +16,10 @@ std::filesystem::path handle_path(const char *name) {
 }
 
 TEST(Uvpp2HandleMethods, exposesNativeFileDescriptorAndSocketBuffers) {
-  uvpp::loop loop;
-  uvpp::tcp tcp(loop);
+  uv::loop loop;
+  uv::tcp tcp(loop);
 
-  tcp.bind(uvpp::ipv4{"127.0.0.1", 0});
+  tcp.bind(uv::ipv4{"127.0.0.1", 0});
 
   EXPECT_NO_THROW(static_cast<void>(tcp.fileno()));
 
@@ -37,14 +37,14 @@ TEST(Uvpp2HandleMethods, exposesNativeFileDescriptorAndSocketBuffers) {
 }
 
 TEST(Uvpp2HandleMethods, exposesTcpOptionsAndSocknames) {
-  uvpp::loop loop;
-  uvpp::tcp tcp(loop);
+  uv::loop loop;
+  uv::tcp tcp(loop);
 
   EXPECT_NO_THROW(tcp.no_delay(true));
   EXPECT_NO_THROW(tcp.keep_alive(false));
   EXPECT_NO_THROW(tcp.simultaneous_accepts(true));
 
-  tcp.bind(uvpp::ipv4{"127.0.0.1", 0});
+  tcp.bind(uv::ipv4{"127.0.0.1", 0});
 
   auto tcp_addr = tcp.sockname();
   EXPECT_GT(tcp_addr.port(), 0);
@@ -58,8 +58,8 @@ TEST(Uvpp2HandleMethods, exposesPipePathAndPendingState) {
   auto path = handle_path("pipe.sock");
   std::filesystem::remove(path);
 
-  uvpp::loop loop;
-  uvpp::pipe pipe(loop);
+  uv::loop loop;
+  uv::pipe pipe(loop);
 
   pipe.bind(path.string());
   pipe.pending_instances(1);
@@ -76,11 +76,11 @@ TEST(Uvpp2HandleMethods, exposesPipePathAndPendingState) {
 }
 
 TEST(Uvpp2HandleMethods, exposesUdpConnectedPeerAndQueueState) {
-  uvpp::loop loop;
-  uvpp::udp udp(loop);
+  uv::loop loop;
+  uv::udp udp(loop);
 
-  udp.bind(uvpp::ipv4{"127.0.0.1", 0});
-  udp.connect(uvpp::ipv4{"127.0.0.1", 9});
+  udp.bind(uv::ipv4{"127.0.0.1", 0});
+  udp.connect(uv::ipv4{"127.0.0.1", 9});
 
   auto udp_peer = udp.peername();
   EXPECT_EQ(udp_peer.port(), 9);

@@ -13,7 +13,7 @@
 #include "uvpp/core/loop.hpp"
 #include "uvpp/handles/handle.hpp"
 
-namespace uvpp {
+namespace uv {
 
   enum class fs_event_kind : int {
     rename = UV_RENAME,

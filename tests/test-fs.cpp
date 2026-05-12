@@ -20,8 +20,8 @@ std::filesystem::path temp_path(const char *name) {
 }
 
 struct static_fs_state {
-  uvpp::loop *loop = nullptr;
-  uvpp::fs::raw::request *request = nullptr;
+  uv::loop *loop = nullptr;
+  uv::fs::raw::request *request = nullptr;
   std::string path;
   bool opened = false;
   bool closed = false;
@@ -35,14 +35,14 @@ struct static_copyfile_state {
 
 static_copyfile_state *current_static_copyfile = nullptr;
 
-void on_static_fs_close(uvpp::fs::raw::request &request, uvpp::fs::raw::status_result result) {
+void on_static_fs_close(uv::fs::raw::request &request, uv::fs::raw::status_result result) {
   auto cleanup = request.scoped_cleanup();
   EXPECT_TRUE(result);
   current_static_fs->closed = true;
 }
 
-void on_static_fs_open(uvpp::fs::raw::request &request, uvpp::fs::raw::open_result result) {
-  uvpp::file_descriptor file;
+void on_static_fs_open(uv::fs::raw::request &request, uv::fs::raw::open_result result) {
+  uv::file_descriptor file;
 
   {
     auto cleanup = request.scoped_cleanup();
@@ -51,10 +51,10 @@ void on_static_fs_open(uvpp::fs::raw::request &request, uvpp::fs::raw::open_resu
     file = result.file();
   }
 
-  uvpp::fs::raw::close_static<on_static_fs_close>(*current_static_fs->loop, *current_static_fs->request, file);
+  uv::fs::raw::close_static<on_static_fs_close>(*current_static_fs->loop, *current_static_fs->request, file);
 }
 
-void on_static_copyfile(uvpp::fs::raw::request &request, uvpp::fs::raw::status_result result) {
+void on_static_copyfile(uv::fs::raw::request &request, uv::fs::raw::status_result result) {
   auto cleanup = request.scoped_cleanup();
   EXPECT_TRUE(result);
   current_static_copyfile->copied = true;
@@ -71,28 +71,28 @@ TEST(Uvpp2Fs, opensWritesReadsClosesAndReusesRequest) {
   auto path = temp_path("read-write.txt");
   std::filesystem::remove(path);
 
-  uvpp::loop loop;
-  uvpp::fs::raw::request request;
+  uv::loop loop;
+  uv::fs::raw::request request;
   std::array payload{'h', 'e', 'l', 'l', 'o'};
-  uvpp::owned_buffer input{std::as_bytes(std::span{payload})};
-  uvpp::owned_buffer output{payload.size()};
+  uv::owned_buffer input{std::as_bytes(std::span{payload})};
+  uv::owned_buffer output{payload.size()};
   bool done = false;
   int callbacks = 0;
 
-  uvpp::fs::raw::open(loop, request, path.string(), O_CREAT | O_TRUNC | O_RDWR, 0644,
-    [&](uvpp::fs::raw::request &open_request, uvpp::fs::raw::open_result open_result) {
+  uv::fs::raw::open(loop, request, path.string(), O_CREAT | O_TRUNC | O_RDWR, 0644,
+    [&](uv::fs::raw::request &open_request, uv::fs::raw::open_result open_result) {
       ++callbacks;
       EXPECT_EQ(&open_request, &request);
 
-      uvpp::file_descriptor file;
+      uv::file_descriptor file;
       {
         auto cleanup = open_request.scoped_cleanup();
         ASSERT_TRUE(open_result);
         file = open_result.file();
       }
 
-      uvpp::fs::raw::write(loop, request, file, input.bytes(), 0,
-        [&, file](uvpp::fs::raw::request &write_request, uvpp::fs::raw::byte_count_result write_result) {
+      uv::fs::raw::write(loop, request, file, input.bytes(), 0,
+        [&, file](uv::fs::raw::request &write_request, uv::fs::raw::byte_count_result write_result) {
           ++callbacks;
           EXPECT_EQ(&write_request, &request);
           {
@@ -101,8 +101,8 @@ TEST(Uvpp2Fs, opensWritesReadsClosesAndReusesRequest) {
             EXPECT_EQ(write_result.count(), payload.size());
           }
 
-          uvpp::fs::raw::read(loop, request, file, output.view(), 0,
-            [&, file](uvpp::fs::raw::request &read_request, uvpp::fs::raw::byte_count_result read_result) {
+          uv::fs::raw::read(loop, request, file, output.view(), 0,
+            [&, file](uv::fs::raw::request &read_request, uv::fs::raw::byte_count_result read_result) {
               ++callbacks;
               EXPECT_EQ(&read_request, &request);
               {
@@ -112,8 +112,8 @@ TEST(Uvpp2Fs, opensWritesReadsClosesAndReusesRequest) {
                 EXPECT_EQ(std::memcmp(output.view().data(), "hello", payload.size()), 0);
               }
 
-              uvpp::fs::raw::close(loop, request, file,
-                [&](uvpp::fs::raw::request &close_request, uvpp::fs::raw::status_result close_result) {
+              uv::fs::raw::close(loop, request, file,
+                [&](uv::fs::raw::request &close_request, uv::fs::raw::status_result close_result) {
                   ++callbacks;
                   auto cleanup = close_request.scoped_cleanup();
                   EXPECT_EQ(&close_request, &request);
@@ -140,11 +140,11 @@ TEST(Uvpp2Fs, statsFile) {
     file << "stat";
   }
 
-  uvpp::loop loop;
-  uvpp::fs::raw::request request;
+  uv::loop loop;
+  uv::fs::raw::request request;
   bool done = false;
 
-  uvpp::fs::raw::stat(loop, request, path.string(), [&](uvpp::fs::raw::request &request, uvpp::fs::raw::stat_result result) {
+  uv::fs::raw::stat(loop, request, path.string(), [&](uv::fs::raw::request &request, uv::fs::raw::stat_result result) {
     auto cleanup = request.scoped_cleanup();
     ASSERT_TRUE(result);
     EXPECT_EQ(result.native().st_size, 4);
@@ -162,15 +162,15 @@ TEST(Uvpp2Fs, reportsOpenMissingFile) {
   auto path = temp_path("missing.txt");
   std::filesystem::remove(path);
 
-  uvpp::loop loop;
-  uvpp::fs::raw::request request;
+  uv::loop loop;
+  uv::fs::raw::request request;
   bool done = false;
 
-  uvpp::fs::raw::open(loop, request, path.string(), O_RDONLY, 0,
-    [&](uvpp::fs::raw::request &request, uvpp::fs::raw::open_result result) {
+  uv::fs::raw::open(loop, request, path.string(), O_RDONLY, 0,
+    [&](uv::fs::raw::request &request, uv::fs::raw::open_result result) {
       auto cleanup = request.scoped_cleanup();
       EXPECT_FALSE(result);
-      EXPECT_EQ(result.error_code(), uvpp::make_error_code(UV_ENOENT));
+      EXPECT_EQ(result.error_code(), uv::make_error_code(UV_ENOENT));
       done = true;
     });
 
@@ -187,11 +187,11 @@ TEST(Uvpp2Fs, unlinksFile) {
     file << "unlink";
   }
 
-  uvpp::loop loop;
-  uvpp::fs::raw::request request;
+  uv::loop loop;
+  uv::fs::raw::request request;
   bool done = false;
 
-  uvpp::fs::raw::unlink(loop, request, path.string(), [&](uvpp::fs::raw::request &request, uvpp::fs::raw::status_result result) {
+  uv::fs::raw::unlink(loop, request, path.string(), [&](uv::fs::raw::request &request, uv::fs::raw::status_result result) {
     auto cleanup = request.scoped_cleanup();
     EXPECT_TRUE(result);
     done = true;
@@ -207,12 +207,12 @@ TEST(Uvpp2Fs, runsStaticCallbacks) {
   auto path = temp_path("static.txt");
   std::filesystem::remove(path);
 
-  uvpp::loop loop;
-  uvpp::fs::raw::request request;
+  uv::loop loop;
+  uv::fs::raw::request request;
   static_fs_state state{&loop, &request, path.string()};
   current_static_fs = &state;
 
-  uvpp::fs::raw::open_static<on_static_fs_open>(loop, request, state.path, O_CREAT | O_TRUNC | O_RDWR, 0644);
+  uv::fs::raw::open_static<on_static_fs_open>(loop, request, state.path, O_CREAT | O_TRUNC | O_RDWR, 0644);
 
   loop.run();
   EXPECT_TRUE(state.opened);
@@ -240,13 +240,13 @@ TEST(Uvpp2Fs, resolvesRealpathAndReadlinkWithRequestScopedPaths) {
     GTEST_SKIP() << "symlink creation failed: " << symlink_error.message();
   }
 
-  uvpp::loop loop;
-  uvpp::fs::raw::request request;
+  uv::loop loop;
+  uv::fs::raw::request request;
   std::string readlink_path;
   std::string real_path;
 
-  uvpp::fs::raw::readlink(loop, request, link.string(),
-    [&](uvpp::fs::raw::request &request, uvpp::fs::raw::path_result result) {
+  uv::fs::raw::readlink(loop, request, link.string(),
+    [&](uv::fs::raw::request &request, uv::fs::raw::path_result result) {
     auto cleanup = request.scoped_cleanup();
     ASSERT_TRUE(result);
     readlink_path = result.path();
@@ -255,8 +255,8 @@ TEST(Uvpp2Fs, resolvesRealpathAndReadlinkWithRequestScopedPaths) {
   loop.run();
   EXPECT_EQ(readlink_path, target.string());
 
-  uvpp::fs::raw::realpath(loop, request, target.string(),
-    [&](uvpp::fs::raw::request &request, uvpp::fs::raw::path_result result) {
+  uv::fs::raw::realpath(loop, request, target.string(),
+    [&](uv::fs::raw::request &request, uv::fs::raw::path_result result) {
     auto cleanup = request.scoped_cleanup();
     ASSERT_TRUE(result);
     real_path = result.path();
@@ -282,13 +282,13 @@ TEST(Uvpp2Fs, copiesFilesAndSendsFileRanges) {
     file << "copy-send";
   }
 
-  uvpp::loop loop;
-  uvpp::fs::raw::request request;
+  uv::loop loop;
+  uv::fs::raw::request request;
   bool copied_done = false;
   bool sent_done = false;
 
-  uvpp::fs::raw::copyfile(loop, request, source.string(), copied.string(), 0,
-    [&](uvpp::fs::raw::request &request, uvpp::fs::raw::status_result result) {
+  uv::fs::raw::copyfile(loop, request, source.string(), copied.string(), 0,
+    [&](uv::fs::raw::request &request, uv::fs::raw::status_result result) {
       auto cleanup = request.scoped_cleanup();
       EXPECT_TRUE(result);
       copied_done = true;
@@ -303,8 +303,8 @@ TEST(Uvpp2Fs, copiesFilesAndSendsFileRanges) {
   int out_fd = ::open(sent.c_str(), O_CREAT | O_TRUNC | O_WRONLY, 0644);
   ASSERT_GE(out_fd, 0);
 
-  uvpp::fs::raw::sendfile(loop, request, uvpp::file_descriptor{out_fd}, uvpp::file_descriptor{in_fd}, 5, 4,
-    [&](uvpp::fs::raw::request &request, uvpp::fs::raw::byte_count_result result) {
+  uv::fs::raw::sendfile(loop, request, uv::file_descriptor{out_fd}, uv::file_descriptor{in_fd}, 5, 4,
+    [&](uv::fs::raw::request &request, uv::fs::raw::byte_count_result result) {
       auto cleanup = request.scoped_cleanup();
       ASSERT_TRUE(result);
       EXPECT_EQ(result.count(), 4u);
@@ -337,16 +337,16 @@ TEST(Uvpp2Fs, scansDirectoryEntriesWithoutCopyingInTheWrapper) {
     file << "beta";
   }
 
-  uvpp::loop loop;
-  uvpp::fs::raw::request request;
+  uv::loop loop;
+  uv::fs::raw::request request;
   std::vector<std::string> names;
 
-  uvpp::fs::raw::scandir(loop, request, dir.string(), 0,
-    [&](uvpp::fs::raw::request &request, uvpp::fs::raw::scandir_result result) {
+  uv::fs::raw::scandir(loop, request, dir.string(), 0,
+    [&](uv::fs::raw::request &request, uv::fs::raw::scandir_result result) {
       auto cleanup = request.scoped_cleanup();
       ASSERT_TRUE(result);
 
-      uvpp::fs::raw::directory_entry entry;
+      uv::fs::raw::directory_entry entry;
       while (result.next(entry)) {
         names.emplace_back(entry.name());
       }
@@ -374,23 +374,23 @@ TEST(Uvpp2Fs, opensReadsAndClosesDirectory) {
     file << "second";
   }
 
-  uvpp::loop loop;
-  uvpp::fs::raw::request request;
-  uvpp::fs::raw::directory_read_buffer buffer{8};
-  uvpp::fs::raw::directory dir;
+  uv::loop loop;
+  uv::fs::raw::request request;
+  uv::fs::raw::directory_read_buffer buffer{8};
+  uv::fs::raw::directory dir;
   std::vector<std::string> names;
   bool closed = false;
 
-  uvpp::fs::raw::opendir(loop, request, path.string(),
-    [&](uvpp::fs::raw::request &request, uvpp::fs::raw::opendir_result result) {
+  uv::fs::raw::opendir(loop, request, path.string(),
+    [&](uv::fs::raw::request &request, uv::fs::raw::opendir_result result) {
       {
         auto cleanup = request.scoped_cleanup();
         ASSERT_TRUE(result);
         dir = result.take_directory();
       }
 
-      uvpp::fs::raw::readdir(loop, request, dir, buffer,
-        [&](uvpp::fs::raw::request &request, uvpp::fs::raw::readdir_result result) {
+      uv::fs::raw::readdir(loop, request, dir, buffer,
+        [&](uv::fs::raw::request &request, uv::fs::raw::readdir_result result) {
           {
             auto cleanup = request.scoped_cleanup();
             ASSERT_TRUE(result);
@@ -400,8 +400,8 @@ TEST(Uvpp2Fs, opensReadsAndClosesDirectory) {
             }
           }
 
-          uvpp::fs::raw::closedir(loop, request, std::move(dir),
-            [&](uvpp::fs::raw::request &request, uvpp::fs::raw::status_result result) {
+          uv::fs::raw::closedir(loop, request, std::move(dir),
+            [&](uv::fs::raw::request &request, uv::fs::raw::status_result result) {
               auto cleanup = request.scoped_cleanup();
               EXPECT_TRUE(result);
               closed = true;
@@ -420,11 +420,11 @@ TEST(Uvpp2Fs, opensReadsAndClosesDirectory) {
 }
 
 TEST(Uvpp2Fs, failedClosedirSubmissionKeepsDirectoryOwnership) {
-  uvpp::fs::raw::directory dir{reinterpret_cast<uv_dir_t *>(0x1)};
+  uv::fs::raw::directory dir{reinterpret_cast<uv_dir_t *>(0x1)};
 
-  EXPECT_THROW(uvpp::fs::raw::detail::submit_closedir(dir, [](uv_dir_t *) {
-    throw uvpp::error{UV_EINVAL};
-  }), uvpp::error);
+  EXPECT_THROW(uv::fs::raw::detail::submit_closedir(dir, [](uv_dir_t *) {
+    throw uv::error{UV_EINVAL};
+  }), uv::error);
 
   EXPECT_TRUE(dir);
   static_cast<void>(dir.release());
@@ -440,12 +440,12 @@ TEST(Uvpp2Fs, runsStaticCopyfileCallback) {
     file << "static-copy";
   }
 
-  uvpp::loop loop;
-  uvpp::fs::raw::request request;
+  uv::loop loop;
+  uv::fs::raw::request request;
   static_copyfile_state state;
   current_static_copyfile = &state;
 
-  uvpp::fs::raw::copyfile_static<on_static_copyfile>(loop, request, source.string(), copied.string());
+  uv::fs::raw::copyfile_static<on_static_copyfile>(loop, request, source.string(), copied.string());
 
   loop.run();
   EXPECT_TRUE(state.copied);
@@ -461,31 +461,31 @@ TEST(Uvpp2FsSafe, ownsRequestsCleanupAndBuffers) {
   auto path = temp_path("safe-read-write.txt");
   std::filesystem::remove(path);
 
-  uvpp::loop loop;
+  uv::loop loop;
   std::array payload{'s', 'a', 'f', 'e'};
   bool done = false;
   int callbacks = 0;
 
-  uvpp::fs::open(loop, path.string(), O_CREAT | O_TRUNC | O_RDWR, 0644,
-    [&](uvpp::fs::open_result open_result) {
+  uv::fs::open(loop, path.string(), O_CREAT | O_TRUNC | O_RDWR, 0644,
+    [&](uv::fs::open_result open_result) {
       ++callbacks;
       ASSERT_TRUE(open_result);
       auto file = open_result.file();
 
-      uvpp::fs::write(loop, file, std::as_bytes(std::span{payload}), 0,
-        [&, file](uvpp::fs::byte_count_result write_result) {
+      uv::fs::write(loop, file, std::as_bytes(std::span{payload}), 0,
+        [&, file](uv::fs::byte_count_result write_result) {
           ++callbacks;
           ASSERT_TRUE(write_result);
           EXPECT_EQ(write_result.count(), payload.size());
 
-          uvpp::fs::read(loop, file, payload.size(), 0,
-            [&, file](uvpp::fs::read_result read_result) {
+          uv::fs::read(loop, file, payload.size(), 0,
+            [&, file](uv::fs::read_result read_result) {
               ++callbacks;
               ASSERT_TRUE(read_result);
               ASSERT_EQ(read_result.count(), payload.size());
               EXPECT_EQ(std::memcmp(read_result.bytes().data(), payload.data(), payload.size()), 0);
 
-              uvpp::fs::close(loop, file, [&](uvpp::fs::status_result close_result) {
+              uv::fs::close(loop, file, [&](uv::fs::status_result close_result) {
                 ++callbacks;
                 EXPECT_TRUE(close_result);
                 done = true;
@@ -512,11 +512,11 @@ TEST(Uvpp2FsSafe, returnsOwnedPathAndScandirResults) {
     file << "target";
   }
 
-  uvpp::loop loop;
+  uv::loop loop;
   std::string canonical;
-  std::vector<uvpp::fs::directory_entry> entries;
+  std::vector<uv::fs::directory_entry> entries;
 
-  uvpp::fs::realpath(loop, target.string(), [&](uvpp::fs::path_result result) {
+  uv::fs::realpath(loop, target.string(), [&](uv::fs::path_result result) {
     ASSERT_TRUE(result);
     canonical = result.path();
   });
@@ -524,7 +524,7 @@ TEST(Uvpp2FsSafe, returnsOwnedPathAndScandirResults) {
   loop.run();
   EXPECT_EQ(canonical, std::filesystem::canonical(target).string());
 
-  uvpp::fs::scandir(loop, dir.string(), 0, [&](uvpp::fs::scandir_result result) {
+  uv::fs::scandir(loop, dir.string(), 0, [&](uv::fs::scandir_result result) {
     ASSERT_TRUE(result);
     entries = result.take_entries();
   });
@@ -532,7 +532,7 @@ TEST(Uvpp2FsSafe, returnsOwnedPathAndScandirResults) {
   loop.run();
   loop.close();
 
-  auto found = std::find_if(entries.begin(), entries.end(), [](const uvpp::fs::directory_entry &entry) {
+  auto found = std::find_if(entries.begin(), entries.end(), [](const uv::fs::directory_entry &entry) {
     return entry.name == "target.txt";
   });
   EXPECT_NE(found, entries.end());

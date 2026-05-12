@@ -3,7 +3,7 @@
 #include <exception>
 #include <utility>
 
-namespace uvpp::detail {
+namespace uv::detail {
 
   [[noreturn]] inline void callback_exception_boundary() noexcept {
     std::terminate();

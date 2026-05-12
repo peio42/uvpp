@@ -10,7 +10,7 @@
 #include "uvpp/core/loop.hpp"
 #include "uvpp/handles/handle.hpp"
 
-namespace uvpp {
+namespace uv {
 
   class async final : public basic_handle<async, uv_async_t> {
   public:
