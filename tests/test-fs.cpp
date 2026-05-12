@@ -8,6 +8,7 @@
 #include <vector>
 #include <unistd.h>
 #include <fcntl.h>
+#include <sys/stat.h>
 
 #include "gtest/gtest.h"
 #include "uvpp/uv.hpp"
@@ -35,6 +36,12 @@ struct static_copyfile_state {
 
 static_copyfile_state *current_static_copyfile = nullptr;
 
+struct static_status_state {
+  bool done = false;
+};
+
+static_status_state *current_static_status = nullptr;
+
 void on_static_fs_close(uv::fs::raw::request &request, uv::fs::raw::status_result result) {
   auto cleanup = request.scoped_cleanup();
   EXPECT_TRUE(result);
@@ -58,6 +65,12 @@ void on_static_copyfile(uv::fs::raw::request &request, uv::fs::raw::status_resul
   auto cleanup = request.scoped_cleanup();
   EXPECT_TRUE(result);
   current_static_copyfile->copied = true;
+}
+
+void on_static_status(uv::fs::raw::request &request, uv::fs::raw::status_result result) {
+  auto cleanup = request.scoped_cleanup();
+  EXPECT_TRUE(result);
+  current_static_status->done = true;
 }
 
 std::string read_text_file(const std::filesystem::path &path) {
@@ -457,6 +470,26 @@ TEST(Uvpp2Fs, runsStaticCopyfileCallback) {
   std::filesystem::remove(copied);
 }
 
+TEST(Uvpp2Fs, runsStaticMkdirCallback) {
+  auto path = temp_path("static-mkdir");
+  std::filesystem::remove_all(path);
+
+  uv::loop loop;
+  uv::fs::raw::request request;
+  static_status_state state;
+  current_static_status = &state;
+
+  uv::fs::raw::mkdir_static<on_static_status>(loop, request, path.string(), 0755);
+
+  loop.run();
+  EXPECT_TRUE(state.done);
+  EXPECT_TRUE(std::filesystem::is_directory(path));
+  loop.close();
+
+  current_static_status = nullptr;
+  std::filesystem::remove_all(path);
+}
+
 TEST(Uvpp2FsSafe, ownsRequestsCleanupAndBuffers) {
   auto path = temp_path("safe-read-write.txt");
   std::filesystem::remove(path);
@@ -538,4 +571,197 @@ TEST(Uvpp2FsSafe, returnsOwnedPathAndScandirResults) {
   EXPECT_NE(found, entries.end());
 
   std::filesystem::remove_all(dir);
+}
+
+TEST(Uvpp2FsSafe, createsRenamesAccessesAndRemovesDirectories) {
+  auto path = temp_path("safe-dir");
+  auto renamed = temp_path("safe-dir-renamed");
+  std::filesystem::remove_all(path);
+  std::filesystem::remove_all(renamed);
+
+  uv::loop loop;
+  bool mkdir_done = false;
+  bool access_done = false;
+  bool rename_done = false;
+  bool rmdir_done = false;
+
+  uv::fs::mkdir(loop, path.string(), 0755, [&](uv::fs::status_result result) {
+    EXPECT_TRUE(result);
+    mkdir_done = true;
+  });
+  loop.run();
+
+  uv::fs::access(loop, path.string(), F_OK, [&](uv::fs::status_result result) {
+    EXPECT_TRUE(result);
+    access_done = true;
+  });
+  loop.run();
+
+  uv::fs::rename(loop, path.string(), renamed.string(), [&](uv::fs::status_result result) {
+    EXPECT_TRUE(result);
+    rename_done = true;
+  });
+  loop.run();
+
+  uv::fs::rmdir(loop, renamed.string(), [&](uv::fs::status_result result) {
+    EXPECT_TRUE(result);
+    rmdir_done = true;
+  });
+  loop.run();
+  loop.close();
+
+  EXPECT_TRUE(mkdir_done);
+  EXPECT_TRUE(access_done);
+  EXPECT_TRUE(rename_done);
+  EXPECT_TRUE(rmdir_done);
+  EXPECT_FALSE(std::filesystem::exists(path));
+  EXPECT_FALSE(std::filesystem::exists(renamed));
+}
+
+TEST(Uvpp2FsSafe, handlesDescriptorOperations) {
+  auto path = temp_path("safe-fd.txt");
+  std::filesystem::remove(path);
+  {
+    std::ofstream file{path};
+    file << "abcdef";
+  }
+
+  int fd = ::open(path.c_str(), O_RDWR);
+  ASSERT_GE(fd, 0);
+  uv::file_descriptor file{fd};
+
+  uv::loop loop;
+  bool fstat_done = false;
+  bool truncate_done = false;
+  bool fsync_done = false;
+  bool fdatasync_done = false;
+  bool second_fstat_done = false;
+
+  uv::fs::fstat(loop, file, [&](uv::fs::stat_result result) {
+    ASSERT_TRUE(result);
+    EXPECT_EQ(result.native().st_size, 6);
+    fstat_done = true;
+  });
+  loop.run();
+
+  uv::fs::ftruncate(loop, file, 3, [&](uv::fs::status_result result) {
+    EXPECT_TRUE(result);
+    truncate_done = true;
+  });
+  loop.run();
+
+  uv::fs::fsync(loop, file, [&](uv::fs::status_result result) {
+    EXPECT_TRUE(result);
+    fsync_done = true;
+  });
+  loop.run();
+
+  uv::fs::fdatasync(loop, file, [&](uv::fs::status_result result) {
+    EXPECT_TRUE(result);
+    fdatasync_done = true;
+  });
+  loop.run();
+
+  uv::fs::fstat(loop, file, [&](uv::fs::stat_result result) {
+    ASSERT_TRUE(result);
+    EXPECT_EQ(result.native().st_size, 3);
+    second_fstat_done = true;
+  });
+  loop.run();
+  loop.close();
+
+  EXPECT_TRUE(fstat_done);
+  EXPECT_TRUE(truncate_done);
+  EXPECT_TRUE(fsync_done);
+  EXPECT_TRUE(fdatasync_done);
+  EXPECT_TRUE(second_fstat_done);
+
+  ::close(fd);
+  EXPECT_EQ(read_text_file(path), "abc");
+  std::filesystem::remove(path);
+}
+
+TEST(Uvpp2FsSafe, handlesLinksMetadataAndTimes) {
+  auto target = temp_path("safe-link-target.txt");
+  auto hardlink = temp_path("safe-hardlink.txt");
+  auto symlink = temp_path("safe-symlink.txt");
+  std::filesystem::remove(target);
+  std::filesystem::remove(hardlink);
+  std::filesystem::remove(symlink);
+  {
+    std::ofstream file{target};
+    file << "links";
+  }
+
+  uv::loop loop;
+  bool chmod_done = false;
+  bool chown_done = false;
+  bool utime_done = false;
+  bool link_done = false;
+  bool symlink_done = false;
+  bool symlink_forbidden = false;
+  bool lstat_done = false;
+
+  uv::fs::chmod(loop, target.string(), 0644, [&](uv::fs::status_result result) {
+    EXPECT_TRUE(result);
+    chmod_done = true;
+  });
+  loop.run();
+
+  uv::fs::chown(loop, target.string(), static_cast<uv_uid_t>(::getuid()), static_cast<uv_gid_t>(::getgid()),
+    [&](uv::fs::status_result result) {
+      EXPECT_TRUE(result);
+      chown_done = true;
+    });
+  loop.run();
+
+  uv::fs::utime(loop, target.string(), 1000.0, 1001.0, [&](uv::fs::status_result result) {
+    EXPECT_TRUE(result);
+    utime_done = true;
+  });
+  loop.run();
+
+  uv::fs::link(loop, target.string(), hardlink.string(), [&](uv::fs::status_result result) {
+    EXPECT_TRUE(result);
+    link_done = true;
+  });
+  loop.run();
+
+  uv::fs::symlink(loop, target.string(), symlink.string(), [&](uv::fs::status_result result) {
+    if (!result && result.error_code() == uv::make_error_code(UV_EPERM)) {
+      symlink_forbidden = true;
+      return;
+    }
+
+    ASSERT_TRUE(result);
+    symlink_done = true;
+  });
+  loop.run();
+
+  if (symlink_forbidden) {
+    loop.close();
+    std::filesystem::remove(hardlink);
+    std::filesystem::remove(target);
+    GTEST_SKIP() << "symlink creation is not permitted";
+  }
+
+  uv::fs::lstat(loop, symlink.string(), [&](uv::fs::stat_result result) {
+    ASSERT_TRUE(result);
+    EXPECT_TRUE(S_ISLNK(result.native().st_mode));
+    lstat_done = true;
+  });
+  loop.run();
+  loop.close();
+
+  EXPECT_TRUE(chmod_done);
+  EXPECT_TRUE(chown_done);
+  EXPECT_TRUE(utime_done);
+  EXPECT_TRUE(link_done);
+  EXPECT_TRUE(symlink_done);
+  EXPECT_TRUE(lstat_done);
+  EXPECT_EQ(read_text_file(hardlink), "links");
+
+  std::filesystem::remove(symlink);
+  std::filesystem::remove(hardlink);
+  std::filesystem::remove(target);
 }
