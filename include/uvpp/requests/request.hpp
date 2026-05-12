@@ -1,7 +1,10 @@
 #pragma once
 
+#include <utility>
+
 #include <uv.h>
 
+#include "uvpp/core/error.hpp"
 #include "uvpp/core/native.hpp"
 
 namespace uvpp {
@@ -31,5 +34,21 @@ namespace uvpp {
   protected:
   private:
   };
+
+  namespace detail {
+
+    template<class Request, class Callback, class Submit>
+    void submit_request(Request &request, Callback callback, Submit submit) {
+      request.set_callback(std::move(callback));
+
+      try {
+        throw_if_error(submit());
+      } catch (...) {
+        request.set_callback({});
+        throw;
+      }
+    }
+
+  }
 
 }

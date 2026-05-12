@@ -50,23 +50,15 @@ namespace uvpp {
     }
 
     void connect(connect_request &request, const ipv4 &addr, connect_request::callback callback) {
-      request.set_callback(std::move(callback));
-      try {
-        throw_if_error(uv_tcp_connect(request.native(), native(), addr.native_sockaddr(), &tcp::connect_trampoline));
-      } catch (...) {
-        request.set_callback({});
-        throw;
-      }
+      detail::submit_request(request, std::move(callback), [&] {
+        return uv_tcp_connect(request.native(), native(), addr.native_sockaddr(), &tcp::connect_trampoline);
+      });
     }
 
     void connect(connect_request &request, const ipv6 &addr, connect_request::callback callback) {
-      request.set_callback(std::move(callback));
-      try {
-        throw_if_error(uv_tcp_connect(request.native(), native(), addr.native_sockaddr(), &tcp::connect_trampoline));
-      } catch (...) {
-        request.set_callback({});
-        throw;
-      }
+      detail::submit_request(request, std::move(callback), [&] {
+        return uv_tcp_connect(request.native(), native(), addr.native_sockaddr(), &tcp::connect_trampoline);
+      });
     }
 
     template<auto Callback>

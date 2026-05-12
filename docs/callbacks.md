@@ -243,3 +243,28 @@ public:
 ```
 
 `bytes()` represents the payload actually read and is the preferred API for normal processing. `storage()` represents the full buffer returned by the allocation callback; it mainly exists so low-level code can release allocator-owned memory after the read or after a deferred write completes.
+
+The stream `read_result` does not own the buffer. `bytes()`, `storage()`, and `raw_buffer()` are views over the storage returned by the allocation callback. Do not keep those views after the callback unless the backing storage is owned elsewhere and its lifetime is explicitly controlled. Copy the payload when it must survive the callback.
+
+## UDP Receive Callbacks
+
+UDP receive follows the same allocation model as streams. The allocator returns a borrowed `buffer_view`, and `udp_receive_result` exposes views into that storage.
+
+Additional UDP rule: `udp_receive_result::address()` is the source address pointer supplied by libuv and is valid only during the receive callback.
+
+```cpp
+udp.receive_start(allocator, [](uvpp::udp&, uvpp::udp_receive_result received) {
+  if (!received || received.empty_event()) {
+    return;
+  }
+
+  auto payload = std::vector<std::byte>{received.bytes().begin(), received.bytes().end()};
+
+  sockaddr_storage peer{};
+  if (auto *addr = received.address()) {
+    std::memcpy(&peer, addr, sizeof(peer));
+  }
+});
+```
+
+Use `empty_event()` to ignore libuv's zero-length notification events where no source address is available.

@@ -30,7 +30,46 @@ Valid patterns:
 
 The low-level handle destructor does not call `uv_close()`. Destroying a handle while libuv can still reference it is a user lifetime error.
 
-Some handle callback result objects expose data borrowed from libuv or from caller-provided callback storage for the duration of the callback. For example, `fs_event_result::filename()` is a borrowed string view, `fs_poll_result::previous()` / `current()` are borrowed stat pointers, `read_result::raw_buffer()` points to the buffer returned by the stream allocation callback, and `udp_receive_result::address()` / `raw_buffer()` are borrowed from the receive callback arguments. Copy those values inside the callback if they must survive it.
+## Borrowed Callback Results
+
+Some handle callback result objects expose data borrowed from libuv or from caller-provided callback storage for the duration of the callback.
+
+Examples:
+
+- `fs_event_result::filename()` is a borrowed string view;
+- `fs_poll_result::previous()` and `fs_poll_result::current()` are borrowed stat pointers;
+- `read_result::bytes()`, `read_result::storage()`, and `read_result::raw_buffer()` refer to the buffer returned by the stream allocation callback;
+- `udp_receive_result::bytes()`, `udp_receive_result::storage()`, and `udp_receive_result::raw_buffer()` refer to the buffer returned by the UDP allocation callback;
+- `udp_receive_result::address()` is the source address pointer passed by libuv.
+
+Copy those values inside the callback if they must survive it.
+
+```cpp
+stream.read_start(allocator, [](uvpp::tcp&, uvpp::read_result read) {
+  if (!read || read.eof()) {
+    return;
+  }
+
+  std::vector<std::byte> payload{read.bytes().begin(), read.bytes().end()};
+});
+```
+
+```cpp
+udp.receive_start(allocator, [](uvpp::udp&, uvpp::udp_receive_result received) {
+  if (!received || received.empty_event()) {
+    return;
+  }
+
+  std::vector<std::byte> payload{received.bytes().begin(), received.bytes().end()};
+
+  sockaddr_storage peer{};
+  if (auto *addr = received.address()) {
+    std::memcpy(&peer, addr, sizeof(peer));
+  }
+});
+```
+
+This is deliberately different from `uvpp::fs::read_result`, which owns an `owned_buffer` in the public `uvpp::fs` API.
 
 ## Requests
 

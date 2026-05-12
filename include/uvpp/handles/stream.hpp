@@ -105,13 +105,9 @@ namespace uvpp {
     }
 
     void shutdown(shutdown_request &request, shutdown_request::callback callback) {
-      request.set_callback(std::move(callback));
-      try {
-        throw_if_error(uv_shutdown(request.native(), native_stream(), &stream::shutdown_trampoline));
-      } catch (...) {
-        request.set_callback({});
-        throw;
-      }
+      detail::submit_request(request, std::move(callback), [&] {
+        return uv_shutdown(request.native(), native_stream(), &stream::shutdown_trampoline);
+      });
     }
 
     template<auto Callback>
@@ -122,14 +118,10 @@ namespace uvpp {
     }
 
     void write(write_request &request, std::span<const buffer_view> buffers, write_request::callback callback) {
-      request.set_callback(std::move(callback));
-      try {
-        throw_if_error(uv_write(request.native(), native_stream(), reinterpret_cast<const uv_buf_t *>(buffers.data()),
-                       static_cast<unsigned int>(buffers.size()), &stream::write_trampoline));
-      } catch (...) {
-        request.set_callback({});
-        throw;
-      }
+      detail::submit_request(request, std::move(callback), [&] {
+        return uv_write(request.native(), native_stream(), reinterpret_cast<const uv_buf_t *>(buffers.data()),
+                        static_cast<unsigned int>(buffers.size()), &stream::write_trampoline);
+      });
     }
 
     void write(write_request &request, const buffer_view &buf, write_request::callback callback) {
@@ -139,13 +131,9 @@ namespace uvpp {
     void write(write_request &request, std::span<const std::byte> bytes, write_request::callback callback) {
       auto raw = uv_buf_init(const_cast<char *>(reinterpret_cast<const char *>(bytes.data())),
                              static_cast<unsigned int>(bytes.size()));
-      request.set_callback(std::move(callback));
-      try {
-        throw_if_error(uv_write(request.native(), native_stream(), &raw, 1, &stream::write_trampoline));
-      } catch (...) {
-        request.set_callback({});
-        throw;
-      }
+      detail::submit_request(request, std::move(callback), [&] {
+        return uv_write(request.native(), native_stream(), &raw, 1, &stream::write_trampoline);
+      });
     }
 
     template<auto Callback>

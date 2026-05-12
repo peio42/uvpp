@@ -118,14 +118,10 @@ namespace uvpp {
 
     void send(udp_send_request &request, std::span<const buffer_view> buffers, const sockaddr *addr,
               udp_send_request::callback callback) {
-      request.set_callback(std::move(callback));
-      try {
-        throw_if_error(uv_udp_send(request.native(), native(), reinterpret_cast<const uv_buf_t *>(buffers.data()),
-                                   static_cast<unsigned int>(buffers.size()), addr, &udp::send_trampoline));
-      } catch (...) {
-        request.set_callback({});
-        throw;
-      }
+      detail::submit_request(request, std::move(callback), [&] {
+        return uv_udp_send(request.native(), native(), reinterpret_cast<const uv_buf_t *>(buffers.data()),
+                           static_cast<unsigned int>(buffers.size()), addr, &udp::send_trampoline);
+      });
     }
 
     void send(udp_send_request &request, std::span<const buffer_view> buffers, const ipv4 &addr,
@@ -157,13 +153,9 @@ namespace uvpp {
               udp_send_request::callback callback) {
       auto raw = uv_buf_init(const_cast<char *>(reinterpret_cast<const char *>(bytes.data())),
                              static_cast<unsigned int>(bytes.size()));
-      request.set_callback(std::move(callback));
-      try {
-        throw_if_error(uv_udp_send(request.native(), native(), &raw, 1, addr, &udp::send_trampoline));
-      } catch (...) {
-        request.set_callback({});
-        throw;
-      }
+      detail::submit_request(request, std::move(callback), [&] {
+        return uv_udp_send(request.native(), native(), &raw, 1, addr, &udp::send_trampoline);
+      });
     }
 
     void send(udp_send_request &request, std::span<const std::byte> bytes, const ipv4 &addr,
