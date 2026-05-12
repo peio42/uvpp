@@ -34,11 +34,24 @@ namespace uv::fs::raw {
     clone_force = UV_FS_COPYFILE_FICLONE_FORCE
   };
 
+  enum class symlink_flag : int {
+    dir = UV_FS_SYMLINK_DIR,
+    junction = UV_FS_SYMLINK_JUNCTION
+  };
+
   constexpr int operator|(copyfile_flag lhs, copyfile_flag rhs) noexcept {
     return static_cast<int>(lhs) | static_cast<int>(rhs);
   }
 
   constexpr int operator|(int lhs, copyfile_flag rhs) noexcept {
+    return lhs | static_cast<int>(rhs);
+  }
+
+  constexpr int operator|(symlink_flag lhs, symlink_flag rhs) noexcept {
+    return static_cast<int>(lhs) | static_cast<int>(rhs);
+  }
+
+  constexpr int operator|(int lhs, symlink_flag rhs) noexcept {
     return lhs | static_cast<int>(rhs);
   }
 
@@ -93,6 +106,36 @@ namespace uv::fs::raw {
 
     inline readdir_result make_readdir_result(request &request) noexcept {
       return readdir_result{request.raw_result()};
+    }
+
+    template<class Submit>
+    void submit_status(request &request, status_callback callback, Submit submit) {
+      set_callback(request, std::move(callback), make_status_result);
+      detail::submit(request, submit(detail::trampoline));
+    }
+
+    template<class Submit>
+    void submit_stat(request &request, stat_callback callback, Submit submit) {
+      set_callback(request, std::move(callback), make_stat_result);
+      detail::submit(request, submit(detail::trampoline));
+    }
+
+    template<auto Callback, class Submit>
+    void submit_status_static(request &request, Submit submit) {
+      detail::submit(request, submit([](uv_fs_t *raw) noexcept {
+        auto &req = request::from_native(raw);
+        auto result = detail::make_status_result(req);
+        uv::detail::invoke_static_callback<Callback>(req, result);
+      }));
+    }
+
+    template<auto Callback, class Submit>
+    void submit_stat_static(request &request, Submit submit) {
+      detail::submit(request, submit([](uv_fs_t *raw) noexcept {
+        auto &req = request::from_native(raw);
+        auto result = detail::make_stat_result(req);
+        uv::detail::invoke_static_callback<Callback>(req, result);
+      }));
     }
 
     template<class Submit>
@@ -347,6 +390,382 @@ namespace uv::fs::raw {
     unlink_static<Callback>(loop_view{loop.native()}, request, path);
   }
 
+  inline void rename(loop_view loop, request &request, std::string_view path, std::string_view new_path,
+                     status_callback callback) {
+    std::string path_storage{path};
+    std::string new_path_storage{new_path};
+    detail::submit_status(request, std::move(callback), [&](uv_fs_cb cb) {
+      return uv_fs_rename(loop.native(), request.native(), path_storage.c_str(), new_path_storage.c_str(), cb);
+    });
+  }
+
+  inline void rename(loop &loop, request &request, std::string_view path, std::string_view new_path,
+                     status_callback callback) {
+    rename(loop_view{loop.native()}, request, path, new_path, std::move(callback));
+  }
+
+  template<auto Callback>
+  void rename_static(loop_view loop, request &request, std::string_view path, std::string_view new_path) {
+    std::string path_storage{path};
+    std::string new_path_storage{new_path};
+    detail::submit_status_static<Callback>(request, [&](uv_fs_cb cb) {
+      return uv_fs_rename(loop.native(), request.native(), path_storage.c_str(), new_path_storage.c_str(), cb);
+    });
+  }
+
+  template<auto Callback>
+  void rename_static(loop &loop, request &request, std::string_view path, std::string_view new_path) {
+    rename_static<Callback>(loop_view{loop.native()}, request, path, new_path);
+  }
+
+  inline void mkdir(loop_view loop, request &request, std::string_view path, int mode,
+                    status_callback callback) {
+    std::string storage{path};
+    detail::submit_status(request, std::move(callback), [&](uv_fs_cb cb) {
+      return uv_fs_mkdir(loop.native(), request.native(), storage.c_str(), mode, cb);
+    });
+  }
+
+  inline void mkdir(loop &loop, request &request, std::string_view path, int mode,
+                    status_callback callback) {
+    mkdir(loop_view{loop.native()}, request, path, mode, std::move(callback));
+  }
+
+  template<auto Callback>
+  void mkdir_static(loop_view loop, request &request, std::string_view path, int mode) {
+    std::string storage{path};
+    detail::submit_status_static<Callback>(request, [&](uv_fs_cb cb) {
+      return uv_fs_mkdir(loop.native(), request.native(), storage.c_str(), mode, cb);
+    });
+  }
+
+  template<auto Callback>
+  void mkdir_static(loop &loop, request &request, std::string_view path, int mode) {
+    mkdir_static<Callback>(loop_view{loop.native()}, request, path, mode);
+  }
+
+  inline void rmdir(loop_view loop, request &request, std::string_view path, status_callback callback) {
+    std::string storage{path};
+    detail::submit_status(request, std::move(callback), [&](uv_fs_cb cb) {
+      return uv_fs_rmdir(loop.native(), request.native(), storage.c_str(), cb);
+    });
+  }
+
+  inline void rmdir(loop &loop, request &request, std::string_view path, status_callback callback) {
+    rmdir(loop_view{loop.native()}, request, path, std::move(callback));
+  }
+
+  template<auto Callback>
+  void rmdir_static(loop_view loop, request &request, std::string_view path) {
+    std::string storage{path};
+    detail::submit_status_static<Callback>(request, [&](uv_fs_cb cb) {
+      return uv_fs_rmdir(loop.native(), request.native(), storage.c_str(), cb);
+    });
+  }
+
+  template<auto Callback>
+  void rmdir_static(loop &loop, request &request, std::string_view path) {
+    rmdir_static<Callback>(loop_view{loop.native()}, request, path);
+  }
+
+  inline void fstat(loop_view loop, request &request, file_descriptor file, stat_callback callback) {
+    detail::submit_stat(request, std::move(callback), [&](uv_fs_cb cb) {
+      return uv_fs_fstat(loop.native(), request.native(), file.native(), cb);
+    });
+  }
+
+  inline void fstat(loop &loop, request &request, file_descriptor file, stat_callback callback) {
+    fstat(loop_view{loop.native()}, request, file, std::move(callback));
+  }
+
+  template<auto Callback>
+  void fstat_static(loop_view loop, request &request, file_descriptor file) {
+    detail::submit_stat_static<Callback>(request, [&](uv_fs_cb cb) {
+      return uv_fs_fstat(loop.native(), request.native(), file.native(), cb);
+    });
+  }
+
+  template<auto Callback>
+  void fstat_static(loop &loop, request &request, file_descriptor file) {
+    fstat_static<Callback>(loop_view{loop.native()}, request, file);
+  }
+
+  inline void lstat(loop_view loop, request &request, std::string_view path, stat_callback callback) {
+    std::string storage{path};
+    detail::submit_stat(request, std::move(callback), [&](uv_fs_cb cb) {
+      return uv_fs_lstat(loop.native(), request.native(), storage.c_str(), cb);
+    });
+  }
+
+  inline void lstat(loop &loop, request &request, std::string_view path, stat_callback callback) {
+    lstat(loop_view{loop.native()}, request, path, std::move(callback));
+  }
+
+  template<auto Callback>
+  void lstat_static(loop_view loop, request &request, std::string_view path) {
+    std::string storage{path};
+    detail::submit_stat_static<Callback>(request, [&](uv_fs_cb cb) {
+      return uv_fs_lstat(loop.native(), request.native(), storage.c_str(), cb);
+    });
+  }
+
+  template<auto Callback>
+  void lstat_static(loop &loop, request &request, std::string_view path) {
+    lstat_static<Callback>(loop_view{loop.native()}, request, path);
+  }
+
+  inline void access(loop_view loop, request &request, std::string_view path, int mode,
+                     status_callback callback) {
+    std::string storage{path};
+    detail::submit_status(request, std::move(callback), [&](uv_fs_cb cb) {
+      return uv_fs_access(loop.native(), request.native(), storage.c_str(), mode, cb);
+    });
+  }
+
+  inline void access(loop &loop, request &request, std::string_view path, int mode,
+                     status_callback callback) {
+    access(loop_view{loop.native()}, request, path, mode, std::move(callback));
+  }
+
+  template<auto Callback>
+  void access_static(loop_view loop, request &request, std::string_view path, int mode) {
+    std::string storage{path};
+    detail::submit_status_static<Callback>(request, [&](uv_fs_cb cb) {
+      return uv_fs_access(loop.native(), request.native(), storage.c_str(), mode, cb);
+    });
+  }
+
+  template<auto Callback>
+  void access_static(loop &loop, request &request, std::string_view path, int mode) {
+    access_static<Callback>(loop_view{loop.native()}, request, path, mode);
+  }
+
+  inline void chmod(loop_view loop, request &request, std::string_view path, int mode,
+                    status_callback callback) {
+    std::string storage{path};
+    detail::submit_status(request, std::move(callback), [&](uv_fs_cb cb) {
+      return uv_fs_chmod(loop.native(), request.native(), storage.c_str(), mode, cb);
+    });
+  }
+
+  inline void chmod(loop &loop, request &request, std::string_view path, int mode,
+                    status_callback callback) {
+    chmod(loop_view{loop.native()}, request, path, mode, std::move(callback));
+  }
+
+  template<auto Callback>
+  void chmod_static(loop_view loop, request &request, std::string_view path, int mode) {
+    std::string storage{path};
+    detail::submit_status_static<Callback>(request, [&](uv_fs_cb cb) {
+      return uv_fs_chmod(loop.native(), request.native(), storage.c_str(), mode, cb);
+    });
+  }
+
+  template<auto Callback>
+  void chmod_static(loop &loop, request &request, std::string_view path, int mode) {
+    chmod_static<Callback>(loop_view{loop.native()}, request, path, mode);
+  }
+
+  inline void chown(loop_view loop, request &request, std::string_view path, uv_uid_t uid, uv_gid_t gid,
+                    status_callback callback) {
+    std::string storage{path};
+    detail::submit_status(request, std::move(callback), [&](uv_fs_cb cb) {
+      return uv_fs_chown(loop.native(), request.native(), storage.c_str(), uid, gid, cb);
+    });
+  }
+
+  inline void chown(loop &loop, request &request, std::string_view path, uv_uid_t uid, uv_gid_t gid,
+                    status_callback callback) {
+    chown(loop_view{loop.native()}, request, path, uid, gid, std::move(callback));
+  }
+
+  template<auto Callback>
+  void chown_static(loop_view loop, request &request, std::string_view path, uv_uid_t uid, uv_gid_t gid) {
+    std::string storage{path};
+    detail::submit_status_static<Callback>(request, [&](uv_fs_cb cb) {
+      return uv_fs_chown(loop.native(), request.native(), storage.c_str(), uid, gid, cb);
+    });
+  }
+
+  template<auto Callback>
+  void chown_static(loop &loop, request &request, std::string_view path, uv_uid_t uid, uv_gid_t gid) {
+    chown_static<Callback>(loop_view{loop.native()}, request, path, uid, gid);
+  }
+
+  inline void utime(loop_view loop, request &request, std::string_view path, double atime, double mtime,
+                    status_callback callback) {
+    std::string storage{path};
+    detail::submit_status(request, std::move(callback), [&](uv_fs_cb cb) {
+      return uv_fs_utime(loop.native(), request.native(), storage.c_str(), atime, mtime, cb);
+    });
+  }
+
+  inline void utime(loop &loop, request &request, std::string_view path, double atime, double mtime,
+                    status_callback callback) {
+    utime(loop_view{loop.native()}, request, path, atime, mtime, std::move(callback));
+  }
+
+  template<auto Callback>
+  void utime_static(loop_view loop, request &request, std::string_view path, double atime, double mtime) {
+    std::string storage{path};
+    detail::submit_status_static<Callback>(request, [&](uv_fs_cb cb) {
+      return uv_fs_utime(loop.native(), request.native(), storage.c_str(), atime, mtime, cb);
+    });
+  }
+
+  template<auto Callback>
+  void utime_static(loop &loop, request &request, std::string_view path, double atime, double mtime) {
+    utime_static<Callback>(loop_view{loop.native()}, request, path, atime, mtime);
+  }
+
+  inline void fsync(loop_view loop, request &request, file_descriptor file, status_callback callback) {
+    detail::submit_status(request, std::move(callback), [&](uv_fs_cb cb) {
+      return uv_fs_fsync(loop.native(), request.native(), file.native(), cb);
+    });
+  }
+
+  inline void fsync(loop &loop, request &request, file_descriptor file, status_callback callback) {
+    fsync(loop_view{loop.native()}, request, file, std::move(callback));
+  }
+
+  template<auto Callback>
+  void fsync_static(loop_view loop, request &request, file_descriptor file) {
+    detail::submit_status_static<Callback>(request, [&](uv_fs_cb cb) {
+      return uv_fs_fsync(loop.native(), request.native(), file.native(), cb);
+    });
+  }
+
+  template<auto Callback>
+  void fsync_static(loop &loop, request &request, file_descriptor file) {
+    fsync_static<Callback>(loop_view{loop.native()}, request, file);
+  }
+
+  inline void fdatasync(loop_view loop, request &request, file_descriptor file, status_callback callback) {
+    detail::submit_status(request, std::move(callback), [&](uv_fs_cb cb) {
+      return uv_fs_fdatasync(loop.native(), request.native(), file.native(), cb);
+    });
+  }
+
+  inline void fdatasync(loop &loop, request &request, file_descriptor file, status_callback callback) {
+    fdatasync(loop_view{loop.native()}, request, file, std::move(callback));
+  }
+
+  template<auto Callback>
+  void fdatasync_static(loop_view loop, request &request, file_descriptor file) {
+    detail::submit_status_static<Callback>(request, [&](uv_fs_cb cb) {
+      return uv_fs_fdatasync(loop.native(), request.native(), file.native(), cb);
+    });
+  }
+
+  template<auto Callback>
+  void fdatasync_static(loop &loop, request &request, file_descriptor file) {
+    fdatasync_static<Callback>(loop_view{loop.native()}, request, file);
+  }
+
+  inline void ftruncate(loop_view loop, request &request, file_descriptor file, int64_t offset,
+                        status_callback callback) {
+    detail::submit_status(request, std::move(callback), [&](uv_fs_cb cb) {
+      return uv_fs_ftruncate(loop.native(), request.native(), file.native(), offset, cb);
+    });
+  }
+
+  inline void ftruncate(loop &loop, request &request, file_descriptor file, int64_t offset,
+                        status_callback callback) {
+    ftruncate(loop_view{loop.native()}, request, file, offset, std::move(callback));
+  }
+
+  template<auto Callback>
+  void ftruncate_static(loop_view loop, request &request, file_descriptor file, int64_t offset) {
+    detail::submit_status_static<Callback>(request, [&](uv_fs_cb cb) {
+      return uv_fs_ftruncate(loop.native(), request.native(), file.native(), offset, cb);
+    });
+  }
+
+  template<auto Callback>
+  void ftruncate_static(loop &loop, request &request, file_descriptor file, int64_t offset) {
+    ftruncate_static<Callback>(loop_view{loop.native()}, request, file, offset);
+  }
+
+  inline void link(loop_view loop, request &request, std::string_view path, std::string_view new_path,
+                   status_callback callback) {
+    std::string path_storage{path};
+    std::string new_path_storage{new_path};
+    detail::submit_status(request, std::move(callback), [&](uv_fs_cb cb) {
+      return uv_fs_link(loop.native(), request.native(), path_storage.c_str(), new_path_storage.c_str(), cb);
+    });
+  }
+
+  inline void link(loop &loop, request &request, std::string_view path, std::string_view new_path,
+                   status_callback callback) {
+    link(loop_view{loop.native()}, request, path, new_path, std::move(callback));
+  }
+
+  template<auto Callback>
+  void link_static(loop_view loop, request &request, std::string_view path, std::string_view new_path) {
+    std::string path_storage{path};
+    std::string new_path_storage{new_path};
+    detail::submit_status_static<Callback>(request, [&](uv_fs_cb cb) {
+      return uv_fs_link(loop.native(), request.native(), path_storage.c_str(), new_path_storage.c_str(), cb);
+    });
+  }
+
+  template<auto Callback>
+  void link_static(loop &loop, request &request, std::string_view path, std::string_view new_path) {
+    link_static<Callback>(loop_view{loop.native()}, request, path, new_path);
+  }
+
+  inline void symlink(loop_view loop, request &request, std::string_view path, std::string_view new_path,
+                      int flags, status_callback callback) {
+    std::string path_storage{path};
+    std::string new_path_storage{new_path};
+    detail::submit_status(request, std::move(callback), [&](uv_fs_cb cb) {
+      return uv_fs_symlink(loop.native(), request.native(), path_storage.c_str(), new_path_storage.c_str(),
+                           flags, cb);
+    });
+  }
+
+  inline void symlink(loop &loop, request &request, std::string_view path, std::string_view new_path,
+                      int flags, status_callback callback) {
+    symlink(loop_view{loop.native()}, request, path, new_path, flags, std::move(callback));
+  }
+
+  inline void symlink(loop_view loop, request &request, std::string_view path, std::string_view new_path,
+                      status_callback callback) {
+    symlink(loop, request, path, new_path, 0, std::move(callback));
+  }
+
+  inline void symlink(loop &loop, request &request, std::string_view path, std::string_view new_path,
+                      status_callback callback) {
+    symlink(loop_view{loop.native()}, request, path, new_path, std::move(callback));
+  }
+
+  inline void symlink(loop_view loop, request &request, std::string_view path, std::string_view new_path,
+                      symlink_flag flag, status_callback callback) {
+    symlink(loop, request, path, new_path, static_cast<int>(flag), std::move(callback));
+  }
+
+  inline void symlink(loop &loop, request &request, std::string_view path, std::string_view new_path,
+                      symlink_flag flag, status_callback callback) {
+    symlink(loop_view{loop.native()}, request, path, new_path, flag, std::move(callback));
+  }
+
+  template<auto Callback>
+  void symlink_static(loop_view loop, request &request, std::string_view path, std::string_view new_path,
+                      int flags = 0) {
+    std::string path_storage{path};
+    std::string new_path_storage{new_path};
+    detail::submit_status_static<Callback>(request, [&](uv_fs_cb cb) {
+      return uv_fs_symlink(loop.native(), request.native(), path_storage.c_str(), new_path_storage.c_str(),
+                           flags, cb);
+    });
+  }
+
+  template<auto Callback>
+  void symlink_static(loop &loop, request &request, std::string_view path, std::string_view new_path,
+                      int flags = 0) {
+    symlink_static<Callback>(loop_view{loop.native()}, request, path, new_path, flags);
+  }
+
   inline void realpath(loop_view loop, request &request, std::string_view path, path_callback callback) {
     detail::set_callback(request, std::move(callback), detail::make_path_result);
 
@@ -595,6 +1014,7 @@ namespace uv::fs {
 
   using raw::copyfile_flag;
   using raw::directory_entry_type;
+  using raw::symlink_flag;
 
   class status_result {
   public:
@@ -785,6 +1205,36 @@ namespace uv::fs {
       callback(out);
     }
 
+    inline void finish_stat(callback_state<stat_callback> *state, raw::request &request,
+                            raw::stat_result result) {
+      auto cleanup = request.scoped_cleanup();
+      auto callback = std::move(state->callback);
+      auto out = stat_result{result.raw(), result.native_ptr()};
+      cleanup.cleanup();
+      delete state;
+      callback(out);
+    }
+
+    template<class Submit>
+    void submit_status_operation(status_callback callback, Submit submit) {
+      auto *state = new callback_state<status_callback>{{}, std::move(callback)};
+      submit_owned(state, [&] {
+        submit(state->request, [state](raw::request &request, raw::status_result result) {
+          finish_status(state, request, result);
+        });
+      });
+    }
+
+    template<class Submit>
+    void submit_stat_operation(stat_callback callback, Submit submit) {
+      auto *state = new callback_state<stat_callback>{{}, std::move(callback)};
+      submit_owned(state, [&] {
+        submit(state->request, [state](raw::request &request, raw::stat_result result) {
+          finish_stat(state, request, result);
+        });
+      });
+    }
+
   }
 
   inline void open(loop_view loop, std::string_view path, int flags, int mode, open_callback callback) {
@@ -871,16 +1321,8 @@ namespace uv::fs {
   }
 
   inline void stat(loop_view loop, std::string_view path, stat_callback callback) {
-    auto *state = new detail::callback_state<stat_callback>{{}, std::move(callback)};
-    detail::submit_owned(state, [&] {
-      raw::stat(loop, state->request, path, [state](raw::request &request, raw::stat_result result) {
-        auto cleanup = request.scoped_cleanup();
-        auto callback = std::move(state->callback);
-        auto out = stat_result{result.raw(), result.native_ptr()};
-        cleanup.cleanup();
-        delete state;
-        callback(out);
-      });
+    detail::submit_stat_operation(std::move(callback), [&](raw::request &request, raw::stat_callback cb) {
+      raw::stat(loop, request, path, std::move(cb));
     });
   }
 
@@ -889,16 +1331,183 @@ namespace uv::fs {
   }
 
   inline void unlink(loop_view loop, std::string_view path, status_callback callback) {
-    auto *state = new detail::callback_state<status_callback>{{}, std::move(callback)};
-    detail::submit_owned(state, [&] {
-      raw::unlink(loop, state->request, path, [state](raw::request &request, raw::status_result result) {
-        detail::finish_status(state, request, result);
-      });
+    detail::submit_status_operation(std::move(callback), [&](raw::request &request, raw::status_callback cb) {
+      raw::unlink(loop, request, path, std::move(cb));
     });
   }
 
   inline void unlink(loop &loop, std::string_view path, status_callback callback) {
     unlink(loop_view{loop.native()}, path, std::move(callback));
+  }
+
+  inline void rename(loop_view loop, std::string_view path, std::string_view new_path,
+                     status_callback callback) {
+    detail::submit_status_operation(std::move(callback), [&](raw::request &request, raw::status_callback cb) {
+      raw::rename(loop, request, path, new_path, std::move(cb));
+    });
+  }
+
+  inline void rename(loop &loop, std::string_view path, std::string_view new_path,
+                     status_callback callback) {
+    rename(loop_view{loop.native()}, path, new_path, std::move(callback));
+  }
+
+  inline void mkdir(loop_view loop, std::string_view path, int mode, status_callback callback) {
+    detail::submit_status_operation(std::move(callback), [&](raw::request &request, raw::status_callback cb) {
+      raw::mkdir(loop, request, path, mode, std::move(cb));
+    });
+  }
+
+  inline void mkdir(loop &loop, std::string_view path, int mode, status_callback callback) {
+    mkdir(loop_view{loop.native()}, path, mode, std::move(callback));
+  }
+
+  inline void rmdir(loop_view loop, std::string_view path, status_callback callback) {
+    detail::submit_status_operation(std::move(callback), [&](raw::request &request, raw::status_callback cb) {
+      raw::rmdir(loop, request, path, std::move(cb));
+    });
+  }
+
+  inline void rmdir(loop &loop, std::string_view path, status_callback callback) {
+    rmdir(loop_view{loop.native()}, path, std::move(callback));
+  }
+
+  inline void fstat(loop_view loop, file_descriptor file, stat_callback callback) {
+    detail::submit_stat_operation(std::move(callback), [&](raw::request &request, raw::stat_callback cb) {
+      raw::fstat(loop, request, file, std::move(cb));
+    });
+  }
+
+  inline void fstat(loop &loop, file_descriptor file, stat_callback callback) {
+    fstat(loop_view{loop.native()}, file, std::move(callback));
+  }
+
+  inline void lstat(loop_view loop, std::string_view path, stat_callback callback) {
+    detail::submit_stat_operation(std::move(callback), [&](raw::request &request, raw::stat_callback cb) {
+      raw::lstat(loop, request, path, std::move(cb));
+    });
+  }
+
+  inline void lstat(loop &loop, std::string_view path, stat_callback callback) {
+    lstat(loop_view{loop.native()}, path, std::move(callback));
+  }
+
+  inline void access(loop_view loop, std::string_view path, int mode, status_callback callback) {
+    detail::submit_status_operation(std::move(callback), [&](raw::request &request, raw::status_callback cb) {
+      raw::access(loop, request, path, mode, std::move(cb));
+    });
+  }
+
+  inline void access(loop &loop, std::string_view path, int mode, status_callback callback) {
+    access(loop_view{loop.native()}, path, mode, std::move(callback));
+  }
+
+  inline void chmod(loop_view loop, std::string_view path, int mode, status_callback callback) {
+    detail::submit_status_operation(std::move(callback), [&](raw::request &request, raw::status_callback cb) {
+      raw::chmod(loop, request, path, mode, std::move(cb));
+    });
+  }
+
+  inline void chmod(loop &loop, std::string_view path, int mode, status_callback callback) {
+    chmod(loop_view{loop.native()}, path, mode, std::move(callback));
+  }
+
+  inline void chown(loop_view loop, std::string_view path, uv_uid_t uid, uv_gid_t gid,
+                    status_callback callback) {
+    detail::submit_status_operation(std::move(callback), [&](raw::request &request, raw::status_callback cb) {
+      raw::chown(loop, request, path, uid, gid, std::move(cb));
+    });
+  }
+
+  inline void chown(loop &loop, std::string_view path, uv_uid_t uid, uv_gid_t gid,
+                    status_callback callback) {
+    chown(loop_view{loop.native()}, path, uid, gid, std::move(callback));
+  }
+
+  inline void utime(loop_view loop, std::string_view path, double atime, double mtime,
+                    status_callback callback) {
+    detail::submit_status_operation(std::move(callback), [&](raw::request &request, raw::status_callback cb) {
+      raw::utime(loop, request, path, atime, mtime, std::move(cb));
+    });
+  }
+
+  inline void utime(loop &loop, std::string_view path, double atime, double mtime,
+                    status_callback callback) {
+    utime(loop_view{loop.native()}, path, atime, mtime, std::move(callback));
+  }
+
+  inline void fsync(loop_view loop, file_descriptor file, status_callback callback) {
+    detail::submit_status_operation(std::move(callback), [&](raw::request &request, raw::status_callback cb) {
+      raw::fsync(loop, request, file, std::move(cb));
+    });
+  }
+
+  inline void fsync(loop &loop, file_descriptor file, status_callback callback) {
+    fsync(loop_view{loop.native()}, file, std::move(callback));
+  }
+
+  inline void fdatasync(loop_view loop, file_descriptor file, status_callback callback) {
+    detail::submit_status_operation(std::move(callback), [&](raw::request &request, raw::status_callback cb) {
+      raw::fdatasync(loop, request, file, std::move(cb));
+    });
+  }
+
+  inline void fdatasync(loop &loop, file_descriptor file, status_callback callback) {
+    fdatasync(loop_view{loop.native()}, file, std::move(callback));
+  }
+
+  inline void ftruncate(loop_view loop, file_descriptor file, int64_t offset, status_callback callback) {
+    detail::submit_status_operation(std::move(callback), [&](raw::request &request, raw::status_callback cb) {
+      raw::ftruncate(loop, request, file, offset, std::move(cb));
+    });
+  }
+
+  inline void ftruncate(loop &loop, file_descriptor file, int64_t offset, status_callback callback) {
+    ftruncate(loop_view{loop.native()}, file, offset, std::move(callback));
+  }
+
+  inline void link(loop_view loop, std::string_view path, std::string_view new_path,
+                   status_callback callback) {
+    detail::submit_status_operation(std::move(callback), [&](raw::request &request, raw::status_callback cb) {
+      raw::link(loop, request, path, new_path, std::move(cb));
+    });
+  }
+
+  inline void link(loop &loop, std::string_view path, std::string_view new_path,
+                   status_callback callback) {
+    link(loop_view{loop.native()}, path, new_path, std::move(callback));
+  }
+
+  inline void symlink(loop_view loop, std::string_view path, std::string_view new_path, int flags,
+                      status_callback callback) {
+    detail::submit_status_operation(std::move(callback), [&](raw::request &request, raw::status_callback cb) {
+      raw::symlink(loop, request, path, new_path, flags, std::move(cb));
+    });
+  }
+
+  inline void symlink(loop &loop, std::string_view path, std::string_view new_path, int flags,
+                      status_callback callback) {
+    symlink(loop_view{loop.native()}, path, new_path, flags, std::move(callback));
+  }
+
+  inline void symlink(loop_view loop, std::string_view path, std::string_view new_path,
+                      status_callback callback) {
+    symlink(loop, path, new_path, 0, std::move(callback));
+  }
+
+  inline void symlink(loop &loop, std::string_view path, std::string_view new_path,
+                      status_callback callback) {
+    symlink(loop_view{loop.native()}, path, new_path, std::move(callback));
+  }
+
+  inline void symlink(loop_view loop, std::string_view path, std::string_view new_path, symlink_flag flag,
+                      status_callback callback) {
+    symlink(loop, path, new_path, static_cast<int>(flag), std::move(callback));
+  }
+
+  inline void symlink(loop &loop, std::string_view path, std::string_view new_path, symlink_flag flag,
+                      status_callback callback) {
+    symlink(loop_view{loop.native()}, path, new_path, flag, std::move(callback));
   }
 
   inline void realpath(loop_view loop, std::string_view path, path_callback callback) {

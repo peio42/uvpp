@@ -32,6 +32,20 @@ The initial public API includes:
 - `fs::write`
 - `fs::stat`
 - `fs::unlink`
+- `fs::rename`
+- `fs::mkdir`
+- `fs::rmdir`
+- `fs::fstat`
+- `fs::lstat`
+- `fs::access`
+- `fs::chmod`
+- `fs::chown`
+- `fs::utime`
+- `fs::fsync`
+- `fs::fdatasync`
+- `fs::ftruncate`
+- `fs::link`
+- `fs::symlink`
 - `fs::realpath`
 - `fs::readlink`
 - `fs::copyfile`
@@ -53,6 +67,8 @@ Public result objects are safe to keep after the callback returns.
 - `scandir_result`: owns a vector of directory entries.
 
 All result types support `operator bool()` and `error_code()`.
+
+Operations such as `rename`, `mkdir`, `rmdir`, `access`, `chmod`, `chown`, `utime`, `fsync`, `fdatasync`, `ftruncate`, `link`, and `symlink` return `status_result`. `fstat` and `lstat` return `stat_result`, like `stat`.
 
 Example:
 
