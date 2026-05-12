@@ -311,3 +311,7 @@ Versions containing a prerelease suffix such as `2.0.0-rc.1` are published as Gi
 - [Migration from v1](docs/migration-from-v1.md)
 
 The repository also ships a TCP echo server in [`examples/tcp-echo-server.cpp`](examples/tcp-echo-server.cpp).
+
+## License
+
+uvpp v2 is distributed under the MIT License. See [LICENSE](LICENSE).
