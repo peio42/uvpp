@@ -1,5 +1,6 @@
 #include <algorithm>
 #include <chrono>
+#include <concepts>
 #include <ranges>
 #include <type_traits>
 #include <vector>
@@ -22,7 +23,14 @@ void record_handle_type(uv::handle_view h) {
   }
 }
 
+struct invalid_walk_callback {
+  void operator()(int) const {}
+};
+
 } // namespace
+
+static_assert(std::invocable<decltype(record_handle_type)&, uv::handle_view>);
+static_assert(!std::invocable<invalid_walk_callback&, uv::handle_view>);
 
 // ---------------------------------------------------------------------------
 // backend_fd / backend_timeout

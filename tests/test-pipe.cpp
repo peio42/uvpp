@@ -167,7 +167,7 @@ TEST(Uvpp2Pipe, writeWithHandleSendsStreamOverIpc) {
     srv.accept(*accepted);
     srv.close();
 
-    accepted->read_start(pipe_alloc, [&, accepted](uv::pipe &ipc, uv::read_result read) {
+    accepted->read_start(pipe_alloc, [&](uv::pipe &ipc, uv::read_result read) {
       if (read.eof()) {
         ipc.close([](uv::pipe &p) { delete &p; });
         return;

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <chrono>
+#include <concepts>
 #include <memory>
 #include <optional>
 #include <system_error>
@@ -83,6 +84,7 @@ public:
   // Handles not created by uvpp can be safely observed; use handle_view::as<T>()
   // only for handles you know were created by uvpp.
   template<class F>
+    requires std::invocable<F&, handle_view>
   void walk(F &&callback);
 
   // Collect all handles into a vector. Suitable for range-based for and
@@ -161,6 +163,7 @@ public:
   void fork() { view().fork(); }
 
   template<class F>
+    requires std::invocable<F&, handle_view>
   void walk(F &&callback) { view().walk(std::forward<F>(callback)); }
 
   std::vector<handle_view> handles() { return view().handles(); }
@@ -174,6 +177,7 @@ inline loop_view default_loop() noexcept {
 }
 
 template<class F>
+  requires std::invocable<F&, handle_view>
 void loop_view::walk(F &&callback) {
   auto thunk = [&callback](handle_view h) {
     callback(h);

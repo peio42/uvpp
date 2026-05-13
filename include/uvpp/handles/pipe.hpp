@@ -94,8 +94,7 @@ namespace uv {
       chmod(static_cast<int>(flag));
     }
 
-    template<class SendHandle>
-      requires requires(SendHandle &h) { { h.native_stream() } -> std::convertible_to<uv_stream_t *>; }
+    template<stream_handle SendHandle>
     void write_with_handle(write_request &request, std::span<const buffer_view> buffers,
                            SendHandle &send_handle, write_request::callback callback) {
       detail::submit_request(request, std::move(callback), [&] {
@@ -107,8 +106,7 @@ namespace uv {
       });
     }
 
-    template<class SendHandle>
-      requires requires(SendHandle &h) { { h.native_stream() } -> std::convertible_to<uv_stream_t *>; }
+    template<stream_handle SendHandle>
     write_now_result write_with_handle_now(std::span<const buffer_view> buffers,
                                            SendHandle &send_handle) noexcept {
       return write_now_result{uv_try_write2(native_stream(),

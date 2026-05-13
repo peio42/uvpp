@@ -1,5 +1,6 @@
 #pragma once
 
+#include <concepts>
 #include <cstddef>
 #include <functional>
 #include <span>
@@ -64,6 +65,11 @@ namespace uv {
     int value_;
   };
 
+  template<class T>
+  concept stream_handle = requires(T &handle) {
+    { handle.native_stream() } -> std::convertible_to<uv_stream_t *>;
+  };
+
   template<class Derived, class Raw>
   class stream : public basic_handle<Derived, Raw> {
   public:
@@ -95,7 +101,7 @@ namespace uv {
       throw_if_error(uv_stream_set_blocking(native_stream(), enable ? 1 : 0));
     }
 
-    template<class Client>
+    template<stream_handle Client>
     void accept(Client &client) {
       throw_if_error(uv_accept(native_stream(), client.native_stream()));
     }

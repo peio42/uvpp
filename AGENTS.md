@@ -32,6 +32,7 @@ uv::timer timer(loop);
 - Reserve `try_*` for non-throwing variants that return `std::error_code` or an equivalent explicit status channel.
 - Name synchronous immediate libuv operations `*_now()` even when the libuv function uses `try`, such as `send_now()` or `write_now()`.
 - Use typed result objects when an immediate libuv return value mixes payload and status, such as byte counts plus `UV_EAGAIN`.
+- Use C++20 concepts for public templates that depend on structural API contracts, such as stream-like handles or callback invocability.
 - Prefer references in callbacks when null is not valid.
 - Report asynchronous completion through `uv::result` or typed result objects.
 - Throw `uv::error` for immediate submission failures in the primary low-level API.

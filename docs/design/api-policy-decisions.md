@@ -100,6 +100,32 @@ uv_handle_t* handle = tcp.native_handle();
 
 Do not add implicit conversion operators to raw libuv pointers.
 
+## Public Template Constraints
+
+Use C++20 concepts for public templates that depend on structural API
+contracts.
+
+Examples:
+
+```cpp
+template<class T>
+concept stream_handle = requires(T& handle) {
+  { handle.native_stream() } -> std::convertible_to<uv_stream_t*>;
+};
+
+template<stream_handle Client>
+void accept(Client& client);
+```
+
+Good candidates are APIs where the template argument represents a user-visible
+category, such as stream-like handles, callbacks passed to `walk()`, or wrapper
+types passed to `handle_view::as<T>()`.
+
+Do not add constraints mechanically to every implementation template. Private
+helpers such as submit lambdas, result factories, and local getter utilities can
+remain unconstrained when their use is obvious and diagnostics are already
+local.
+
 ## Chrono For Durations
 
 Use `std::chrono` for durations in public APIs.
