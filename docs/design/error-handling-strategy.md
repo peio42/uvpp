@@ -37,7 +37,7 @@ void throw_if_error(int status) {
 }
 ```
 
-Throwing APIs are concise and match v1's current direction, but callback boundaries need special care.
+Throwing APIs keep immediate failure handling concise, but callback boundaries need special care.
 
 ## Non-Throwing API
 

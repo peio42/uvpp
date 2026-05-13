@@ -1,0 +1,10 @@
+# Design Notes
+
+These documents describe uvpp's API and implementation strategy. They are primarily for contributors and maintainers.
+
+- [Architecture](architecture.md): storage model, wrapper hierarchy, native interop, and repository layout.
+- [API principles](api-principles.md): public API shape, naming, native access, user data, and value types.
+- [Callback strategy](callback-strategy.md): runtime callbacks, static callbacks, callback slots, trampolines, and exception boundaries.
+- [Error handling strategy](error-handling-strategy.md): immediate failures, async completion results, EOF, and callback failure policy.
+- [Ownership strategy](ownership-strategy.md): handle lifetime, request lifetime, buffers, user data, loop ownership, and deallocation rules.
+- [Thread safety](thread-safety.md): libuv threading model and cross-thread communication rules.

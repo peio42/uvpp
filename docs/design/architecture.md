@@ -38,16 +38,25 @@ The project should not add compatibility shims for C++17 or earlier in the v2 co
 ## Directory Layout
 
 ```text
+AGENTS.md
+README.md
 docs/
-  architecture.md
-  api-principles.md
+  index.md
+  getting-started.md
   callbacks.md
-  error-handling.md
-  fs.md
-  ownership.md
+  errors.md
+  ownership-and-lifetime.md
+  buffers.md
+  streams.md
+  filesystem.md
   process.md
-  migration-from-v1.md
-  thread-safety.md
+  design/
+    architecture.md
+    api-principles.md
+    callback-strategy.md
+    error-handling-strategy.md
+    ownership-strategy.md
+    thread-safety.md
 include/uvpp/
   uv.hpp
   core/
@@ -92,7 +101,7 @@ tests/
 examples/
 ```
 
-The current v1 code remains a reference implementation and compatibility target only where useful. v2 is allowed to break API compatibility.
+User documentation lives directly under `docs/`. Design and coding strategy lives under `docs/design/` and is referenced from `AGENTS.md`.
 
 ## Native Storage Model
 
@@ -193,6 +202,10 @@ uv::handle_view view = timer.view();
 such as `active()`, `closing()`, `ref()`, and `unref()`. It is a borrowed view,
 not an owner, and does not consume the native `data` field.
 
+The conversion from a concrete handle wrapper to `handle_view` must stay named
+as `.view()`. Do not provide an implicit conversion operator from
+`basic_handle` to `handle_view`.
+
 ## User Data
 
 libuv's `data` fields remain user-owned in v2. Wrapper objects must not store `this` in `raw.data` for handles or requests.
@@ -208,21 +221,16 @@ handle.clear_user_data();
 
 This API is intentionally zero-overhead: it stores exactly the native `void*` and performs only a typed cast at the boundary. It cannot validate that the requested type matches the stored object. The documentation should present it as a convenience over libuv's raw pointer, not as a type-safe ownership mechanism.
 
-## Initial Vertical Slice
+## Wrapper Growth
 
-The first implementation should prove the architecture with:
+Add wrappers one libuv object family at a time. Each addition should preserve the same low-level contract:
 
-- `loop`
-- `basic_handle`
-- `timer`
-- `stream`
-- `tcp`
-- `write_request`
-- `buffer_view`
-- a TCP echo example
-- focused tests for lifecycle, callbacks, errors, and basic TCP I/O
-
-Once this slice is stable, add wrappers one libuv object family at a time.
+- address-stable native storage;
+- explicit native accessors;
+- no wrapper-owned state in libuv `data`;
+- typed callback arguments;
+- explicit async lifetime;
+- focused tests for layout, lifecycle, errors, and callback behavior.
 
 ## Loop Run Return Value
 

@@ -2,7 +2,7 @@
 
 # uvpp v2
 
-uvpp v2 is a header-only C++20 wrapper around [libuv](https://libuv.org/).
+uvpp is a header-only C++20 wrapper around [libuv](https://libuv.org/).
 
 The project keeps the `uvpp` name for the repository and include path, while the public C++ API lives in namespace `uv`:
 
@@ -13,9 +13,9 @@ uv::loop loop;
 uv::timer timer(loop);
 ```
 
-v2 is not a compatibility layer for uvpp v1. It is a cleaner C++ API over libuv with explicit lifetime rules, typed callbacks, native interop, and a small compiled footprint.
+uvpp is a C++ API over libuv with explicit lifetime rules, typed callbacks, native interop, and a small compiled footprint.
 
-## Why uvpp v2?
+## Why uvpp?
 
 - Header-only integration: add `include/` to your include path and link with libuv.
 - C++20 vocabulary: `std::chrono`, `std::span`, `std::string_view`, typed value wrappers, and move-aware result types.
@@ -302,15 +302,17 @@ Versions containing a prerelease suffix such as `2.0.0-rc.1` are published as Gi
 
 ## Documentation
 
-- [Architecture](docs/architecture.md)
-- [API principles](docs/api-principles.md)
+- [Documentation index](docs/index.md)
+- [Getting started](docs/getting-started.md)
 - [Callbacks](docs/callbacks.md)
-- [Error handling](docs/error-handling.md)
-- [Filesystem](docs/fs.md)
-- [Ownership and lifetime](docs/ownership.md)
+- [Errors](docs/errors.md)
+- [Ownership and lifetime](docs/ownership-and-lifetime.md)
+- [Buffers](docs/buffers.md)
+- [Streams](docs/streams.md)
+- [Filesystem](docs/filesystem.md)
 - [Process](docs/process.md)
-- [Thread safety](docs/thread-safety.md)
-- [Migration from v1](docs/migration-from-v1.md)
+
+Contributor design notes live under [docs/design](docs/design/).
 
 The repository also ships a TCP echo server in [`examples/tcp-echo-server.cpp`](examples/tcp-echo-server.cpp).
 

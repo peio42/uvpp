@@ -59,6 +59,28 @@ uv_stream_t* stream = tcp.native_stream();
 
 There should be no implicit conversion operator to raw libuv pointers in the primary API. Implicit conversions make call sites short, but they reintroduce the same ambiguity v2 is meant to remove.
 
+## Explicit Borrowed Views
+
+Borrowed views must be produced with named functions, not implicit conversion
+operators.
+
+Examples:
+
+```cpp
+uv::handle_view handle = timer.view();
+uv::buffer_view buffer = storage.view();
+```
+
+The `.view()` spelling makes the lifetime relationship visible at the call
+site: the returned object does not own the underlying native handle, buffer, or
+storage. This is especially important for asynchronous operations and loop
+introspection, where keeping a view after the owner is closed or destroyed is a
+user lifetime error.
+
+Do not add implicit conversions from owning or address-stable wrappers to
+borrowed views such as `handle_view`. A named conversion is slightly longer, but
+it preserves uvpp's explicit ownership model.
+
 ## Thin Native Operations
 
 Low-level wrappers may expose immediate libuv operations directly when they do not change ownership semantics.
