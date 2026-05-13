@@ -12,6 +12,10 @@ The grammar is:
 - `uv::result` exposes `status()` and `error_code()`, not `error()`;
 - v2 does not use `result<void>` in the low-level API.
 
+See [API policy decisions](api-policy-decisions.md) for the related naming rule:
+libuv "try now" operations should use `*_now()` in uvpp rather than consuming
+the `try_*` prefix.
+
 ## Error Type
 
 Use a small `uv::error` type for exceptions and expose `std::error_code` for non-throwing APIs.

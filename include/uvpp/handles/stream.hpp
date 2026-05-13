@@ -42,6 +42,28 @@ namespace uv {
     buffer_view buffer_;
   };
 
+  class write_now_result {
+  public:
+    explicit write_now_result(int value) noexcept : value_{value} {}
+
+    bool ok()          const noexcept { return value_ >= 0; }
+    bool would_block() const noexcept { return value_ == UV_EAGAIN; }
+    bool has_error()   const noexcept { return value_ < 0 && value_ != UV_EAGAIN; }
+
+    std::size_t bytes_written() const noexcept {
+      return ok() ? static_cast<std::size_t>(value_) : 0;
+    }
+
+    int raw() const noexcept { return value_; }
+
+    std::error_code error_code() const noexcept {
+      return has_error() ? make_error_code(value_) : std::error_code{};
+    }
+
+  private:
+    int value_;
+  };
+
   template<class Derived, class Raw>
   class stream : public basic_handle<Derived, Raw> {
   public:
@@ -120,7 +142,7 @@ namespace uv {
     void write(write_request &request, std::span<const buffer_view> buffers, write_request::callback callback) {
       detail::submit_request(request, std::move(callback), [&] {
         return uv_write(request.native(), native_stream(), reinterpret_cast<const uv_buf_t *>(buffers.data()),
-                        static_cast<unsigned int>(buffers.size()), &stream::write_trampoline);
+                        static_cast<unsigned int>(buffers.size()), write_request::trampoline);
       });
     }
 
@@ -132,7 +154,7 @@ namespace uv {
       auto raw = uv_buf_init(const_cast<char *>(reinterpret_cast<const char *>(bytes.data())),
                              static_cast<unsigned int>(bytes.size()));
       detail::submit_request(request, std::move(callback), [&] {
-        return uv_write(request.native(), native_stream(), &raw, 1, &stream::write_trampoline);
+        return uv_write(request.native(), native_stream(), &raw, 1, write_request::trampoline);
       });
     }
 
@@ -142,6 +164,22 @@ namespace uv {
                      static_cast<unsigned int>(buffers.size()), [](uv_write_t *raw, int status) noexcept {
         detail::invoke_static_callback<Callback>(write_request::from_native(raw), result{status});
       }));
+    }
+
+    write_now_result write_now(std::span<const buffer_view> buffers) noexcept {
+      return write_now_result{uv_try_write(native_stream(),
+        reinterpret_cast<const uv_buf_t *>(buffers.data()),
+        static_cast<unsigned int>(buffers.size()))};
+    }
+
+    write_now_result write_now(const buffer_view &buf) noexcept {
+      return write_now(std::span<const buffer_view>{&buf, 1});
+    }
+
+    write_now_result write_now(std::span<const std::byte> bytes) noexcept {
+      auto raw = uv_buf_init(const_cast<char *>(reinterpret_cast<const char *>(bytes.data())),
+                             static_cast<unsigned int>(bytes.size()));
+      return write_now_result{uv_try_write(native_stream(), &raw, 1)};
     }
 
   private:
@@ -175,10 +213,6 @@ namespace uv {
       if (base.read_callback_) {
         detail::invoke_callback(base.read_callback_, self, read_result{nread, buf});
       }
-    }
-
-    static void write_trampoline(uv_write_t *raw, int status) noexcept {
-      write_request::from_native(raw).invoke(status);
     }
 
     static void shutdown_trampoline(uv_shutdown_t *raw, int status) noexcept {

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <span>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -91,6 +92,29 @@ namespace uv {
 
     void chmod(pipe_chmod_flag flag) {
       chmod(static_cast<int>(flag));
+    }
+
+    template<class SendHandle>
+      requires requires(SendHandle &h) { h.native_stream(); }
+    void write_with_handle(write_request &request, std::span<const buffer_view> buffers,
+                           SendHandle &send_handle, write_request::callback callback) {
+      detail::submit_request(request, std::move(callback), [&] {
+        return uv_write2(request.native(), native_stream(),
+                         reinterpret_cast<const uv_buf_t *>(buffers.data()),
+                         static_cast<unsigned int>(buffers.size()),
+                         send_handle.native_stream(),
+                         write_request::trampoline);
+      });
+    }
+
+    template<class SendHandle>
+      requires requires(SendHandle &h) { h.native_stream(); }
+    write_now_result write_with_handle_now(std::span<const buffer_view> buffers,
+                                           SendHandle &send_handle) noexcept {
+      return write_now_result{uv_try_write2(native_stream(),
+        reinterpret_cast<const uv_buf_t *>(buffers.data()),
+        static_cast<unsigned int>(buffers.size()),
+        send_handle.native_stream())};
     }
 
   private:
