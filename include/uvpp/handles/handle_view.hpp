@@ -1,8 +1,22 @@
 #pragma once
 
+#include <concepts>
+
 #include <uv.h>
 
 namespace uv {
+
+namespace detail {
+
+template<class T>
+concept native_handle_recoverable =
+  requires { typename T::raw_type; } &&
+  requires(typename T::raw_type *raw, const typename T::raw_type *const_raw) {
+    { T::from_native(raw) } -> std::same_as<T&>;
+    { T::from_native(const_raw) } -> std::same_as<const T&>;
+  };
+
+} // namespace detail
 
 // Non-owning view of any uv_handle_t*, including handles not created by uvpp.
 // Provides safe access to common handle operations.
@@ -29,11 +43,13 @@ public:
   // Recovers the uvpp object from the handle pointer.
   // UNSAFE: only valid if this handle was created by uvpp as a T.
   template<class T>
+    requires detail::native_handle_recoverable<T>
   T &as() noexcept {
     return T::from_native(reinterpret_cast<typename T::raw_type *>(raw_));
   }
 
   template<class T>
+    requires detail::native_handle_recoverable<T>
   const T &as() const noexcept {
     return T::from_native(reinterpret_cast<const typename T::raw_type *>(raw_));
   }

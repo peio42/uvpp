@@ -4,6 +4,14 @@
 #include "gtest/gtest.h"
 #include "uvpp/uv.hpp"
 
+static_assert(uv::stream_handle<uv::tcp>);
+static_assert(uv::stream_handle<uv::pipe>);
+static_assert(uv::stream_handle<uv::tty>);
+static_assert(!uv::stream_handle<uv::timer>);
+
+static_assert(uv::detail::native_handle_recoverable<uv::timer>);
+static_assert(!uv::detail::native_handle_recoverable<int>);
+
 TEST(Uvpp2Layout, reconstructsHandlesFromNativePointers) {
   static_assert(std::is_standard_layout_v<uv::async::native_storage>);
   static_assert(std::is_standard_layout_v<uv::check::native_storage>);

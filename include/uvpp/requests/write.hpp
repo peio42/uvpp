@@ -28,6 +28,10 @@ namespace uv {
       }
     }
 
+    static void trampoline(uv_write_t *raw, int status) noexcept {
+      from_native(raw).invoke(status);
+    }
+
   private:
     callback callback_{};
   };

@@ -142,3 +142,89 @@ TEST(Uvpp2Pipe, reportsStaticConnectFailureCallback) {
   loop.close();
   std::filesystem::remove(path);
 }
+
+TEST(Uvpp2Pipe, writeWithHandleSendsStreamOverIpc) {
+  auto path = pipe_path() + "-ipc";
+  std::filesystem::remove(path);
+
+  uv::loop loop;
+  uv::pipe ipc_server(loop);        // ipc=false: only accepts connections
+  uv::pipe ipc_client(loop, true);  // ipc=true: sends handles via write_with_handle
+  uv::connect_request connect_req;
+  uv::write_request write_req;
+
+  uv::tcp tcp_to_pass(loop);
+  tcp_to_pass.bind(uv::ipv4{"127.0.0.1", 0});
+
+  bool data_received   = false;
+  bool handle_received = false;
+
+  ipc_server.bind(path);
+  ipc_server.listen([&](uv::pipe &srv, uv::result status) {
+    ASSERT_TRUE(status);
+
+    auto *accepted = new uv::pipe(loop, true);
+    srv.accept(*accepted);
+    srv.close();
+
+    accepted->read_start(pipe_alloc, [&](uv::pipe &ipc, uv::read_result read) {
+      if (read.eof()) {
+        ipc.close([](uv::pipe &p) { delete &p; });
+        return;
+      }
+      ASSERT_TRUE(read.ok());
+      data_received = true;
+
+      if (ipc.pending_count() > 0) {
+        EXPECT_EQ(ipc.pending_type(), UV_TCP);
+        auto *received = new uv::tcp(loop);
+        ipc.accept(*received);
+        handle_received = true;
+        received->close([](uv::tcp &t) { delete &t; });
+      }
+
+      ipc.read_stop();
+      ipc.close([](uv::pipe &p) { delete &p; });
+    });
+  });
+
+  ipc_client.connect(connect_req, path, [&](uv::connect_request &, uv::result status) {
+    ASSERT_TRUE(status);
+    static char msg[] = "x";
+    uv::buffer_view buf{msg, 1};
+    ipc_client.write_with_handle(write_req,
+      std::span<const uv::buffer_view>{&buf, 1},
+      tcp_to_pass,
+      [&](uv::write_request &, uv::result wr) {
+        ASSERT_TRUE(wr);
+        ipc_client.close();
+        tcp_to_pass.close();
+      });
+  });
+
+  loop.run();
+
+  EXPECT_TRUE(data_received);
+  EXPECT_TRUE(handle_received);
+
+  loop.close();
+  std::filesystem::remove(path);
+}
+
+TEST(Uvpp2Pipe, writeWithHandleNowReturnsErrorOnUnconnectedPipe) {
+  uv::loop loop;
+  uv::pipe ipc(loop, true);
+  uv::tcp handle(loop);
+
+  static char msg[] = "x";
+  uv::buffer_view buf{msg, 1};
+  auto r = ipc.write_with_handle_now(std::span<const uv::buffer_view>{&buf, 1}, handle);
+
+  EXPECT_TRUE(r.has_error());
+  EXPECT_FALSE(r.ok());
+
+  ipc.close();
+  handle.close();
+  loop.run();
+  loop.close();
+}

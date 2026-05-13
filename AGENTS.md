@@ -27,9 +27,16 @@ uv::timer timer(loop);
 - Do not make handles copyable or movable.
 - Do not store wrapper internals in libuv `data`; `data` belongs to application code.
 - Keep raw libuv access explicit through named helpers such as `native()`, `native_handle()`, and `native_stream()`.
+- Do not add implicit conversions to raw libuv pointers or borrowed view types.
+- Produce borrowed views through explicit `.view()` functions, such as `timer.view()` or `buffer.view()`.
+- Reserve `try_*` for non-throwing variants that return `std::error_code` or an equivalent explicit status channel.
+- Name synchronous immediate libuv operations `*_now()` even when the libuv function uses `try`, such as `send_now()` or `write_now()`.
+- Use typed result objects when an immediate libuv return value mixes payload and status, such as byte counts plus `UV_EAGAIN`.
+- Use C++20 concepts for public templates that depend on structural API contracts, such as stream-like handles or callback invocability.
 - Prefer references in callbacks when null is not valid.
 - Report asynchronous completion through `uv::result` or typed result objects.
 - Throw `uv::error` for immediate submission failures in the primary low-level API.
+- Use `std::chrono` for public duration values; keep counters as integer counts.
 - Keep asynchronous lifetime visible through handle/request ownership.
 - Keep low-level wrappers allocation-free unless the API explicitly owns operation state.
 - Do not let exceptions escape from libuv C callbacks.
@@ -47,6 +54,7 @@ Read these before changing public API shape or callback/lifetime behavior:
 
 - `docs/design/architecture.md`
 - `docs/design/api-principles.md`
+- `docs/design/api-policy-decisions.md`
 - `docs/design/callback-strategy.md`
 - `docs/design/error-handling-strategy.md`
 - `docs/design/ownership-strategy.md`
