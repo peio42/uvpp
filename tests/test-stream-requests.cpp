@@ -235,6 +235,7 @@ TEST(Uvpp2StreamRequests, writeNowSendsBytesOnConnectedTcp) {
 
   EXPECT_TRUE(write_ok);
   EXPECT_EQ(bytes_written, 5u);
+  EXPECT_EQ(bytes_read, 5u);
 }
 
 TEST(Uvpp2StreamRequests, writeNowReturnsErrorOnUnconnectedStream) {
