@@ -2,6 +2,7 @@
 
 #include "uvpp/core/error.hpp"
 #include "uvpp/core/loop.hpp"
+#include "uvpp/handles/handle_view.hpp"
 #include "uvpp/fs/dir.hpp"
 #include "uvpp/fs/file.hpp"
 #include "uvpp/fs/operations.hpp"

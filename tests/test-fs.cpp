@@ -374,6 +374,38 @@ TEST(Uvpp2Fs, scansDirectoryEntriesWithoutCopyingInTheWrapper) {
   std::filesystem::remove_all(dir);
 }
 
+TEST(Uvpp2Fs, scandirResultIsUsableAsRangeBasedFor) {
+  auto dir = temp_path("scandir-range");
+  std::filesystem::remove_all(dir);
+  std::filesystem::create_directory(dir);
+  {
+    std::ofstream file{dir / "alpha.txt"};
+    file << "alpha";
+  }
+  {
+    std::ofstream file{dir / "beta.txt"};
+    file << "beta";
+  }
+
+  uv::loop loop;
+  std::vector<std::string> names;
+
+  uv::fs::scandir(loop, dir.string(), 0, [&](uv::fs::scandir_result result) {
+    ASSERT_TRUE(result);
+    for (const auto &entry : result) {
+      names.emplace_back(entry.name);
+    }
+  });
+
+  loop.run();
+  loop.close();
+
+  EXPECT_NE(std::find(names.begin(), names.end(), "alpha.txt"), names.end());
+  EXPECT_NE(std::find(names.begin(), names.end(), "beta.txt"), names.end());
+
+  std::filesystem::remove_all(dir);
+}
+
 TEST(Uvpp2Fs, opensReadsAndClosesDirectory) {
   auto path = temp_path("opendir");
   std::filesystem::remove_all(path);
