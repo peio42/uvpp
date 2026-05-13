@@ -8,6 +8,7 @@
 #include "uvpp/core/callback.hpp"
 #include "uvpp/core/error.hpp"
 #include "uvpp/core/native.hpp"
+#include "uvpp/handles/handle_view.hpp"
 
 namespace uv {
 
@@ -30,6 +31,8 @@ namespace uv {
     const uv_handle_t *native_handle() const noexcept {
       return this->native_base();
     }
+
+    operator handle_view() noexcept { return handle_view{native_handle()}; }
 
     bool active() const noexcept {
       return uv_is_active(const_cast<uv_handle_t *>(this->native_handle())) != 0;

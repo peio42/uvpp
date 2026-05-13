@@ -2,6 +2,7 @@
 
 #include <cassert>
 #include <cstddef>
+#include <iterator>
 #include <string_view>
 #include <system_error>
 #include <utility>
@@ -156,6 +157,52 @@ namespace uv::fs::raw {
       entry = directory_entry{native.name, native.type};
       return true;
     }
+
+    // Input iterator over the entries returned by uv_fs_scandir_next.
+    // scandir_result is a single-pass range: the internal cursor advances with
+    // each dereference, so begin() must be called at most once.
+    class iterator {
+    public:
+      using value_type        = directory_entry;
+      using difference_type   = std::ptrdiff_t;
+      using iterator_category = std::input_iterator_tag;
+      using iterator_concept  = std::input_iterator_tag;
+
+      iterator() = default;
+
+      const directory_entry &operator*()  const noexcept { return current_; }
+      const directory_entry *operator->() const noexcept { return &current_; }
+
+      iterator &operator++() { advance(); return *this; }
+      void      operator++(int) { advance(); }
+
+      bool operator==(const iterator &other) const noexcept {
+        return req_ == other.req_;
+      }
+
+    private:
+      friend class scandir_result;
+
+      explicit iterator(uv_fs_t *req) : req_{req} { advance(); }
+
+      void advance() noexcept {
+        uv_dirent_t native{};
+        if (!req_ || uv_fs_scandir_next(req_, &native) != 0) {
+          req_ = nullptr;
+        } else {
+          current_ = directory_entry{native.name, native.type};
+        }
+      }
+
+      uv_fs_t *req_ = nullptr;
+      directory_entry current_;
+    };
+
+    iterator begin() noexcept {
+      return ok() ? iterator{request_} : iterator{};
+    }
+
+    iterator end() const noexcept { return {}; }
 
   private:
     ssize_t result_ = 0;
