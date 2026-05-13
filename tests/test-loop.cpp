@@ -52,12 +52,14 @@ TEST(Uvpp2Loop, metricsIdleTimeAccumulatesAfterRun) {
   uv::loop loop;
   loop.enable_metrics_idle_time();
 
+  uint64_t idle_before = loop.metrics_idle_time();
+
   uv::timer timer(loop);
-  timer.start(std::chrono::milliseconds{1}, [](uv::timer &t) { t.close(); });
+  timer.start(std::chrono::milliseconds{50}, [](uv::timer &t) { t.close(); });
 
   loop.run();
 
-  EXPECT_GT(loop.metrics_idle_time(), 0u);
+  EXPECT_GT(loop.metrics_idle_time(), idle_before);
 
   loop.close();
 }

@@ -1,6 +1,8 @@
 #pragma once
 
+#include <memory>
 #include <system_error>
+#include <type_traits>
 #include <vector>
 
 #include <uv.h>
