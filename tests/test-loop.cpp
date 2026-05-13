@@ -1,6 +1,7 @@
 #include <algorithm>
 #include <chrono>
 #include <ranges>
+#include <type_traits>
 #include <vector>
 
 #ifndef _WIN32
@@ -11,6 +12,17 @@
 
 #include "gtest/gtest.h"
 #include "uvpp/uv.hpp"
+
+namespace {
+
+void record_handle_type(uv::handle_view h) {
+  if (h.type() == UV_TIMER) {
+    auto *count = static_cast<int *>(h.native_handle()->data);
+    ++*count;
+  }
+}
+
+} // namespace
 
 // ---------------------------------------------------------------------------
 // backend_fd / backend_timeout
@@ -213,15 +225,34 @@ TEST(Uvpp2Loop, walkWorksOnLoopView) {
   loop.close();
 }
 
+TEST(Uvpp2Loop, walkAcceptsFunctionPointerCallbacks) {
+  uv::loop loop;
+  uv::timer timer(loop);
+  timer.start(std::chrono::seconds{10}, [](uv::timer &) {});
+
+  int count = 0;
+  timer.user_data(count);
+
+  loop.walk(record_handle_type);
+  EXPECT_EQ(count, 1);
+
+  timer.clear_user_data();
+  timer.close();
+  loop.run();
+  loop.close();
+}
+
 // ---------------------------------------------------------------------------
-// handle_view: implicit conversion from basic_handle
+// handle_view
 // ---------------------------------------------------------------------------
 
-TEST(Uvpp2HandleView, basicHandleIsImplicitlyConvertibleToHandleView) {
+TEST(Uvpp2HandleView, basicHandleExposesNamedHandleView) {
+  static_assert(!std::is_convertible_v<uv::timer &, uv::handle_view>);
+
   uv::loop loop;
   uv::timer timer(loop);
 
-  uv::handle_view view = timer;
+  uv::handle_view view = timer.view();
   EXPECT_EQ(view.type(), UV_TIMER);
   EXPECT_EQ(view.native_handle(), timer.native_handle());
   EXPECT_FALSE(view.closing());
@@ -235,7 +266,7 @@ TEST(Uvpp2HandleView, handleViewRefAndUnrefAdjustReferenceCount) {
   uv::loop loop;
   uv::timer timer(loop);
 
-  uv::handle_view view = timer;
+  uv::handle_view view = timer.view();
   EXPECT_TRUE(view.has_ref());
 
   view.unref();

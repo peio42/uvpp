@@ -182,6 +182,17 @@ uv_stream_t* native_stream() noexcept;
 
 These functions are the only sanctioned locations for raw pointer reinterpretation.
 
+Handles also expose an explicit non-owning view for code that operates on
+generic libuv handles:
+
+```cpp
+uv::handle_view view = timer.view();
+```
+
+`handle_view` wraps a `uv_handle_t*` and offers the common handle operations
+such as `active()`, `closing()`, `ref()`, and `unref()`. It is a borrowed view,
+not an owner, and does not consume the native `data` field.
+
 ## User Data
 
 libuv's `data` fields remain user-owned in v2. Wrapper objects must not store `this` in `raw.data` for handles or requests.
@@ -216,6 +227,19 @@ Once this slice is stable, add wrappers one libuv object family at a time.
 ## Loop Run Return Value
 
 `loop::run()` and `loop_view::run()` return `bool`. The return value is `true` if there are still active handles or requests pending after the loop exits (i.e., when run in `UV_RUN_NOWAIT` or `UV_RUN_ONCE` mode); it is `false` when the loop is empty. In the default `UV_RUN_DEFAULT` mode the loop runs until there is no more work and always returns `false`.
+
+## Loop Introspection
+
+`loop` and `loop_view` expose thin wrappers over libuv loop introspection:
+
+- `backend_fd()` and `backend_timeout()` report backend polling details;
+- `enable_metrics_idle_time()`, `metrics_idle_time()`, and `metrics_info()` expose libuv loop metrics;
+- `configure_block_signal()` and `fork()` map to the corresponding libuv loop configuration operations;
+- `walk(callback)` visits handles synchronously as `handle_view` values;
+- `handles()` collects the current walked handles into a `std::vector<handle_view>` for range-based loops and ranges pipelines.
+
+These APIs intentionally stay close to libuv. They do not take ownership of
+handles and do not add wrapper state.
 
 ## Filesystem Layering
 

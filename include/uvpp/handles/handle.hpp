@@ -32,7 +32,7 @@ namespace uv {
       return this->native_base();
     }
 
-    operator handle_view() noexcept { return handle_view{native_handle()}; }
+    handle_view view() noexcept { return handle_view{native_handle()}; }
 
     bool active() const noexcept {
       return uv_is_active(const_cast<uv_handle_t *>(this->native_handle())) != 0;

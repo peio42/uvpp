@@ -175,6 +175,16 @@ The initial low-level `loop` destructor does not call `uv_loop_close()`. Users m
 
 `loop.close()` maps directly to `uv_loop_close()`: it succeeds only when libuv considers the loop closable, and throws `uv::error` on immediate failure. The destructor intentionally provides no hidden cleanup fallback because that would obscure leaked active handles.
 
+`loop.walk(callback)` and `loop.handles()` expose handles through `handle_view`.
+Those views are non-owning pointers to the underlying `uv_handle_t` objects.
+They remain valid only while the native handle remains alive; do not keep them
+past handle close/destruction unless the application independently guarantees
+the native handle lifetime.
+
+`handle_view::as<T>()` is a low-level recovery helper for handles known to have
+been created by uvpp as `T`. Calling it with the wrong wrapper type, or with a
+handle not created by uvpp, is undefined user behavior.
+
 ## Deallocation Rules
 
 The low-level layer should never delete user objects implicitly unless the API clearly documents ownership transfer.

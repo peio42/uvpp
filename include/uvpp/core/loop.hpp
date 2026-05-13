@@ -2,7 +2,7 @@
 
 #include <memory>
 #include <system_error>
-#include <type_traits>
+#include <utility>
 #include <vector>
 
 #include <uv.h>
@@ -159,10 +159,13 @@ inline loop_view default_loop() noexcept {
 
 template<class F>
 void loop_view::walk(F &&callback) {
-  using Fn = std::remove_reference_t<F>;
+  auto thunk = [&callback](handle_view h) {
+    callback(h);
+  };
+  using Thunk = decltype(thunk);
   uv_walk(raw_, [](uv_handle_t *h, void *arg) noexcept {
-    detail::invoke_callback(*static_cast<Fn *>(arg), handle_view{h});
-  }, std::addressof(callback));
+    detail::invoke_callback(*static_cast<Thunk *>(arg), handle_view{h});
+  }, std::addressof(thunk));
 }
 
 inline std::vector<handle_view> loop_view::handles() {
