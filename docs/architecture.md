@@ -241,6 +241,11 @@ Once this slice is stable, add wrappers one libuv object family at a time.
 These APIs intentionally stay close to libuv. They do not take ownership of
 handles and do not add wrapper state.
 
+`backend_timeout()` returns `std::optional<std::chrono::milliseconds>`:
+`std::nullopt` represents libuv's infinite wait sentinel. `metrics_idle_time()`
+returns `std::chrono::nanoseconds`. Loop counters and event counters remain
+plain integer counts in `loop_metrics`.
+
 ## Filesystem Layering
 
 Filesystem operations are intentionally split from normal request wrappers.

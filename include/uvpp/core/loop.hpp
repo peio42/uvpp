@@ -1,6 +1,8 @@
 #pragma once
 
+#include <chrono>
 #include <memory>
+#include <optional>
 #include <system_error>
 #include <utility>
 #include <vector>
@@ -42,14 +44,20 @@ public:
   // Returns the I/O backend file descriptor (not available on Windows).
   int backend_fd() const noexcept { return uv_backend_fd(raw_); }
 
-  // Returns the timeout the backend should use on the next poll, in
-  // milliseconds. -1 means infinite, 0 means no wait.
-  int backend_timeout() const noexcept { return uv_backend_timeout(raw_); }
+  // Returns the timeout the backend should use on the next poll. std::nullopt
+  // means infinite, zero means no wait.
+  std::optional<std::chrono::milliseconds> backend_timeout() const noexcept {
+    int timeout = uv_backend_timeout(raw_);
+    if (timeout < 0) {
+      return std::nullopt;
+    }
+    return std::chrono::milliseconds{timeout};
+  }
 
   // Returns accumulated idle time in nanoseconds. Requires
   // enable_metrics_idle_time() to have been called first.
-  uint64_t metrics_idle_time() const noexcept {
-    return uv_metrics_idle_time(raw_);
+  std::chrono::nanoseconds metrics_idle_time() const noexcept {
+    return std::chrono::nanoseconds{uv_metrics_idle_time(raw_)};
   }
 
   loop_metrics metrics_info() const {
@@ -124,10 +132,18 @@ public:
 
   int backend_fd() const noexcept { return uv_backend_fd(&raw_); }
 
-  int backend_timeout() const noexcept { return uv_backend_timeout(&raw_); }
+  std::optional<std::chrono::milliseconds> backend_timeout() const noexcept {
+    int timeout = uv_backend_timeout(&raw_);
+    if (timeout < 0) {
+      return std::nullopt;
+    }
+    return std::chrono::milliseconds{timeout};
+  }
 
-  uint64_t metrics_idle_time() const noexcept {
-    return uv_metrics_idle_time(const_cast<uv_loop_t *>(&raw_));
+  std::chrono::nanoseconds metrics_idle_time() const noexcept {
+    return std::chrono::nanoseconds{
+      uv_metrics_idle_time(const_cast<uv_loop_t *>(&raw_))
+    };
   }
 
   loop_metrics metrics_info() const {

@@ -41,15 +41,18 @@ TEST(Uvpp2Loop, backendTimeoutReflectsLoopState) {
   uv::loop loop;
 
   // No handles: loop would exit immediately, no blocking needed.
-  EXPECT_EQ(loop.backend_timeout(), 0);
+  auto empty_timeout = loop.backend_timeout();
+  ASSERT_TRUE(empty_timeout.has_value());
+  EXPECT_EQ(*empty_timeout, std::chrono::milliseconds{0});
 
   uv::timer timer(loop);
   timer.start(std::chrono::seconds{10}, [](uv::timer &) {});
 
-  // With a pending timer the loop must wait; timeout is >= 0 and not -1
-  // (which would mean "no timeout", i.e. block indefinitely).
-  EXPECT_GE(loop.backend_timeout(), 0);
-  EXPECT_NE(loop.backend_timeout(), -1);
+  // With a pending timer the loop must wait. std::nullopt would mean
+  // "no timeout", i.e. block indefinitely.
+  auto timeout = loop.backend_timeout();
+  ASSERT_TRUE(timeout.has_value());
+  EXPECT_GE(*timeout, std::chrono::milliseconds{0});
 
   timer.close();
   loop.run();
@@ -64,7 +67,7 @@ TEST(Uvpp2Loop, metricsIdleTimeAccumulatesAfterRun) {
   uv::loop loop;
   loop.enable_metrics_idle_time();
 
-  uint64_t idle_before = loop.metrics_idle_time();
+  auto idle_before = loop.metrics_idle_time();
 
   uv::timer timer(loop);
   timer.start(std::chrono::milliseconds{50}, [](uv::timer &t) { t.close(); });
