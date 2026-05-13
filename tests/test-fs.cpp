@@ -388,18 +388,14 @@ TEST(Uvpp2Fs, scandirResultIsUsableAsRangeBasedFor) {
   }
 
   uv::loop loop;
-  uv::fs::raw::request request;
   std::vector<std::string> names;
 
-  uv::fs::raw::scandir(loop, request, dir.string(), 0,
-    [&](uv::fs::raw::request &request, uv::fs::raw::scandir_result result) {
-      auto cleanup = request.scoped_cleanup();
-      ASSERT_TRUE(result);
-
-      for (const auto &entry : result) {
-        names.emplace_back(entry.name());
-      }
-    });
+  uv::fs::scandir(loop, dir.string(), 0, [&](uv::fs::scandir_result result) {
+    ASSERT_TRUE(result);
+    for (const auto &entry : result) {
+      names.emplace_back(entry.name);
+    }
+  });
 
   loop.run();
   loop.close();

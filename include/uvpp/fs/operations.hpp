@@ -1150,6 +1150,9 @@ namespace uv::fs {
       return entries_;
     }
 
+    auto begin() const noexcept { return entries_.begin(); }
+    auto end()   const noexcept { return entries_.end(); }
+
     std::vector<directory_entry> take_entries() {
       return std::move(entries_);
     }
