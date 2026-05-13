@@ -288,6 +288,14 @@ TEST(Uvpp2HandleView, handleViewRefAndUnrefAdjustReferenceCount) {
 // ---------------------------------------------------------------------------
 
 #ifndef _WIN32
+TEST(Uvpp2Loop, configureBlockSignalAcceptsSigprof) {
+  uv::loop loop;
+
+  ASSERT_NO_THROW(loop.configure_block_signal(SIGPROF));
+
+  loop.close();
+}
+
 TEST(Uvpp2Loop, forkReinitializesLoopInChildProcess) {
   uv::loop loop;
   uv::timer timer(loop);
