@@ -1,7 +1,10 @@
 cmake_minimum_required(VERSION 3.14)
 
+file(READ "${CMAKE_CURRENT_SOURCE_DIR}/VERSION" _uvpp_version)
+string(STRIP "${_uvpp_version}" _uvpp_version)
+
 project(uvpp
-  VERSION 2.0.0
+  VERSION ${_uvpp_version}
   DESCRIPTION "Header-only C++20 wrapper around libuv"
   LANGUAGES CXX
 )

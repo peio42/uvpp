@@ -71,6 +71,22 @@ jobs:
           UVPP_VERSION: ${{ inputs.version }}
         run: make package VERSION="$UVPP_VERSION"
 
+      - name: Commit VERSION
+        id: commit_version
+        env:
+          UVPP_VERSION: ${{ inputs.version }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add VERSION
+          if git diff --cached --quiet; then
+            echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          else
+            git commit -m "Release $UVPP_VERSION"
+            git push origin HEAD:"$GITHUB_REF_NAME"
+            echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Create release tag
         env:
           UVPP_VERSION: ${{ inputs.version }}
@@ -81,8 +97,6 @@ jobs:
             exit 1
           fi
 
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git tag -a "$tag" -m "uvpp $UVPP_VERSION"
           git push origin "refs/tags/$tag"
 
@@ -92,7 +106,7 @@ jobs:
         with:
           tag_name: v${{ inputs.version }}
           name: uvpp ${{ inputs.version }}
-          target_commitish: ${{ github.sha }}
+          target_commitish: ${{ steps.commit_version.outputs.sha }}
           prerelease: ${{ contains(inputs.version, '-') }}
           generate_release_notes: true
           fail_on_unmatched_files: true
