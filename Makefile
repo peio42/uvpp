@@ -59,11 +59,11 @@ package:
 		echo "Expected semver-like value, example: 2.0.0 or 2.0.0-rc.1"; \
 		exit 1; \
 	fi
+	printf '%s\n' "$(VERSION)" > VERSION
 	rm -rf $(DIST_DIR)/uvpp-$(VERSION) $(DIST_DIR)/uvpp-$(VERSION).tar.gz $(DIST_DIR)/checksums.txt
 	mkdir -p $(DIST_DIR)/uvpp-$(VERSION)
-	cp -R README.md include docs examples $(DIST_DIR)/uvpp-$(VERSION)/
+	cp -R README.md CMakeLists.txt cmake VERSION include docs examples $(DIST_DIR)/uvpp-$(VERSION)/
 	@if [ -f LICENSE ]; then cp LICENSE $(DIST_DIR)/uvpp-$(VERSION)/; fi
-	printf '%s\n' "$(VERSION)" > $(DIST_DIR)/uvpp-$(VERSION)/VERSION
 	tar -czf $(DIST_DIR)/uvpp-$(VERSION).tar.gz -C $(DIST_DIR) uvpp-$(VERSION)
 	cd $(DIST_DIR) && sha256sum uvpp-$(VERSION).tar.gz > checksums.txt
 

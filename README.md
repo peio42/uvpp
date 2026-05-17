@@ -28,9 +28,9 @@ uvpp is a C++ API over libuv with explicit lifetime rules, typed callbacks, nati
 
 ## Status
 
-uvpp v2 is under active development. The current implementation covers the core loop, main handle families, stream requests, UDP, filesystem operations, watchers, process spawning, and focused tests.
+uvpp v2 covers the core loop, main handle families, stream requests, UDP, filesystem operations, watchers, and process spawning. The core design is in place, but the public API may still evolve slightly before the first stable release.
 
-The API is usable for experimentation and early integration, but should still be considered evolving until v2 is finalized.
+Additional handles and utilities will be added in upcoming releases.
 
 ## Requirements
 
@@ -43,6 +43,8 @@ Typical compile command:
 ```sh
 g++ -std=c++20 -I/path/to/uvpp/include app.cpp -luv -pthread
 ```
+
+CMake users can consume the `uvpp::uvpp` target directly — see [Getting started](docs/getting-started.md).
 
 ## Quick Start
 
