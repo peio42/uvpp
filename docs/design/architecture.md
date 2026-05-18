@@ -234,7 +234,7 @@ Add wrappers one libuv object family at a time. Each addition should preserve th
 
 ## Loop Run Return Value
 
-`loop::run()` and `loop_view::run()` return `bool`. The return value is `true` if there are still active handles or requests pending after the loop exits (i.e., when run in `UV_RUN_NOWAIT` or `UV_RUN_ONCE` mode); it is `false` when the loop is empty. In the default `UV_RUN_DEFAULT` mode the loop runs until there is no more work and always returns `false`.
+`loop::run()` and `loop_view::run()` take `uv::run_mode` and return `bool`. The return value is `true` if there are still active handles or requests pending after the loop exits (i.e., when run in `uv::run_mode::nowait` or `uv::run_mode::once` mode); it is `false` when the loop is empty. In the default `uv::run_mode::until_done` mode the loop runs until there is no more work and always returns `false`.
 
 ## Loop Introspection
 

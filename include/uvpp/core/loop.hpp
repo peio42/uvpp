@@ -12,6 +12,7 @@
 
 #include "uvpp/core/callback.hpp"
 #include "uvpp/core/error.hpp"
+#include "uvpp/core/types.hpp"
 // handle_view.hpp has no dependency on loop.hpp, so this include is safe here
 // and lets handle_view be a complete type throughout this header.
 #include "uvpp/handles/handle_view.hpp"
@@ -30,8 +31,8 @@ public:
 
   uv_loop_t *native() const noexcept { return raw_; }
 
-  bool run(uv_run_mode mode = UV_RUN_DEFAULT) {
-    return throw_if_error(uv_run(raw_, mode)) != 0;
+  bool run(run_mode mode = run_mode::until_done) {
+    return throw_if_error(uv_run(raw_, static_cast<uv_run_mode>(mode))) != 0;
   }
 
   void stop() noexcept { uv_stop(raw_); }
@@ -112,7 +113,7 @@ public:
 
   loop_view view() noexcept { return loop_view{&raw_}; }
 
-  bool run(uv_run_mode mode = UV_RUN_DEFAULT) { return view().run(mode); }
+  bool run(run_mode mode = run_mode::until_done) { return view().run(mode); }
 
   void stop() noexcept { uv_stop(&raw_); }
 

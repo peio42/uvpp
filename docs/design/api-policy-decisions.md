@@ -88,6 +88,33 @@ object does not own the underlying native handle, bytes, or storage.
 Do not add implicit conversions from owning or address-stable wrappers to
 borrowed views such as `handle_view`.
 
+## Typed Constant Domains
+
+Use namespace-level `enum class` types for compact libuv constant domains that
+are part of ordinary uvpp usage.
+
+Examples:
+
+```cpp
+loop.run(uv::run_mode::once);
+
+if (handle.type() == uv::handle_type::tcp) {
+}
+```
+
+Prefer namespace-level types over nested types when the concept is shared by
+multiple wrappers or views. For example, `run_mode` is used by both `loop` and
+`loop_view`, and `handle_type` is used by `handle_view` and pipe pending-handle
+inspection.
+
+Use `type()` for the primary classification of the object being inspected. A
+request wrapper's `type()` returns `uv::request_type`. More specific
+classification should use a semantic name instead of hiding the primary type;
+for example, `uv::fs::raw::request::operation()` returns `uv::fs_type`.
+
+Do not add raw constant overloads mechanically. Keep raw libuv constants as an
+implementation detail unless the API needs a real interop escape hatch.
+
 ## Native Access
 
 Raw libuv access stays explicit through named helpers:

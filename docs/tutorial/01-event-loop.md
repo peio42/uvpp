@@ -148,15 +148,16 @@ request and the buffer must therefore stay alive until the callback runs.
 
 `loop.run()` executes the loop on the current thread. uvpp does not create a
 hidden thread. While `loop.run()` is running, that thread calls callbacks and
-processes events. When no active work remains, the default `UV_RUN_DEFAULT` mode
-lets `run()` return.
+processes events. When no active work remains, the default
+`uv::run_mode::until_done` mode lets `run()` return.
 
 ```cpp
-bool still_alive = loop.run(UV_RUN_NOWAIT);
+bool still_alive = loop.run(uv::run_mode::nowait);
 ```
 
-With `UV_RUN_NOWAIT`, `run()` performs one non-blocking iteration. Its return
-value indicates whether libuv still sees active work after that iteration.
+With `uv::run_mode::nowait`, `run()` performs one non-blocking iteration. Its
+return value indicates whether libuv still sees active work after that
+iteration.
 
 This distinction is useful when integrating uvpp into a program that already has
 its own main loop. For a simple application, the default mode is still the common
@@ -208,4 +209,3 @@ value borrows something.
 
 The same idea appears with buffers: `owned_buffer` owns bytes, while
 `buffer_view` borrows them.
-

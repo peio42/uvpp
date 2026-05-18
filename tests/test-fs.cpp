@@ -96,6 +96,8 @@ TEST(Uvpp2Fs, opensWritesReadsClosesAndReusesRequest) {
     [&](uv::fs::raw::request &open_request, uv::fs::raw::open_result open_result) {
       ++callbacks;
       EXPECT_EQ(&open_request, &request);
+      EXPECT_EQ(open_request.type(), uv::request_type::fs);
+      EXPECT_EQ(open_request.operation(), uv::fs_type::open);
 
       uv::file_descriptor file;
       {
@@ -108,6 +110,8 @@ TEST(Uvpp2Fs, opensWritesReadsClosesAndReusesRequest) {
         [&, file](uv::fs::raw::request &write_request, uv::fs::raw::byte_count_result write_result) {
           ++callbacks;
           EXPECT_EQ(&write_request, &request);
+          EXPECT_EQ(write_request.type(), uv::request_type::fs);
+          EXPECT_EQ(write_request.operation(), uv::fs_type::write);
           {
             auto cleanup = write_request.scoped_cleanup();
             ASSERT_TRUE(write_result);
@@ -118,6 +122,8 @@ TEST(Uvpp2Fs, opensWritesReadsClosesAndReusesRequest) {
             [&, file](uv::fs::raw::request &read_request, uv::fs::raw::byte_count_result read_result) {
               ++callbacks;
               EXPECT_EQ(&read_request, &request);
+              EXPECT_EQ(read_request.type(), uv::request_type::fs);
+              EXPECT_EQ(read_request.operation(), uv::fs_type::read);
               {
                 auto cleanup = read_request.scoped_cleanup();
                 ASSERT_TRUE(read_result);
@@ -130,6 +136,8 @@ TEST(Uvpp2Fs, opensWritesReadsClosesAndReusesRequest) {
                   ++callbacks;
                   auto cleanup = close_request.scoped_cleanup();
                   EXPECT_EQ(&close_request, &request);
+                  EXPECT_EQ(close_request.type(), uv::request_type::fs);
+                  EXPECT_EQ(close_request.operation(), uv::fs_type::close);
                   EXPECT_TRUE(close_result);
                   done = true;
                 });
