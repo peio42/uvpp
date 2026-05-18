@@ -4,6 +4,8 @@ uvpp is a header-only C++20 wrapper around libuv. Include `uvpp/uv.hpp`, use nam
 
 ## User Guides
 
+- [Tutorial](tutorial/): a progressive introduction to the event loop, handles,
+  callbacks, ownership, buffers, streams, and filesystem operations.
 - [Getting started](getting-started.md): requirements, build flags, and a minimal timer program.
 - [Loop](loop.md): running the event loop, backend information, metrics, and handle walking.
 - [Callbacks](callbacks.md): runtime callbacks, static callbacks, result objects, and exception boundaries.

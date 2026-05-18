@@ -305,6 +305,7 @@ Versions containing a prerelease suffix such as `2.0.0-rc.1` are published as Gi
 ## Documentation
 
 - [Documentation index](docs/index.md)
+- [Tutorial](docs/tutorial/index.md)
 - [Getting started](docs/getting-started.md)
 - [Callbacks](docs/callbacks.md)
 - [Errors](docs/errors.md)
