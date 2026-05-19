@@ -165,6 +165,62 @@ where `std::nullopt` represents an infinite wait.
 Counters remain integer counts. Do not wrap event counts or loop iteration
 counts in duration types.
 
+## Fluent Option Values
+
+Use fluent option construction only when a value has enough independent fields
+to benefit from named, chained configuration. Good candidates own strings,
+vectors, native escape hatches, and compact flags that would otherwise make call
+sites noisy.
+
+Example:
+
+```cpp
+auto options = uv::process_options::make("git")
+  .arg("status")
+  .cwd(repo)
+  .inherit_stdout()
+  .inherit_stderr();
+```
+
+When the chain produces the final option value directly, prefer `Type::make()`
+over a separate public builder type. A separate builder should exist only when
+the intermediate object has a distinct invariant or lifetime from the final
+value.
+
+Do not add fluent builders mechanically to small parameter groups. For example,
+filesystem `open` flags and modes are already a compact native vocabulary, so a
+builder should be added only if a higher-level filesystem layer needs clearer
+semantics than raw POSIX-style flags can provide.
+
+Fluent helpers may coexist with public fields when the value remains a low-level
+configuration object. Use clear storage names when a helper needs an idiomatic
+method name, such as `.cwd(...)` writing to `working_directory`.
+
+## Range-Shaped Results
+
+When a result naturally represents a collection, expose a range-friendly shape
+with `begin()` / `end()` or a named range-returning helper. Prefer ranges when
+they remove manual index or `next()` loops without hiding ownership or
+lifetime.
+
+Examples:
+
+```cpp
+for (uv::handle_view handle : loop.handles()) {
+}
+
+for (auto entry : scandir_result) {
+}
+
+for (auto entry : readdir_result.entries(buffer)) {
+}
+```
+
+Borrowed and single-pass ranges are acceptable when they model the underlying
+libuv protocol. The type or documentation must make the lifetime and traversal
+rules clear. Do not materialize a vector just to satisfy range syntax in a raw
+API; copying belongs in higher-level APIs that explicitly own their results.
+
 ## Async Lifetime Visibility
 
 If an operation outlives the initiating call, the owner of the operation state
