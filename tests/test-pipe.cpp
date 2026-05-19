@@ -176,7 +176,7 @@ TEST(Uvpp2Pipe, writeWithHandleSendsStreamOverIpc) {
       data_received = true;
 
       if (ipc.pending_count() > 0) {
-        EXPECT_EQ(ipc.pending_type(), UV_TCP);
+        EXPECT_EQ(ipc.pending_type(), uv::handle_type::tcp);
         auto *received = new uv::tcp(loop);
         ipc.accept(*received);
         handle_received = true;

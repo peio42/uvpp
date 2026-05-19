@@ -21,10 +21,10 @@ The loop destructor does not call `uv_loop_close()`. Close the loop explicitly a
 `run()` executes pending work and returns `true` when libuv reports that the loop still has active handles or requests after the run mode exits.
 
 ```cpp
-bool still_alive = loop.run(UV_RUN_NOWAIT);
+bool still_alive = loop.run(uv::run_mode::nowait);
 ```
 
-In the default `UV_RUN_DEFAULT` mode, libuv runs until there is no more work, so `run()` normally returns `false`.
+In the default `uv::run_mode::until_done` mode, libuv runs until there is no more work, so `run()` normally returns `false`.
 
 Use `stop()` to request that the loop stops running.
 
@@ -91,7 +91,7 @@ The metric counters are plain integer counts, not durations.
 
 ```cpp
 loop.walk([](uv::handle_view handle) {
-  if (handle.type() == UV_TIMER && handle.active()) {
+  if (handle.type() == uv::handle_type::timer && handle.active()) {
     handle.unref();
   }
 });
@@ -113,7 +113,7 @@ for (uv::handle_view handle : loop.handles()) {
 
 ```cpp
 loop.walk([](uv::handle_view handle) {
-  if (handle.type() == UV_TIMER) {
+  if (handle.type() == uv::handle_type::timer) {
     uv::timer& timer = handle.as<uv::timer>();
     (void)timer;
   }

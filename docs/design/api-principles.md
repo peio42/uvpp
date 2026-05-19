@@ -62,6 +62,35 @@ uv_stream_t* stream = tcp.native_stream();
 
 There should be no implicit conversion operator to raw libuv pointers in the primary API. Implicit conversions make call sites short, but they reintroduce the same ambiguity v2 is meant to remove.
 
+## Typed Constants
+
+Ordinary user-facing APIs should not require libuv constants when the constant
+domain is small, stable, and has clear C++ semantics. Prefer thin `enum class`
+types in namespace `uv`:
+
+```cpp
+loop.run(uv::run_mode::nowait);
+
+if (handle.type() == uv::handle_type::timer) {
+  // timer handle
+}
+```
+
+These enums map directly to libuv constants and should not store extra state or
+add runtime overhead. Keep the names semantic rather than transliterating the C
+spelling:
+
+- `*_mode` for exclusive modes, such as `run_mode`;
+- `*_type` for classification results, such as `handle_type`, `request_type`,
+  and `fs_type`;
+- `*_event` or `*_event_kind` for observed events;
+- `*_flag` for configuration bitmasks.
+
+Do not add native constant overloads by default. A raw escape hatch is useful
+only when there is a concrete libuv interop use case that the typed API cannot
+express cleanly. Low-level wrappers may still expose raw objects through
+`native()`, `native_handle()`, `native_stream()`, or `native_request()`.
+
 ## Explicit Borrowed Views
 
 Borrowed views must be produced with named functions, not implicit conversion

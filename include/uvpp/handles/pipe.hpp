@@ -82,8 +82,8 @@ namespace uv {
       return uv_pipe_pending_count(const_cast<uv_pipe_t *>(native()));
     }
 
-    uv_handle_type pending_type() const noexcept {
-      return uv_pipe_pending_type(const_cast<uv_pipe_t *>(native()));
+    handle_type pending_type() const noexcept {
+      return static_cast<handle_type>(uv_pipe_pending_type(const_cast<uv_pipe_t *>(native())));
     }
 
     void chmod(int flags) {

@@ -6,6 +6,7 @@
 
 #include "uvpp/core/error.hpp"
 #include "uvpp/core/native.hpp"
+#include "uvpp/core/types.hpp"
 
 namespace uv {
 
@@ -29,6 +30,10 @@ namespace uv {
 
     const uv_req_t *native_request() const noexcept {
       return this->native_base();
+    }
+
+    request_type type() const noexcept {
+      return static_cast<request_type>(this->native_request()->type);
     }
 
   protected:

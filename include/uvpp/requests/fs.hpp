@@ -74,8 +74,8 @@ namespace uv::fs::raw {
       return cleanup_guard{*this};
     }
 
-    uv_fs_type type() const noexcept {
-      return uv_fs_get_type(native());
+    ::uv::fs_type operation() const noexcept {
+      return static_cast<::uv::fs_type>(uv_fs_get_type(native()));
     }
 
     ssize_t raw_result() const noexcept {

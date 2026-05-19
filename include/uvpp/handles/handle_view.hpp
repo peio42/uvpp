@@ -4,6 +4,8 @@
 
 #include <uv.h>
 
+#include "uvpp/core/types.hpp"
+
 namespace uv {
 
 namespace detail {
@@ -27,7 +29,7 @@ public:
   uv_handle_t *native_handle() noexcept { return raw_; }
   const uv_handle_t *native_handle() const noexcept { return raw_; }
 
-  uv_handle_type type() const noexcept { return raw_->type; }
+  handle_type type() const noexcept { return static_cast<handle_type>(raw_->type); }
 
   // Returns the raw loop pointer; construct a loop_view from it if needed.
   uv_loop_t *native_loop() const noexcept { return raw_->loop; }

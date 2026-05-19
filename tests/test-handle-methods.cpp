@@ -66,7 +66,7 @@ TEST(Uvpp2HandleMethods, exposesPipePathAndPendingState) {
 
   EXPECT_EQ(pipe.sockname(), path.string());
   EXPECT_EQ(pipe.pending_count(), 0);
-  EXPECT_EQ(pipe.pending_type(), UV_UNKNOWN_HANDLE);
+  EXPECT_EQ(pipe.pending_type(), uv::handle_type::unknown);
 
   pipe.close();
   loop.run();

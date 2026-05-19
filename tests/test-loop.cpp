@@ -17,7 +17,7 @@
 namespace {
 
 void record_handle_type(uv::handle_view h) {
-  if (h.type() == UV_TIMER) {
+  if (h.type() == uv::handle_type::timer) {
     auto *count = static_cast<int *>(h.native_handle()->data);
     ++*count;
   }
@@ -103,7 +103,7 @@ TEST(Uvpp2Loop, metricsInfoCountsLoopIterations) {
 
 TEST(Uvpp2Loop, metricsInfoIsAccessibleOnLoopView) {
   uv::loop loop;
-  loop.run(UV_RUN_NOWAIT);
+  loop.run(uv::run_mode::nowait);
 
   auto info = loop.view().metrics_info();
   EXPECT_GE(info.loop_count, 0u);  // just exercises the API
@@ -130,7 +130,7 @@ TEST(Uvpp2Loop, handlesCollectsIntoVectorForRangeBasedFor) {
 
   int timer_count = 0;
   for (auto h : all) {
-    if (h.type() == UV_TIMER) ++timer_count;
+    if (h.type() == uv::handle_type::timer) ++timer_count;
   }
   EXPECT_EQ(timer_count, 2);
 
@@ -151,7 +151,7 @@ TEST(Uvpp2Loop, handlesIsComposableWithStdRanges) {
 
   auto timers = loop.handles()
                 | std::views::filter([](uv::handle_view h) {
-                    return h.type() == UV_TIMER;
+                    return h.type() == uv::handle_type::timer;
                   });
 
   int count = 0;
@@ -171,14 +171,14 @@ TEST(Uvpp2Loop, walkVisitsAllActiveHandles) {
   t1.start(std::chrono::seconds{10}, [](uv::timer &) {});
   t2.start(std::chrono::seconds{10}, [](uv::timer &) {});
 
-  std::vector<uv_handle_type> types;
+  std::vector<uv::handle_type> types;
   loop.walk([&](uv::handle_view h) {
     types.push_back(h.type());
   });
 
   EXPECT_EQ(types.size(), 2u);
   EXPECT_TRUE(std::all_of(types.begin(), types.end(),
-                           [](auto t) { return t == UV_TIMER; }));
+                           [](auto t) { return t == uv::handle_type::timer; }));
 
   t1.close();
   t2.close();
@@ -209,7 +209,7 @@ TEST(Uvpp2Loop, walkCanRecoverUvppHandleViaAs) {
 
   bool found = false;
   loop.walk([&](uv::handle_view h) {
-    if (h.type() == UV_TIMER) {
+    if (h.type() == uv::handle_type::timer) {
       auto &recovered = h.as<uv::timer>();
       EXPECT_EQ(recovered.native(), timer.native());
       found = true;
@@ -264,7 +264,7 @@ TEST(Uvpp2HandleView, basicHandleExposesNamedHandleView) {
   uv::timer timer(loop);
 
   uv::handle_view view = timer.view();
-  EXPECT_EQ(view.type(), UV_TIMER);
+  EXPECT_EQ(view.type(), uv::handle_type::timer);
   EXPECT_EQ(view.native_handle(), timer.native_handle());
   EXPECT_FALSE(view.closing());
 
