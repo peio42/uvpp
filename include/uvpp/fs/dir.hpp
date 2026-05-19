@@ -92,6 +92,69 @@ namespace uv::fs::raw {
 
   class directory_read_buffer {
   public:
+    class entries_view {
+    public:
+      class iterator {
+      public:
+        using value_type = directory_entry;
+        using difference_type = std::ptrdiff_t;
+
+        iterator() = default;
+
+        iterator(const directory_read_buffer *buffer, std::size_t index) noexcept
+          : buffer_{buffer}, index_{index} {}
+
+        directory_entry operator*() const noexcept {
+          return buffer_->entry(index_);
+        }
+
+        iterator &operator++() noexcept {
+          ++index_;
+          return *this;
+        }
+
+        void operator++(int) noexcept {
+          ++(*this);
+        }
+
+        friend bool operator==(const iterator &lhs, const iterator &rhs) noexcept {
+          return lhs.buffer_ == rhs.buffer_ && lhs.index_ == rhs.index_;
+        }
+
+        friend bool operator!=(const iterator &lhs, const iterator &rhs) noexcept {
+          return !(lhs == rhs);
+        }
+
+      private:
+        const directory_read_buffer *buffer_ = nullptr;
+        std::size_t index_ = 0;
+      };
+
+      entries_view(const directory_read_buffer &buffer, std::size_t count) noexcept
+        : buffer_{&buffer},
+          count_{count <= buffer.capacity() ? count : buffer.capacity()} {}
+
+      iterator begin() const noexcept {
+        return iterator{buffer_, 0};
+      }
+
+      iterator end() const noexcept {
+        return iterator{buffer_, count_};
+      }
+
+      std::size_t size() const noexcept {
+        return count_;
+      }
+
+      bool empty() const noexcept {
+        return count_ == 0;
+      }
+
+    private:
+      const directory_read_buffer *buffer_ = nullptr;
+      std::size_t count_ = 0;
+    };
+
     explicit directory_read_buffer(std::size_t capacity)
       : entries_(capacity) {}
 
@@ -111,6 +174,10 @@ namespace uv::fs::raw {
     directory_entry entry(std::size_t index) const noexcept {
       const auto &entry = entries_[index];
       return directory_entry{entry.name, entry.type};
+    }
+
+    entries_view entries(std::size_t count) const noexcept {
+      return entries_view{*this, count};
     }
 
   private:

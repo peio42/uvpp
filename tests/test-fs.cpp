@@ -367,8 +367,7 @@ TEST(Uvpp2Fs, scansDirectoryEntriesWithoutCopyingInTheWrapper) {
       auto cleanup = request.scoped_cleanup();
       ASSERT_TRUE(result);
 
-      uv::fs::raw::directory_entry entry;
-      while (result.next(entry)) {
+      for (auto entry : result) {
         names.emplace_back(entry.name());
       }
     });
@@ -448,8 +447,8 @@ TEST(Uvpp2Fs, opensReadsAndClosesDirectory) {
             auto cleanup = request.scoped_cleanup();
             ASSERT_TRUE(result);
 
-            for (std::size_t i = 0; i < result.count(); ++i) {
-              names.emplace_back(buffer.entry(i).name());
+            for (auto entry : result.entries(buffer)) {
+              names.emplace_back(entry.name());
             }
           }
 

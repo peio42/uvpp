@@ -238,14 +238,13 @@ uv::fs::raw::scandir(loop, req, path, 0,
   [](uv::fs::raw::request& req, uv::fs::raw::scandir_result result) {
     auto cleanup = req.scoped_cleanup();
 
-    uv::fs::raw::directory_entry entry;
-    while (result.next(entry)) {
+    for (auto entry : result) {
       std::string name = std::string{entry.name()};
     }
   });
 ```
 
-The entry name is request-owned. Copy it before cleanup if it must outlive the callback.
+Raw `scandir_result` is a single-pass range over libuv's iterator. The entry name is request-owned. Copy it before cleanup if it must outlive the callback.
 
 ## Raw Open Directories
 
@@ -270,8 +269,8 @@ uv::fs::raw::opendir(loop, req, path,
       [&](uv::fs::raw::request& req, uv::fs::raw::readdir_result result) {
         auto cleanup = req.scoped_cleanup();
 
-        for (std::size_t i = 0; i < result.count(); ++i) {
-          auto entry = buffer.entry(i);
+        for (auto entry : result.entries(buffer)) {
+          std::string name = std::string{entry.name()};
         }
 
         uv::fs::raw::closedir(loop, req, std::move(dir),
@@ -283,6 +282,8 @@ uv::fs::raw::opendir(loop, req, path,
 ```
 
 `raw::readdir` borrows `directory&`; `raw::closedir` consumes `directory&&` and invalidates it immediately. `raw::readdir_result::eof()` reports end-of-directory. Multiple `readdir` calls may be needed when the directory contains more entries than the buffer capacity.
+
+`result.entries(buffer)` ranges over the entries filled in the caller-owned buffer for that `readdir` completion.
 
 `raw::directory_entry::name()` returns a `std::string_view` pointing into the `directory_read_buffer`. It is valid only while that buffer is alive. Copy it before the buffer is destroyed or reused for the next `readdir` call.
 
