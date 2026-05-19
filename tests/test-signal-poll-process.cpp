@@ -1,4 +1,5 @@
 #include <csignal>
+#include <cstdlib>
 #include <unistd.h>
 
 #include "gtest/gtest.h"
@@ -192,6 +193,47 @@ TEST(Uvpp2ProcessOptions, buildsPipeStdioEntries) {
   output.close();
   loop.run();
   loop.close();
+}
+
+TEST(Uvpp2Process, inheritedEnvironmentIsVisibleToChild) {
+  ::setenv("UVPP_TEST_INHERIT_VAR", "present", 1);
+
+  uv::loop loop;
+  auto options = uv::process_options::make("/bin/sh")
+    .args({"-c", "test -n \"$UVPP_TEST_INHERIT_VAR\""});
+
+  int exit_status = -1;
+  uv::process process(loop, options, [&](uv::process &self, uv::process_exit exit) {
+    exit_status = static_cast<int>(exit.status);
+    self.close();
+  });
+
+  loop.run();
+  EXPECT_EQ(exit_status, 0);
+  loop.close();
+
+  ::unsetenv("UVPP_TEST_INHERIT_VAR");
+}
+
+TEST(Uvpp2Process, emptyEnvironmentHidesParentVariables) {
+  ::setenv("UVPP_TEST_INHERIT_VAR", "present", 1);
+
+  uv::loop loop;
+  auto options = uv::process_options::make("/bin/sh")
+    .args({"-c", "test -z \"$UVPP_TEST_INHERIT_VAR\""})
+    .empty_environment();
+
+  int exit_status = -1;
+  uv::process process(loop, options, [&](uv::process &self, uv::process_exit exit) {
+    exit_status = static_cast<int>(exit.status);
+    self.close();
+  });
+
+  loop.run();
+  EXPECT_EQ(exit_status, 0);
+  loop.close();
+
+  ::unsetenv("UVPP_TEST_INHERIT_VAR");
 }
 
 TEST(Uvpp2Process, reportsExitStatus) {

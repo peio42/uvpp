@@ -422,7 +422,7 @@ namespace uv {
       args.push_back(nullptr);
 
       std::vector<char *> env;
-      if (!options.inherit_parent_environment || !options.environment.empty()) {
+      if (!options.inherit_parent_environment) {
         env.reserve(options.environment.size() + 1);
         for (const auto &entry : options.environment) {
           env.push_back(const_cast<char *>(entry.c_str()));
