@@ -7,7 +7,14 @@
 `process_options` owns the strings and arrays needed to build `uv_process_options_t` for the duration of `uv_spawn`.
 
 ```cpp
-process_options options;
+auto options = uv::process_options::make("/bin/sh")
+  .args({"-c", "exit 7"});
+```
+
+The fluent helpers mutate and return the `process_options` value, so direct field initialization is still available for low-level code:
+
+```cpp
+uv::process_options options;
 options.file = "/bin/sh";
 options.arguments = {"-c", "exit 7"};
 ```
@@ -16,29 +23,67 @@ Rules:
 
 - `file` is the executable passed to libuv and is also used as `argv[0]`;
 - `arguments` contains only arguments after `argv[0]`;
-- `environment` contains raw `KEY=VALUE` entries and an empty vector inherits the parent environment;
-- `cwd` is optional and an empty string inherits the parent working directory;
+- `environment` contains raw `KEY=VALUE` entries;
+- `inherit_parent_environment` controls whether an empty environment inherits the parent environment;
+- `working_directory` is optional and an empty string inherits the parent working directory;
 - `flags` is a raw `uv_process_flags` bitmask because the flag set is already compact and libuv-specific;
-- `stdio` is currently a `std::vector<uv_stdio_container_t>` as an explicit low-level escape hatch.
+- `stdio_entries` is a `std::vector<uv_stdio_container_t>` as an explicit low-level escape hatch.
+
+Common construction helpers are available for ordinary process launches:
+
+```cpp
+auto options = uv::process_options::make("git")
+  .arg("status")
+  .args({"--short", "--branch"})
+  .cwd(repo)
+  .inherit_stdout()
+  .inherit_stderr();
+```
+
+Flag helpers keep common libuv flags readable:
+
+```cpp
+auto options = uv::process_options::make("server")
+  .detached()
+  .windows_hide();
+```
 
 `process_options` only needs to outlive the `process` constructor call. `uv_spawn` consumes the native options synchronously. After construction, the wrapper stores only the process handle and the exit callback slot.
 
 ## Stdio Policy
 
-The initial API deliberately does not hide `uv_stdio_container_t`.
+The API deliberately does not hide `uv_stdio_container_t`.
 
 Process stdio is one of the places where libuv's model is detailed and platform-sensitive: ignored streams, inherited file descriptors, inherited streams, readable/writable pipes, and detached behavior interact with `flags`. A premature C++ wrapper would likely be incomplete or misleading.
 
-The intended later layer can add typed helpers such as:
+The low-level helper type can produce native stdio entries:
 
 ```cpp
-process_stdio::ignore();
-process_stdio::inherit_fd(1);
-process_stdio::inherit_stream(stream);
-process_stdio::create_pipe(pipe, process_stdio::readable);
+uv::process_stdio::ignore();
+uv::process_stdio::inherit_fd(1);
+uv::process_stdio::inherit_stream(stream);
+uv::process_stdio::readable_pipe(pipe);
 ```
 
-Until that layer exists, the low-level API keeps `stdio` native and explicit. This preserves minimal overhead and avoids inventing ownership semantics before the process/pipe integration is fully designed.
+You can pass those entries directly:
+
+```cpp
+auto options = uv::process_options::make("tool")
+  .stdio({
+    uv::process_stdio::ignore(),
+    uv::process_stdio::inherit_fd(1),
+    uv::process_stdio::inherit_fd(2),
+  });
+```
+
+For the standard descriptors, semantic shortcuts fill the corresponding `stdio_entries` slots:
+
+```cpp
+auto options = uv::process_options::make("tool")
+  .ignore_stdin()
+  .inherit_stdout()
+  .inherit_stderr();
+```
 
 ## Callback Forms
 
