@@ -148,6 +148,19 @@ TEST(Uvpp2Tcp, initializesWithSocketFamily) {
   loop.close();
 }
 
+TEST(Uvpp2Tcp, bindsWithTypedFlags) {
+  uv::loop loop;
+  uv::tcp tcp(loop, uv::tcp_socket_family::ipv4);
+
+  tcp.bind(uv::ipv4{"127.0.0.1", 0}, uv::tcp_bind_flag::reuse_port);
+  auto bound = tcp.sockname();
+  EXPECT_GT(bound.port(), 0);
+
+  tcp.close();
+  loop.run();
+  loop.close();
+}
+
 TEST(Uvpp2Tcp, exposesStaticIpv6ConnectOverload) {
   using connect_static_ipv6 = void (uv::tcp::*)(uv::connect_request &, const uv::ipv6 &);
   connect_static_ipv6 fn = &uv::tcp::connect_static<on_static_ipv6_connect>;

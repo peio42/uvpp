@@ -31,6 +31,8 @@ namespace uv {
     bool empty() const noexcept { return nread_ == 0; }
     bool empty_event() const noexcept { return nread_ == 0 && addr_ == nullptr; }
     bool partial() const noexcept { return (flags_ & UV_UDP_PARTIAL) != 0; }
+    bool mmsg_chunk() const noexcept { return (flags_ & UV_UDP_MMSG_CHUNK) != 0; }
+    bool mmsg_free() const noexcept { return (flags_ & UV_UDP_MMSG_FREE) != 0; }
     ssize_t count() const noexcept { return nread_; }
     result status() const noexcept { return result{static_cast<int>(nread_)}; }
     unsigned flags() const noexcept { return flags_; }

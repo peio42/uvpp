@@ -20,6 +20,19 @@ namespace uv {
     ipv6 = AF_INET6
   };
 
+  enum class tcp_bind_flag : unsigned int {
+    ipv6_only = UV_TCP_IPV6ONLY,
+    reuse_port = UV_TCP_REUSEPORT
+  };
+
+  constexpr unsigned int operator|(tcp_bind_flag lhs, tcp_bind_flag rhs) noexcept {
+    return static_cast<unsigned int>(lhs) | static_cast<unsigned int>(rhs);
+  }
+
+  constexpr unsigned int operator|(unsigned int lhs, tcp_bind_flag rhs) noexcept {
+    return lhs | static_cast<unsigned int>(rhs);
+  }
+
   class tcp final : public stream<tcp, uv_tcp_t> {
   public:
     explicit tcp(loop &l) {
@@ -48,6 +61,14 @@ namespace uv {
 
     void bind(const ipv6 &addr, unsigned int flags = 0) {
       throw_if_error(uv_tcp_bind(native(), addr.native_sockaddr(), flags));
+    }
+
+    void bind(const ipv4 &addr, tcp_bind_flag flag) {
+      bind(addr, static_cast<unsigned int>(flag));
+    }
+
+    void bind(const ipv6 &addr, tcp_bind_flag flag) {
+      bind(addr, static_cast<unsigned int>(flag));
     }
 
     socket_address sockname() {

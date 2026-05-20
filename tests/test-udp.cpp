@@ -43,6 +43,9 @@ TEST(Uvpp2Udp, sendsAndReceivesDatagrams) {
     }
 
     ASSERT_TRUE(received);
+    EXPECT_FALSE(received.partial());
+    EXPECT_FALSE(received.mmsg_chunk());
+    EXPECT_FALSE(received.mmsg_free());
     ASSERT_TRUE(received.ok());
     ASSERT_NE(received.address(), nullptr);
     auto bytes = received.bytes();
