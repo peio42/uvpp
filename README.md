@@ -312,8 +312,10 @@ Versions containing a prerelease suffix such as `2.0.0-rc.1` are published as Gi
 - [Ownership and lifetime](docs/ownership-and-lifetime.md)
 - [Buffers](docs/buffers.md)
 - [Streams](docs/streams.md)
+- [UDP](docs/udp.md)
 - [Filesystem](docs/filesystem.md)
 - [Process](docs/process.md)
+- [Future features](docs/future.md)
 
 Contributor design notes live under [docs/design](docs/design/).
 

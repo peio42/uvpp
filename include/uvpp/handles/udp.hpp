@@ -6,6 +6,7 @@
 #include <string>
 #include <string_view>
 #include <utility>
+#include <vector>
 
 #include <uv.h>
 
@@ -26,6 +27,7 @@ namespace uv {
       : nread_{nread}, buffer_{buf ? buffer_view::from_native(*buf) : buffer_view{}}, addr_{addr}, flags_{flags} {}
 
     bool ok() const noexcept { return nread_ >= 0; }
+    explicit operator bool() const noexcept { return ok(); }
     bool empty() const noexcept { return nread_ == 0; }
     bool empty_event() const noexcept { return nread_ == 0 && addr_ == nullptr; }
     bool partial() const noexcept { return (flags_ & UV_UDP_PARTIAL) != 0; }
@@ -57,6 +59,114 @@ namespace uv {
     join = UV_JOIN_GROUP
   };
 
+  enum class udp_socket_family : unsigned int {
+    ipv4 = AF_INET,
+    ipv6 = AF_INET6
+  };
+
+  enum class udp_init_flag : unsigned int {
+    recvmmsg = UV_UDP_RECVMMSG
+  };
+
+  constexpr unsigned int operator|(udp_socket_family family, udp_init_flag flag) noexcept {
+    return static_cast<unsigned int>(family) | static_cast<unsigned int>(flag);
+  }
+
+  constexpr unsigned int operator|(udp_init_flag lhs, udp_init_flag rhs) noexcept {
+    return static_cast<unsigned int>(lhs) | static_cast<unsigned int>(rhs);
+  }
+
+  constexpr unsigned int operator|(unsigned int lhs, udp_init_flag rhs) noexcept {
+    return lhs | static_cast<unsigned int>(rhs);
+  }
+
+  enum class udp_bind_flag : unsigned int {
+    ipv6_only = UV_UDP_IPV6ONLY,
+    reuse_address = UV_UDP_REUSEADDR,
+    linux_receive_error = UV_UDP_LINUX_RECVERR,
+    reuse_port = UV_UDP_REUSEPORT
+  };
+
+  constexpr unsigned int operator|(udp_bind_flag lhs, udp_bind_flag rhs) noexcept {
+    return static_cast<unsigned int>(lhs) | static_cast<unsigned int>(rhs);
+  }
+
+  constexpr unsigned int operator|(unsigned int lhs, udp_bind_flag rhs) noexcept {
+    return lhs | static_cast<unsigned int>(rhs);
+  }
+
+  class send_now_result {
+  public:
+    explicit send_now_result(int value) noexcept : value_{value} {}
+
+    bool ok()          const noexcept { return value_ >= 0; }
+    bool would_block() const noexcept { return value_ == UV_EAGAIN; }
+    bool has_error()   const noexcept { return value_ < 0 && value_ != UV_EAGAIN; }
+
+    std::size_t bytes_sent() const noexcept {
+      return ok() ? static_cast<std::size_t>(value_) : 0;
+    }
+
+    int raw() const noexcept { return value_; }
+
+    std::error_code error_code() const noexcept {
+      return has_error() ? make_error_code(value_) : std::error_code{};
+    }
+
+  private:
+    int value_;
+  };
+
+  class send_many_now_result {
+  public:
+    explicit send_many_now_result(int value) noexcept : value_{value} {}
+
+    bool ok()          const noexcept { return value_ >= 0; }
+    bool would_block() const noexcept { return value_ == UV_EAGAIN; }
+    bool has_error()   const noexcept { return value_ < 0 && value_ != UV_EAGAIN; }
+
+    std::size_t datagrams_sent() const noexcept {
+      return ok() ? static_cast<std::size_t>(value_) : 0;
+    }
+
+    int raw() const noexcept { return value_; }
+
+    std::error_code error_code() const noexcept {
+      return has_error() ? make_error_code(value_) : std::error_code{};
+    }
+
+  private:
+    int value_;
+  };
+
+  class udp_send_view {
+  public:
+    udp_send_view(std::span<const buffer_view> buffers, const sockaddr *addr) noexcept
+      : buffers_{buffers}, addr_{addr} {}
+
+    udp_send_view(std::span<const buffer_view> buffers, const ipv4 &addr) noexcept
+      : udp_send_view{buffers, addr.native_sockaddr()} {}
+
+    udp_send_view(std::span<const buffer_view> buffers, const ipv6 &addr) noexcept
+      : udp_send_view{buffers, addr.native_sockaddr()} {}
+
+    udp_send_view(const buffer_view &buffer, const sockaddr *addr) noexcept
+      : udp_send_view{std::span<const buffer_view>{&buffer, 1}, addr} {}
+
+    udp_send_view(const buffer_view &buffer, const ipv4 &addr) noexcept
+      : udp_send_view{std::span<const buffer_view>{&buffer, 1}, addr.native_sockaddr()} {}
+
+    udp_send_view(const buffer_view &buffer, const ipv6 &addr) noexcept
+      : udp_send_view{std::span<const buffer_view>{&buffer, 1}, addr.native_sockaddr()} {}
+
+    std::span<const buffer_view> buffers() const noexcept { return buffers_; }
+    const sockaddr *address() const noexcept { return addr_; }
+
+  private:
+    std::span<const buffer_view> buffers_;
+    const sockaddr *addr_;
+  };
+
   class udp final : public basic_handle<udp, uv_udp_t> {
   public:
     using allocate_callback = std::function<buffer_view(udp&, std::size_t)>;
@@ -70,6 +180,22 @@ namespace uv {
       throw_if_error(uv_udp_init(l.native(), native()));
     }
 
+    udp(loop &l, udp_socket_family family) {
+      throw_if_error(uv_udp_init_ex(l.native(), native(), static_cast<unsigned int>(family)));
+    }
+
+    udp(loop_view l, udp_socket_family family) {
+      throw_if_error(uv_udp_init_ex(l.native(), native(), static_cast<unsigned int>(family)));
+    }
+
+    udp(loop &l, udp_socket_family family, udp_init_flag flag) {
+      throw_if_error(uv_udp_init_ex(l.native(), native(), family | flag));
+    }
+
+    udp(loop_view l, udp_socket_family family, udp_init_flag flag) {
+      throw_if_error(uv_udp_init_ex(l.native(), native(), family | flag));
+    }
+
     void open(uv_os_sock_t socket) {
       throw_if_error(uv_udp_open(native(), socket));
     }
@@ -80,6 +206,14 @@ namespace uv {
 
     void bind(const ipv6 &addr, unsigned int flags = 0) {
       throw_if_error(uv_udp_bind(native(), addr.native_sockaddr(), flags));
+    }
+
+    void bind(const ipv4 &addr, udp_bind_flag flag) {
+      bind(addr, static_cast<unsigned int>(flag));
+    }
+
+    void bind(const ipv6 &addr, udp_bind_flag flag) {
+      bind(addr, static_cast<unsigned int>(flag));
     }
 
     void connect(const ipv4 &addr) {
@@ -186,26 +320,72 @@ namespace uv {
       send_static<Callback>(request, std::span<const buffer_view>{&buf, 1}, addr.native_sockaddr());
     }
 
-    int send_now(std::span<const buffer_view> buffers, const sockaddr *addr) {
-      return throw_if_error(uv_udp_try_send(native(), reinterpret_cast<const uv_buf_t *>(buffers.data()),
-                                            static_cast<unsigned int>(buffers.size()), addr));
+    send_now_result send_now(std::span<const buffer_view> buffers, const sockaddr *addr) noexcept {
+      return send_now_result{uv_udp_try_send(native(), reinterpret_cast<const uv_buf_t *>(buffers.data()),
+                                             static_cast<unsigned int>(buffers.size()), addr)};
     }
 
-    int send_now(const buffer_view &buf, const ipv4 &addr) {
+    send_now_result send_now(const buffer_view &buf, const ipv4 &addr) noexcept {
       return send_now(std::span<const buffer_view>{&buf, 1}, addr.native_sockaddr());
     }
 
-    int send_now(const buffer_view &buf, const ipv6 &addr) {
+    send_now_result send_now(const buffer_view &buf, const ipv6 &addr) noexcept {
       return send_now(std::span<const buffer_view>{&buf, 1}, addr.native_sockaddr());
     }
 
-    int send_now(std::span<const buffer_view> buffers) {
-      return throw_if_error(uv_udp_try_send(native(), reinterpret_cast<const uv_buf_t *>(buffers.data()),
-                                            static_cast<unsigned int>(buffers.size()), nullptr));
+    send_now_result send_now(std::span<const buffer_view> buffers) noexcept {
+      return send_now_result{uv_udp_try_send(native(), reinterpret_cast<const uv_buf_t *>(buffers.data()),
+                                             static_cast<unsigned int>(buffers.size()), nullptr)};
     }
 
-    int send_now(const buffer_view &buf) {
+    send_now_result send_now(const buffer_view &buf) noexcept {
       return send_now(std::span<const buffer_view>{&buf, 1});
+    }
+
+    send_now_result send_now(std::span<const std::byte> bytes, const sockaddr *addr) noexcept {
+      auto raw = uv_buf_init(const_cast<char *>(reinterpret_cast<const char *>(bytes.data())),
+                             static_cast<unsigned int>(bytes.size()));
+      return send_now_result{uv_udp_try_send(native(), &raw, 1, addr)};
+    }
+
+    send_now_result send_now(std::span<const std::byte> bytes, const ipv4 &addr) noexcept {
+      return send_now(bytes, addr.native_sockaddr());
+    }
+
+    send_now_result send_now(std::span<const std::byte> bytes, const ipv6 &addr) noexcept {
+      return send_now(bytes, addr.native_sockaddr());
+    }
+
+    send_now_result send_now(std::span<const std::byte> bytes) noexcept {
+      return send_now(bytes, static_cast<const sockaddr *>(nullptr));
+    }
+
+    send_many_now_result send_many_now(std::span<const udp_send_view> packets) {
+      std::vector<uv_buf_t *> buffers;
+      std::vector<unsigned int> counts;
+      std::vector<sockaddr *> addresses;
+
+      buffers.reserve(packets.size());
+      counts.reserve(packets.size());
+      addresses.reserve(packets.size());
+
+      for (const auto &packet : packets) {
+        auto packet_buffers = packet.buffers();
+        auto *raw_buffers = packet_buffers.empty()
+          ? nullptr
+          : const_cast<uv_buf_t *>(reinterpret_cast<const uv_buf_t *>(packet_buffers.data()));
+
+        buffers.push_back(raw_buffers);
+        counts.push_back(static_cast<unsigned int>(packet_buffers.size()));
+        addresses.push_back(const_cast<sockaddr *>(packet.address()));
+      }
+
+      return send_many_now_result{uv_udp_try_send2(native(),
+        static_cast<unsigned int>(packets.size()),
+        buffers.empty() ? nullptr : buffers.data(),
+        counts.empty() ? nullptr : counts.data(),
+        addresses.empty() ? nullptr : addresses.data(),
+        0)};
     }
 
     std::size_t send_queue_size() const noexcept {
@@ -226,6 +406,27 @@ namespace uv {
     void set_membership(std::string_view multicast_addr, membership m) {
       std::string multicast{multicast_addr};
       throw_if_error(uv_udp_set_membership(native(), multicast.c_str(), nullptr, static_cast<uv_membership>(m)));
+    }
+
+    void set_source_membership(std::string_view multicast_addr, std::string_view interface_addr,
+                               std::string_view source_addr, membership m) {
+      std::string multicast{multicast_addr};
+      std::string interface{interface_addr};
+      std::string source{source_addr};
+      throw_if_error(uv_udp_set_source_membership(native(), multicast.c_str(), interface.c_str(),
+                                                  source.c_str(), static_cast<uv_membership>(m)));
+    }
+
+    void set_source_membership(std::string_view multicast_addr, std::string_view source_addr,
+                               membership m) {
+      std::string multicast{multicast_addr};
+      std::string source{source_addr};
+      throw_if_error(uv_udp_set_source_membership(native(), multicast.c_str(), nullptr,
+                                                  source.c_str(), static_cast<uv_membership>(m)));
+    }
+
+    bool using_recvmmsg() const noexcept {
+      return uv_udp_using_recvmmsg(native()) != 0;
     }
 
     void set_multicast_loop(bool enable) {
