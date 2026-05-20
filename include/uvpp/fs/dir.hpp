@@ -113,8 +113,10 @@ namespace uv::fs::raw {
           return *this;
         }
 
-        void operator++(int) noexcept {
+        iterator operator++(int) noexcept {
+          auto copy = *this;
           ++(*this);
+          return copy;
         }
 
         friend bool operator==(const iterator &lhs, const iterator &rhs) noexcept {

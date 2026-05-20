@@ -413,6 +413,39 @@ TEST(Uvpp2Fs, scandirResultIsUsableAsRangeBasedFor) {
   std::filesystem::remove_all(dir);
 }
 
+TEST(Uvpp2Fs, scandirResultIteratorPostIncrementReturnsOldState) {
+  auto dir = temp_path("scandir-postincr");
+  std::filesystem::remove_all(dir);
+  std::filesystem::create_directory(dir);
+  {
+    std::ofstream file{dir / "alpha.txt"};
+    file << "alpha";
+  }
+  {
+    std::ofstream file{dir / "beta.txt"};
+    file << "beta";
+  }
+
+  uv::loop loop;
+
+  uv::fs::scandir(loop, dir.string(), 0, [&](uv::fs::scandir_result result) {
+    ASSERT_TRUE(result);
+    auto it = result.begin();
+    ASSERT_NE(it, result.end());
+
+    auto first_name = std::string{(*it).name};
+    auto old = it++;
+
+    EXPECT_EQ(std::string{(*old).name}, first_name);
+    EXPECT_NE(old, it);
+  });
+
+  loop.run();
+  loop.close();
+
+  std::filesystem::remove_all(dir);
+}
+
 TEST(Uvpp2Fs, opensReadsAndClosesDirectory) {
   auto path = temp_path("opendir");
   std::filesystem::remove_all(path);
@@ -467,6 +500,69 @@ TEST(Uvpp2Fs, opensReadsAndClosesDirectory) {
   EXPECT_TRUE(closed);
   EXPECT_NE(std::find(names.begin(), names.end(), "first.txt"), names.end());
   EXPECT_NE(std::find(names.begin(), names.end(), "second.txt"), names.end());
+
+  std::filesystem::remove_all(path);
+}
+
+TEST(Uvpp2Fs, entriesViewIteratorPostIncrementReturnsOldState) {
+  auto path = temp_path("opendir-postincr");
+  std::filesystem::remove_all(path);
+  std::filesystem::create_directory(path);
+  {
+    std::ofstream file{path / "first.txt"};
+    file << "first";
+  }
+  {
+    std::ofstream file{path / "second.txt"};
+    file << "second";
+  }
+
+  uv::loop loop;
+  uv::fs::raw::request request;
+  uv::fs::raw::directory_read_buffer buffer{8};
+  uv::fs::raw::directory dir;
+  bool checked = false;
+  bool closed = false;
+
+  uv::fs::raw::opendir(loop, request, path.string(),
+    [&](uv::fs::raw::request &request, uv::fs::raw::opendir_result result) {
+      {
+        auto cleanup = request.scoped_cleanup();
+        ASSERT_TRUE(result);
+        dir = result.take_directory();
+      }
+
+      uv::fs::raw::readdir(loop, request, dir, buffer,
+        [&](uv::fs::raw::request &request, uv::fs::raw::readdir_result result) {
+          {
+            auto cleanup = request.scoped_cleanup();
+            ASSERT_TRUE(result);
+            auto view = result.entries(buffer);
+            auto it = view.begin();
+            ASSERT_NE(it, view.end());
+
+            auto first_name = std::string{(*it).name()};
+            auto old = it++;
+
+            EXPECT_EQ(std::string{(*old).name()}, first_name);
+            EXPECT_NE(old, it);
+            checked = true;
+          }
+
+          uv::fs::raw::closedir(loop, request, std::move(dir),
+            [&](uv::fs::raw::request &request, uv::fs::raw::status_result result) {
+              auto cleanup = request.scoped_cleanup();
+              EXPECT_TRUE(result);
+              closed = true;
+            });
+        });
+    });
+
+  loop.run();
+  loop.close();
+
+  EXPECT_TRUE(checked);
+  EXPECT_TRUE(closed);
 
   std::filesystem::remove_all(path);
 }
