@@ -1,4 +1,5 @@
 #include <csignal>
+#include <cstdlib>
 #include <unistd.h>
 
 #include "gtest/gtest.h"
@@ -126,12 +127,120 @@ TEST(Uvpp2Poll, reportsReadableFileDescriptorWithStaticCallback) {
   close(fds[1]);
 }
 
+TEST(Uvpp2ProcessOptions, buildsFluentOptions) {
+  auto options = uv::process_options::make("git")
+    .arg("status")
+    .args({"--short", "--branch"})
+    .cwd("/tmp/repo")
+    .env("LANG", "C")
+    .inherit_stdout()
+    .inherit_stderr()
+    .detached()
+    .windows_hide();
+
+  EXPECT_EQ(options.file, "git");
+  ASSERT_EQ(options.arguments.size(), 3);
+  EXPECT_EQ(options.arguments[0], "status");
+  EXPECT_EQ(options.arguments[1], "--short");
+  EXPECT_EQ(options.arguments[2], "--branch");
+  EXPECT_EQ(options.working_directory, "/tmp/repo");
+  ASSERT_EQ(options.environment.size(), 1);
+  EXPECT_EQ(options.environment[0], "LANG=C");
+  EXPECT_FALSE(options.inherit_parent_environment);
+  EXPECT_TRUE((options.flags & UV_PROCESS_DETACHED) != 0);
+  EXPECT_TRUE((options.flags & UV_PROCESS_WINDOWS_HIDE) != 0);
+
+  ASSERT_EQ(options.stdio_entries.size(), 3);
+  EXPECT_EQ(options.stdio_entries[0].flags, UV_IGNORE);
+  EXPECT_EQ(options.stdio_entries[1].flags, UV_INHERIT_FD);
+  EXPECT_EQ(options.stdio_entries[1].data.fd, 1);
+  EXPECT_EQ(options.stdio_entries[2].flags, UV_INHERIT_FD);
+  EXPECT_EQ(options.stdio_entries[2].data.fd, 2);
+}
+
+TEST(Uvpp2ProcessOptions, acceptsExplicitStdioEntries) {
+  auto entries = {
+    uv::process_stdio::ignore(),
+    uv::process_stdio::inherit_fd(1),
+    uv::process_stdio::inherit_fd(2),
+  };
+
+  auto options = uv::process_options::make("tool").stdio(entries);
+
+  ASSERT_EQ(options.stdio_entries.size(), 3);
+  EXPECT_EQ(options.stdio_entries[0].flags, UV_IGNORE);
+  EXPECT_EQ(options.stdio_entries[1].flags, UV_INHERIT_FD);
+  EXPECT_EQ(options.stdio_entries[1].data.fd, 1);
+  EXPECT_EQ(options.stdio_entries[2].flags, UV_INHERIT_FD);
+  EXPECT_EQ(options.stdio_entries[2].data.fd, 2);
+}
+
+TEST(Uvpp2ProcessOptions, buildsPipeStdioEntries) {
+  uv::loop loop;
+  uv::pipe output(loop);
+
+  auto options = uv::process_options::make("tool")
+    .empty_environment()
+    .pipe_stdout(output);
+
+  EXPECT_FALSE(options.inherit_parent_environment);
+  EXPECT_TRUE(options.environment.empty());
+  ASSERT_EQ(options.stdio_entries.size(), 2);
+  EXPECT_EQ(options.stdio_entries[0].flags, UV_IGNORE);
+  EXPECT_EQ(options.stdio_entries[1].flags, static_cast<uv_stdio_flags>(UV_CREATE_PIPE | UV_WRITABLE_PIPE));
+  EXPECT_EQ(options.stdio_entries[1].data.stream, output.native_stream());
+
+  output.close();
+  loop.run();
+  loop.close();
+}
+
+TEST(Uvpp2Process, inheritedEnvironmentIsVisibleToChild) {
+  ::setenv("UVPP_TEST_INHERIT_VAR", "present", 1);
+
+  uv::loop loop;
+  auto options = uv::process_options::make("/bin/sh")
+    .args({"-c", "test -n \"$UVPP_TEST_INHERIT_VAR\""});
+
+  int exit_status = -1;
+  uv::process process(loop, options, [&](uv::process &self, uv::process_exit exit) {
+    exit_status = static_cast<int>(exit.status);
+    self.close();
+  });
+
+  loop.run();
+  EXPECT_EQ(exit_status, 0);
+  loop.close();
+
+  ::unsetenv("UVPP_TEST_INHERIT_VAR");
+}
+
+TEST(Uvpp2Process, emptyEnvironmentHidesParentVariables) {
+  ::setenv("UVPP_TEST_INHERIT_VAR", "present", 1);
+
+  uv::loop loop;
+  auto options = uv::process_options::make("/bin/sh")
+    .args({"-c", "test -z \"$UVPP_TEST_INHERIT_VAR\""})
+    .empty_environment();
+
+  int exit_status = -1;
+  uv::process process(loop, options, [&](uv::process &self, uv::process_exit exit) {
+    exit_status = static_cast<int>(exit.status);
+    self.close();
+  });
+
+  loop.run();
+  EXPECT_EQ(exit_status, 0);
+  loop.close();
+
+  ::unsetenv("UVPP_TEST_INHERIT_VAR");
+}
+
 TEST(Uvpp2Process, reportsExitStatus) {
   uv::loop loop;
 
-  uv::process_options options;
-  options.file = "/bin/sh";
-  options.arguments = {"-c", "exit 7"};
+  auto options = uv::process_options::make("/bin/sh")
+    .args({"-c", "exit 7"});
 
   bool exited = false;
   bool closed = false;
@@ -173,9 +282,8 @@ void on_static_process_exit(uv::process &process, uv::process_exit exit) {
 TEST(Uvpp2Process, reportsExitStatusWithStaticCallback) {
   uv::loop loop;
 
-  uv::process_options options;
-  options.file = "/bin/sh";
-  options.arguments = {"-c", "exit 3"};
+  auto options = uv::process_options::make("/bin/sh")
+    .args({"-c", "exit 3"});
   static_process_exited = false;
   static_process_closed = false;
 

@@ -94,6 +94,43 @@ The higher-level API may allocate operation state internally. That cost must be 
 
 The public `uv::fs` API owns the raw request internally, cleans it automatically, and returns scalar or owned result values. Use `fs::raw` when the caller needs exact libuv control, request reuse, caller-owned buffers, static callbacks, or request-scoped directory iteration.
 
+## Raw Filesystem Ranges
+
+Raw filesystem results may expose range syntax without taking ownership of the
+data they iterate.
+
+`fs::raw::scandir_result` models libuv's `uv_fs_scandir_next()` protocol. Its
+range is single-pass and consumes the underlying scandir cursor:
+
+```cpp
+uv::fs::raw::scandir(loop, req, path, 0,
+  [](uv::fs::raw::request& req, uv::fs::raw::scandir_result result) {
+    auto cleanup = req.scoped_cleanup();
+
+    for (auto entry : result) {
+      std::string name{entry.name()};
+    }
+  });
+```
+
+The entry names are borrowed from the `uv_fs_t` request and remain valid only
+until request cleanup. Copy names that must outlive the callback or cleanup
+guard.
+
+`fs::raw::readdir_result::entries(buffer)` ranges over the entries libuv filled
+in a caller-owned `directory_read_buffer` for that completion:
+
+```cpp
+for (auto entry : result.entries(buffer)) {
+  std::string name{entry.name()};
+}
+```
+
+Those entry names are borrowed from the read buffer and remain valid only while
+the buffer is alive and before it is reused by another `readdir` call. The range
+must not imply ownership; it is only a safer spelling for the bounded index loop
+over `result.count()`.
+
 ## Buffers
 
 Separate owning buffers from non-owning views. The v2 taxonomy is:

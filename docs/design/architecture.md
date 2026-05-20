@@ -206,6 +206,35 @@ The conversion from a concrete handle wrapper to `handle_view` must stay named
 as `.view()`. Do not provide an implicit conversion operator from
 `basic_handle` to `handle_view`.
 
+## Native Option Construction
+
+Not every libuv struct should be wrapped like a handle or request. Handles and
+requests have native identity: libuv stores their addresses and may refer to
+them later from callbacks. Option structs such as `uv_process_options_t` are
+different. They are temporary submission records consumed synchronously by the
+libuv call.
+
+When a native option struct contains borrowed pointers, prefer a C++ value that
+owns the inputs and constructs the native view at submission time.
+
+Example:
+
+```cpp
+auto options = uv::process_options::make("git")
+  .arg("status")
+  .cwd(repo);
+```
+
+`process_options` owns strings, argument vectors, environment entries, and stdio
+containers. `process` builds a local `uv_process_options_t` immediately before
+calling `uv_spawn()`. This avoids exposing a public `native()` view whose
+pointers could be invalidated by later mutation, vector reallocation, copy, or
+move of the owning C++ value.
+
+Use a public native wrapper only when the native struct has a durable identity
+or a stable value representation. Use a private or `detail` native view when the
+native struct is only a transient adapter for one libuv call.
+
 ## User Data
 
 libuv's `data` fields remain user-owned in v2. Wrapper objects must not store `this` in `raw.data` for handles or requests.

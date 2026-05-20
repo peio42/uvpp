@@ -128,6 +128,60 @@ namespace uv::fs::raw {
 
   class scandir_result {
   public:
+    class iterator {
+    public:
+      using value_type = directory_entry;
+      using difference_type = std::ptrdiff_t;
+
+      iterator() = default;
+
+      explicit iterator(scandir_result *result) noexcept
+        : result_{result} {
+        ++(*this);
+      }
+
+      const directory_entry &operator*() const noexcept {
+        return entry_;
+      }
+
+      const directory_entry *operator->() const noexcept {
+        return &entry_;
+      }
+
+      iterator &operator++() noexcept {
+        if (!result_ || !result_->next(entry_)) {
+          result_ = nullptr;
+        } else {
+          ++index_;
+        }
+
+        return *this;
+      }
+
+      iterator operator++(int) noexcept {
+        auto copy = *this;
+        ++(*this);
+        return copy;
+      }
+
+      friend bool operator==(const iterator &lhs, const iterator &rhs) noexcept {
+        if (lhs.result_ == nullptr && rhs.result_ == nullptr) {
+          return true;
+        }
+
+        return lhs.result_ == rhs.result_ && lhs.index_ == rhs.index_;
+      }
+
+      friend bool operator!=(const iterator &lhs, const iterator &rhs) noexcept {
+        return !(lhs == rhs);
+      }
+
+    private:
+      scandir_result *result_ = nullptr;
+      std::size_t index_ = 0;
+      directory_entry entry_;
+    };
+
     scandir_result(ssize_t result, uv_fs_t *request) noexcept
       : result_{result}, request_{request} {}
 
@@ -155,6 +209,14 @@ namespace uv::fs::raw {
 
       entry = directory_entry{native.name, native.type};
       return true;
+    }
+
+    iterator begin() noexcept {
+      return iterator{this};
+    }
+
+    iterator end() noexcept {
+      return iterator{};
     }
 
   private:
@@ -220,6 +282,10 @@ namespace uv::fs::raw {
 
     std::size_t count() const noexcept {
       return ok() ? static_cast<std::size_t>(result_) : 0;
+    }
+
+    directory_read_buffer::entries_view entries(const directory_read_buffer &buffer) const noexcept {
+      return buffer.entries(count());
     }
 
   private:
