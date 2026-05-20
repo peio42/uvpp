@@ -21,8 +21,11 @@ namespace uv {
   };
 
   enum class tcp_bind_flag : unsigned int {
-    ipv6_only = UV_TCP_IPV6ONLY,
+    ipv6_only = UV_TCP_IPV6ONLY
+#if UV_VERSION_HEX >= 0x013100
+    ,
     reuse_port = UV_TCP_REUSEPORT
+#endif
   };
 
   constexpr unsigned int operator|(tcp_bind_flag lhs, tcp_bind_flag rhs) noexcept {

@@ -31,8 +31,16 @@ namespace uv {
     bool empty() const noexcept { return nread_ == 0; }
     bool empty_event() const noexcept { return nread_ == 0 && addr_ == nullptr; }
     bool partial() const noexcept { return (flags_ & UV_UDP_PARTIAL) != 0; }
+#if UV_VERSION_HEX >= 0x012300
     bool mmsg_chunk() const noexcept { return (flags_ & UV_UDP_MMSG_CHUNK) != 0; }
+#else
+    bool mmsg_chunk() const noexcept { return false; }
+#endif
+#if UV_VERSION_HEX >= 0x012800
     bool mmsg_free() const noexcept { return (flags_ & UV_UDP_MMSG_FREE) != 0; }
+#else
+    bool mmsg_free() const noexcept { return false; }
+#endif
     ssize_t count() const noexcept { return nread_; }
     result status() const noexcept { return result{static_cast<int>(nread_)}; }
     unsigned flags() const noexcept { return flags_; }
@@ -67,7 +75,9 @@ namespace uv {
   };
 
   enum class udp_init_flag : unsigned int {
+#if UV_VERSION_HEX >= 0x012500
     recvmmsg = UV_UDP_RECVMMSG
+#endif
   };
 
   constexpr unsigned int operator|(udp_socket_family family, udp_init_flag flag) noexcept {
@@ -84,9 +94,15 @@ namespace uv {
 
   enum class udp_bind_flag : unsigned int {
     ipv6_only = UV_UDP_IPV6ONLY,
-    reuse_address = UV_UDP_REUSEADDR,
-    linux_receive_error = UV_UDP_LINUX_RECVERR,
+    reuse_address = UV_UDP_REUSEADDR
+#if UV_VERSION_HEX >= 0x012300
+    ,
+    linux_receive_error = UV_UDP_LINUX_RECVERR
+#endif
+#if UV_VERSION_HEX >= 0x013100
+    ,
     reuse_port = UV_UDP_REUSEPORT
+#endif
   };
 
   constexpr unsigned int operator|(udp_bind_flag lhs, udp_bind_flag rhs) noexcept {
@@ -119,6 +135,7 @@ namespace uv {
     int value_;
   };
 
+#if UV_VERSION_HEX >= 0x013200
   class send_many_now_result {
   public:
     explicit send_many_now_result(int value) noexcept : value_{value} {}
@@ -168,6 +185,7 @@ namespace uv {
     std::span<const buffer_view> buffers_;
     const sockaddr *addr_;
   };
+#endif
 
   class udp final : public basic_handle<udp, uv_udp_t> {
   public:
@@ -190,6 +208,7 @@ namespace uv {
       throw_if_error(uv_udp_init_ex(l.native(), native(), static_cast<unsigned int>(family)));
     }
 
+#if UV_VERSION_HEX >= 0x012500
     udp(loop &l, udp_socket_family family, udp_init_flag flag) {
       throw_if_error(uv_udp_init_ex(l.native(), native(), family | flag));
     }
@@ -197,6 +216,7 @@ namespace uv {
     udp(loop_view l, udp_socket_family family, udp_init_flag flag) {
       throw_if_error(uv_udp_init_ex(l.native(), native(), family | flag));
     }
+#endif
 
     void open(uv_os_sock_t socket) {
       throw_if_error(uv_udp_open(native(), socket));
@@ -362,6 +382,7 @@ namespace uv {
       return send_now(bytes, static_cast<const sockaddr *>(nullptr));
     }
 
+#if UV_VERSION_HEX >= 0x013200
     send_many_now_result send_many_now(std::span<const udp_send_view> packets) {
       std::vector<uv_buf_t *> buffers;
       std::vector<unsigned int> counts;
@@ -389,6 +410,7 @@ namespace uv {
         addresses.empty() ? nullptr : addresses.data(),
         0)};
     }
+#endif
 
     std::size_t send_queue_size() const noexcept {
       return uv_udp_get_send_queue_size(native());
@@ -427,9 +449,11 @@ namespace uv {
                                                   source.c_str(), static_cast<uv_membership>(m)));
     }
 
+#if UV_VERSION_HEX >= 0x012700
     bool using_recvmmsg() const noexcept {
       return uv_udp_using_recvmmsg(native()) != 0;
     }
+#endif
 
     void set_multicast_loop(bool enable) {
       throw_if_error(uv_udp_set_multicast_loop(native(), enable ? 1 : 0));

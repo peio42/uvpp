@@ -22,12 +22,13 @@ uv::udp ipv6(loop, uv::udp_socket_family::ipv6);
 ```
 
 `uv::udp_init_flag::recvmmsg` requests libuv's recvmmsg receive path where the
-platform supports it.
+platform supports it. This helper is available when building against libuv
+1.37.0 or newer.
 
 ```cpp
 uv::udp socket(loop, uv::udp_socket_family::ipv4, uv::udp_init_flag::recvmmsg);
 
-bool enabled = socket.using_recvmmsg();
+bool enabled = socket.using_recvmmsg(); // libuv 1.39.0 or newer
 ```
 
 When recvmmsg is active, libuv expects UDP receive buffers to be multiples of
@@ -123,7 +124,8 @@ auto bytes = result.bytes_sent();
 ```
 
 `send_many_now()` maps to `uv_udp_try_send2()` and attempts to send multiple
-datagrams immediately. The result reports datagram count rather than byte count.
+datagrams immediately. It is available when building against libuv 1.50.0 or
+newer. The result reports datagram count rather than byte count.
 
 ```cpp
 std::array first_buffers{first.view()};
@@ -157,4 +159,3 @@ socket.set_membership("239.255.0.1", uv::membership::join);
 socket.set_source_membership("239.255.0.1", "192.0.2.10",
                              uv::membership::join);
 ```
-
