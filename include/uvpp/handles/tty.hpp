@@ -6,6 +6,7 @@
 
 #include "uvpp/core/error.hpp"
 #include "uvpp/core/loop.hpp"
+#include "uvpp/core/version.hpp"
 #include "uvpp/handles/stream.hpp"
 
 namespace uv {
@@ -15,6 +16,13 @@ namespace uv {
     raw = UV_TTY_MODE_RAW,
     io = UV_TTY_MODE_IO
   };
+
+#if UVPP_HAS_TTY_VTERM_STATE
+  enum class tty_vterm_state {
+    supported = UV_TTY_SUPPORTED,
+    unsupported = UV_TTY_UNSUPPORTED
+  };
+#endif
 
   struct terminal_size {
     int width = 0;
@@ -44,6 +52,18 @@ namespace uv {
     static void reset_mode() {
       throw_if_error(uv_tty_reset_mode());
     }
+
+#if UVPP_HAS_TTY_VTERM_STATE
+    static void set_vterm_state(tty_vterm_state state) noexcept {
+      uv_tty_set_vterm_state(static_cast<uv_tty_vtermstate_t>(state));
+    }
+
+    static tty_vterm_state vterm_state() {
+      uv_tty_vtermstate_t state{};
+      throw_if_error(uv_tty_get_vterm_state(&state));
+      return static_cast<tty_vterm_state>(state);
+    }
+#endif
   };
 
 }

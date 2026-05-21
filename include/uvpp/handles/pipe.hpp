@@ -11,6 +11,7 @@
 #include "uvpp/core/callback.hpp"
 #include "uvpp/core/error.hpp"
 #include "uvpp/core/loop.hpp"
+#include "uvpp/core/version.hpp"
 #include "uvpp/handles/stream.hpp"
 #include "uvpp/requests/connect.hpp"
 
@@ -29,6 +30,20 @@ namespace uv {
     return lhs | static_cast<int>(rhs);
   }
 
+#if UVPP_HAS_PIPE_BIND2 || UVPP_HAS_PIPE_CONNECT2
+  enum class pipe_name_flag : unsigned int {
+    no_truncate = UV_PIPE_NO_TRUNCATE
+  };
+
+  constexpr unsigned int operator|(pipe_name_flag lhs, pipe_name_flag rhs) noexcept {
+    return static_cast<unsigned int>(lhs) | static_cast<unsigned int>(rhs);
+  }
+
+  constexpr unsigned int operator|(unsigned int lhs, pipe_name_flag rhs) noexcept {
+    return lhs | static_cast<unsigned int>(rhs);
+  }
+#endif
+
   class pipe final : public stream<pipe, uv_pipe_t> {
   public:
     explicit pipe(loop &l, bool ipc = false) {
@@ -40,9 +55,23 @@ namespace uv {
     }
 
     void bind(std::string_view name) {
+#if UVPP_HAS_PIPE_BIND2
+      throw_if_error(uv_pipe_bind2(native(), name.data(), name.size(), 0));
+#else
       std::string storage{name};
       throw_if_error(uv_pipe_bind(native(), storage.c_str()));
+#endif
     }
+
+#if UVPP_HAS_PIPE_BIND2
+    void bind(std::string_view name, unsigned int flags) {
+      throw_if_error(uv_pipe_bind2(native(), name.data(), name.size(), flags));
+    }
+
+    void bind(std::string_view name, pipe_name_flag flag) {
+      bind(name, static_cast<unsigned int>(flag));
+    }
+#endif
 
     std::string sockname() const {
       return get_name([this](char *buffer, std::size_t *size) {
@@ -57,18 +86,58 @@ namespace uv {
     }
 
     void connect(connect_request &request, std::string_view name, connect_request::callback callback) {
+#if UVPP_HAS_PIPE_CONNECT2
+      detail::submit_request(request, std::move(callback), [&] {
+        return uv_pipe_connect2(request.native(), native(), name.data(), name.size(), 0, &pipe::connect_trampoline);
+      });
+#else
       request.set_callback(std::move(callback));
       std::string storage{name};
       uv_pipe_connect(request.native(), native(), storage.c_str(), &pipe::connect_trampoline);
+#endif
     }
+
+#if UVPP_HAS_PIPE_CONNECT2
+    void connect(connect_request &request, std::string_view name, unsigned int flags,
+                 connect_request::callback callback) {
+      detail::submit_request(request, std::move(callback), [&] {
+        return uv_pipe_connect2(request.native(), native(), name.data(), name.size(),
+                                flags, &pipe::connect_trampoline);
+      });
+    }
+
+    void connect(connect_request &request, std::string_view name, pipe_name_flag flag,
+                 connect_request::callback callback) {
+      connect(request, name, static_cast<unsigned int>(flag), std::move(callback));
+    }
+#endif
 
     template<auto Callback>
     void connect_static(connect_request &request, std::string_view name) {
+#if UVPP_HAS_PIPE_CONNECT2
+      connect_static<Callback>(request, name, 0);
+#else
       std::string storage{name};
       uv_pipe_connect(request.native(), native(), storage.c_str(), [](uv_connect_t *raw, int status) noexcept {
         detail::invoke_static_callback<Callback>(connect_request::from_native(raw), result{status});
       });
+#endif
     }
+
+#if UVPP_HAS_PIPE_CONNECT2
+    template<auto Callback>
+    void connect_static(connect_request &request, std::string_view name, unsigned int flags) {
+      throw_if_error(uv_pipe_connect2(request.native(), native(), name.data(), name.size(), flags,
+        [](uv_connect_t *raw, int status) noexcept {
+          detail::invoke_static_callback<Callback>(connect_request::from_native(raw), result{status});
+        }));
+    }
+
+    template<auto Callback>
+    void connect_static(connect_request &request, std::string_view name, pipe_name_flag flag) {
+      connect_static<Callback>(request, name, static_cast<unsigned int>(flag));
+    }
+#endif
 
     void open(uv_file file) {
       throw_if_error(uv_pipe_open(native(), file));

@@ -19,3 +19,17 @@ TEST(Uvpp2Tty, initializesWhenStdoutIsATty) {
   loop.run();
   loop.close();
 }
+
+#if UVPP_HAS_TTY_VTERM_STATE
+TEST(Uvpp2Tty, exposesVirtualTerminalState) {
+  uv::tty::set_vterm_state(uv::tty_vterm_state::supported);
+
+  try {
+    auto state = uv::tty::vterm_state();
+    EXPECT_TRUE(state == uv::tty_vterm_state::supported ||
+                state == uv::tty_vterm_state::unsupported);
+  } catch (const uv::error &error) {
+    EXPECT_EQ(error.code(), uv::make_error_code(UV_ENOTSUP));
+  }
+}
+#endif

@@ -15,6 +15,7 @@
 #include "uvpp/core/callback.hpp"
 #include "uvpp/core/error.hpp"
 #include "uvpp/core/loop.hpp"
+#include "uvpp/core/version.hpp"
 #include "uvpp/handles/handle.hpp"
 #include "uvpp/handles/stream.hpp"
 
@@ -301,6 +302,7 @@ namespace uv {
       return std::move(*this);
     }
 
+#if UVPP_HAS_PROCESS_WINDOWS_HIDE_CONSOLE_GUI
     process_options &windows_hide_console(bool enable = true) & noexcept {
       set_process_flag(UV_PROCESS_WINDOWS_HIDE_CONSOLE, enable);
       return *this;
@@ -320,6 +322,19 @@ namespace uv {
       set_process_flag(UV_PROCESS_WINDOWS_HIDE_GUI, enable);
       return std::move(*this);
     }
+#endif
+
+#if UVPP_HAS_PROCESS_WINDOWS_FILE_PATH_EXACT_NAME
+    process_options &windows_file_path_exact_name(bool enable = true) & noexcept {
+      set_process_flag(UV_PROCESS_WINDOWS_FILE_PATH_EXACT_NAME, enable);
+      return *this;
+    }
+
+    process_options &&windows_file_path_exact_name(bool enable = true) && noexcept {
+      set_process_flag(UV_PROCESS_WINDOWS_FILE_PATH_EXACT_NAME, enable);
+      return std::move(*this);
+    }
+#endif
 
     process_options &set_stdio(std::size_t fd, uv_stdio_container_t entry) & {
       if (stdio_entries.size() <= fd) {
@@ -397,8 +412,12 @@ namespace uv {
       });
     }
 
-    int pid() const noexcept {
+    uv_pid_t pid() const noexcept {
+#if UVPP_HAS_PROCESS_GET_PID
+      return uv_process_get_pid(native());
+#else
       return native()->pid;
+#endif
     }
 
     void kill(int signum) {
@@ -407,6 +426,10 @@ namespace uv {
 
     static void kill(int pid, int signum) {
       throw_if_error(uv_kill(pid, signum));
+    }
+
+    static void disable_stdio_inheritance() noexcept {
+      uv_disable_stdio_inheritance();
     }
 
   private:

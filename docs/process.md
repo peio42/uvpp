@@ -27,6 +27,7 @@ Rules:
 - `inherit_parent_environment` controls whether an empty environment inherits the parent environment;
 - `working_directory` is optional and an empty string inherits the parent working directory;
 - `flags` is a raw `uv_process_flags` bitmask because the flag set is already compact and libuv-specific;
+- `uid` and `gid` are copied to libuv when `set_uid()` / `set_gid()` enable the corresponding flags;
 - `stdio_entries` is a `std::vector<uv_stdio_container_t>` as an explicit low-level escape hatch.
 
 Common construction helpers are available for ordinary process launches:
@@ -45,8 +46,16 @@ Flag helpers keep common libuv flags readable:
 ```cpp
 auto options = uv::process_options::make("server")
   .detached()
+  .set_uid(uid)
+  .set_gid(gid)
   .windows_hide();
 ```
+
+`set_uid()` and `set_gid()` are Unix-oriented libuv options. On Windows, libuv
+reports `UV_ENOTSUP` if those flags are used. Newer Windows-only flags are
+available only when the installed libuv headers expose them, for example
+`windows_file_path_exact_name()` behind
+`UVPP_HAS_PROCESS_WINDOWS_FILE_PATH_EXACT_NAME`.
 
 `process_options` only needs to outlive the `process` constructor call. `uv_spawn` consumes the native options synchronously. After construction, the wrapper stores only the process handle and the exit callback slot.
 
@@ -98,3 +107,20 @@ uv::process static_child(loop, options, uv::process::static_callback<on_exit>{})
 ```
 
 The runtime form stores one exit callback in the process object. The static form stores no callable.
+
+## Process Control
+
+After a successful spawn, `process::pid()` returns the child PID using
+`uv_process_get_pid()` when the installed libuv provides it.
+
+```cpp
+auto pid = child.pid();
+```
+
+Use `child.kill(signum)` for a process handle. This avoids targeting an
+unrelated process if a cached PID is later reused by the operating system.
+`uv::process::kill(pid, signum)` remains available for the raw PID case.
+
+`uv::process::disable_stdio_inheritance()` exposes libuv's process-wide helper
+for preventing accidental inheritance of parent file descriptors by future
+children. It should be called early in program startup when used.
