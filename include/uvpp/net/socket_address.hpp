@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cassert>
+#include <string>
 
 #include <uv.h>
 
@@ -29,6 +30,12 @@ namespace uv {
       if (is_v4()) return ntohs(as<sockaddr_in>().sin_port);
       if (is_v6()) return ntohs(as<sockaddr_in6>().sin6_port);
       return 0;
+    }
+
+    std::string to_string() const {
+      if (is_v4()) return to_v4().to_string();
+      if (is_v6()) return to_v6().to_string();
+      return {};
     }
 
     sockaddr *native() noexcept { return reinterpret_cast<sockaddr *>(&storage_); }

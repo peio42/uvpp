@@ -330,3 +330,18 @@ TEST(Uvpp2Loop, forkReinitializesLoopInChildProcess) {
   loop.close();
 }
 #endif
+
+// ---------------------------------------------------------------------------
+// hrtime
+// ---------------------------------------------------------------------------
+
+TEST(Uvpp2Loop, hrtimeReturnsPositiveNanoseconds) {
+  auto t = uv::hrtime();
+  EXPECT_GT(t.count(), 0);
+}
+
+TEST(Uvpp2Loop, hrtimeIsMonotonic) {
+  auto t1 = uv::hrtime();
+  auto t2 = uv::hrtime();
+  EXPECT_GE(t2.count(), t1.count());
+}
