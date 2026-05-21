@@ -1,12 +1,12 @@
 #pragma once
 
+#include <cassert>
 #include <cstddef>
 #include <functional>
 #include <span>
 #include <string>
 #include <string_view>
 #include <utility>
-#include <vector>
 
 #include <uv.h>
 
@@ -158,32 +158,33 @@ namespace uv {
     int value_;
   };
 
-  class udp_send_view {
+  class udp_send_many_view {
   public:
-    udp_send_view(std::span<const buffer_view> buffers, const sockaddr *addr) noexcept
-      : buffers_{buffers}, addr_{addr} {}
+    udp_send_many_view(unsigned int count, uv_buf_t **buffers, unsigned int *buffer_counts,
+                       sockaddr **addresses) noexcept
+      : count_{count}, buffers_{buffers}, buffer_counts_{buffer_counts}, addresses_{addresses} {}
 
-    udp_send_view(std::span<const buffer_view> buffers, const ipv4 &addr) noexcept
-      : udp_send_view{buffers, addr.native_sockaddr()} {}
+    udp_send_many_view(std::span<uv_buf_t *> buffers, std::span<unsigned int> buffer_counts,
+                       std::span<sockaddr *> addresses) noexcept
+      : udp_send_many_view{static_cast<unsigned int>(buffers.size()), buffers.data(), buffer_counts.data(),
+                           addresses.data()} {
+      assert(buffers.size() == buffer_counts.size());
+      assert(buffers.size() == addresses.size());
+      if (buffers.size() != buffer_counts.size() || buffers.size() != addresses.size()) {
+        count_ = 0;
+      }
+    }
 
-    udp_send_view(std::span<const buffer_view> buffers, const ipv6 &addr) noexcept
-      : udp_send_view{buffers, addr.native_sockaddr()} {}
-
-    udp_send_view(const buffer_view &buffer, const sockaddr *addr) noexcept
-      : udp_send_view{std::span<const buffer_view>{&buffer, 1}, addr} {}
-
-    udp_send_view(const buffer_view &buffer, const ipv4 &addr) noexcept
-      : udp_send_view{std::span<const buffer_view>{&buffer, 1}, addr.native_sockaddr()} {}
-
-    udp_send_view(const buffer_view &buffer, const ipv6 &addr) noexcept
-      : udp_send_view{std::span<const buffer_view>{&buffer, 1}, addr.native_sockaddr()} {}
-
-    std::span<const buffer_view> buffers() const noexcept { return buffers_; }
-    const sockaddr *address() const noexcept { return addr_; }
+    unsigned int count() const noexcept { return count_; }
+    uv_buf_t **buffers() const noexcept { return buffers_; }
+    unsigned int *buffer_counts() const noexcept { return buffer_counts_; }
+    sockaddr **addresses() const noexcept { return addresses_; }
 
   private:
-    std::span<const buffer_view> buffers_;
-    const sockaddr *addr_;
+    unsigned int count_;
+    uv_buf_t **buffers_;
+    unsigned int *buffer_counts_;
+    sockaddr **addresses_;
   };
 #endif
 
@@ -383,32 +384,14 @@ namespace uv {
     }
 
 #if UV_VERSION_HEX >= 0x013200
-    send_many_now_result send_many_now(std::span<const udp_send_view> packets) {
-      std::vector<uv_buf_t *> buffers;
-      std::vector<unsigned int> counts;
-      std::vector<sockaddr *> addresses;
+    send_many_now_result send_many_now(udp_send_many_view batch) noexcept {
+      return send_many_now_result{uv_udp_try_send2(native(), batch.count(), batch.buffers(),
+                                                   batch.buffer_counts(), batch.addresses(), 0)};
+    }
 
-      buffers.reserve(packets.size());
-      counts.reserve(packets.size());
-      addresses.reserve(packets.size());
-
-      for (const auto &packet : packets) {
-        auto packet_buffers = packet.buffers();
-        auto *raw_buffers = packet_buffers.empty()
-          ? nullptr
-          : const_cast<uv_buf_t *>(reinterpret_cast<const uv_buf_t *>(packet_buffers.data()));
-
-        buffers.push_back(raw_buffers);
-        counts.push_back(static_cast<unsigned int>(packet_buffers.size()));
-        addresses.push_back(const_cast<sockaddr *>(packet.address()));
-      }
-
-      return send_many_now_result{uv_udp_try_send2(native(),
-        static_cast<unsigned int>(packets.size()),
-        buffers.empty() ? nullptr : buffers.data(),
-        counts.empty() ? nullptr : counts.data(),
-        addresses.empty() ? nullptr : addresses.data(),
-        0)};
+    send_many_now_result send_many_now(unsigned int count, uv_buf_t **buffers,
+                                       unsigned int *buffer_counts, sockaddr **addresses) noexcept {
+      return send_many_now(udp_send_many_view{count, buffers, buffer_counts, addresses});
     }
 #endif
 

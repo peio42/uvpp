@@ -21,9 +21,11 @@ changing the low-level contracts already published in `2.0.0`.
 
 ## UDP Batch Builder
 
-`2.0.0` exposes `udp_send_view` and `udp::send_many_now()` as the low-level
-shape for `uv_udp_try_send2()`. A future `2.x` release may add a fluent builder
-that owns the batch metadata while still borrowing payload buffers.
+`2.0.0` exposes `udp_send_many_view` and `udp::send_many_now()` as the low-level
+shape for `uv_udp_try_send2()`. The low-level API stays allocation-free by
+requiring caller-provided libuv batch arrays. A future `2.x` release may add a
+fluent builder that owns the batch metadata while still borrowing payload
+buffers.
 
 Possible shape:
 
@@ -37,4 +39,3 @@ auto result = socket.send_many_now(batch);
 
 The builder should own only the metadata needed to call libuv. It must not imply
 that payload bytes are copied or that asynchronous state is hidden.
-

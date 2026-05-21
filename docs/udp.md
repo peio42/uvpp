@@ -130,13 +130,15 @@ newer. The result reports datagram count rather than byte count.
 ```cpp
 std::array first_buffers{first.view()};
 std::array second_buffers{second.view()};
+std::array raw_first{*first_buffers[0].native()};
+std::array raw_second{*second_buffers[0].native()};
 
-std::array packets{
-  uv::udp_send_view{std::span<const uv::buffer_view>{first_buffers}, destination},
-  uv::udp_send_view{std::span<const uv::buffer_view>{second_buffers}, destination}
-};
+std::array buffer_arrays{raw_first.data(), raw_second.data()};
+std::array buffer_counts{1u, 1u};
+std::array addresses{destination.native_sockaddr(), destination.native_sockaddr()};
 
-auto result = socket.send_many_now(packets);
+auto result = socket.send_many_now(
+  uv::udp_send_many_view{buffer_arrays, buffer_counts, addresses});
 
 if (result.ok()) {
   auto sent = result.datagrams_sent();
@@ -144,9 +146,10 @@ if (result.ok()) {
 }
 ```
 
-`uv::udp_send_view` is a borrowed view. It does not own the buffers or address
-objects; keep them alive for the duration of the immediate call. For a more
-ergonomic owned batch builder, see [Future features](future.md).
+`uv::udp_send_many_view` is a raw borrowed view over the parallel arrays expected
+by libuv. It does not own buffers, address objects, or batch metadata; keep all
+arrays alive for the duration of the immediate call. For a more ergonomic owned
+batch builder, see [Future features](future.md).
 
 ## Multicast
 

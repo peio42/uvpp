@@ -1,4 +1,5 @@
 [![CI](https://github.com/peio42/uvpp/actions/workflows/ci-tests.yml/badge.svg)](https://github.com/peio42/uvpp/actions/workflows/ci-tests.yml)
+[![Version](https://img.shields.io/github/v/tag/peio42/uvpp?label=version&sort=semver)](https://github.com/peio42/uvpp/tags)
 
 # uvpp v2
 

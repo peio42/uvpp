@@ -273,21 +273,19 @@ TEST(Uvpp2Udp, sendManyNowSendsMultipleDatagrams) {
 
   std::array first{'o', 'n', 'e', '!'};
   std::array second{'t', 'w', 'o', '!'};
-  uv::buffer_view first_buffer{first.data(), first.size()};
-  uv::buffer_view second_buffer{second.data(), second.size()};
-  std::array first_buffers{first_buffer};
-  std::array second_buffers{second_buffer};
-  std::array packets{
-    uv::udp_send_view{std::span<const uv::buffer_view>{first_buffers}, destination},
-    uv::udp_send_view{std::span<const uv::buffer_view>{second_buffers}, destination}
-  };
+  std::array first_buffers{uv_buf_init(first.data(), static_cast<unsigned int>(first.size()))};
+  std::array second_buffers{uv_buf_init(second.data(), static_cast<unsigned int>(second.size()))};
+  std::array buffer_arrays{first_buffers.data(), second_buffers.data()};
+  std::array buffer_counts{static_cast<unsigned int>(first_buffers.size()),
+                           static_cast<unsigned int>(second_buffers.size())};
+  std::array addresses{destination.native_sockaddr(), destination.native_sockaddr()};
 
-  auto result = client.send_many_now(packets);
+  auto result = client.send_many_now(uv::udp_send_many_view{buffer_arrays, buffer_counts, addresses});
 
   ASSERT_TRUE(result.ok());
   EXPECT_FALSE(result.would_block());
   EXPECT_FALSE(result.has_error());
-  EXPECT_EQ(result.datagrams_sent(), packets.size());
+  EXPECT_EQ(result.datagrams_sent(), buffer_arrays.size());
 
   loop.run();
 
