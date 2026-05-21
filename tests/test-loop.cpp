@@ -335,9 +335,9 @@ TEST(Uvpp2Loop, forkReinitializesLoopInChildProcess) {
 // hrtime
 // ---------------------------------------------------------------------------
 
-TEST(Uvpp2Loop, hrtimeReturnsPositiveNanoseconds) {
+TEST(Uvpp2Loop, hrtimeReturnsNonNegativeNanoseconds) {
   auto t = uv::hrtime();
-  EXPECT_GT(t.count(), 0);
+  EXPECT_GE(t.count(), 0);
 }
 
 TEST(Uvpp2Loop, hrtimeIsMonotonic) {

@@ -178,7 +178,7 @@ inline loop_view default_loop() noexcept {
 }
 
 // High-resolution monotonic clock, independent of the event loop.
-// Suitable for measuring elapsed time with nanosecond precision.
+// Reports time in nanosecond units; actual resolution is platform-dependent.
 inline std::chrono::nanoseconds hrtime() noexcept {
   return std::chrono::nanoseconds{uv_hrtime()};
 }
