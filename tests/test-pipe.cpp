@@ -143,6 +143,80 @@ TEST(Uvpp2Pipe, reportsStaticConnectFailureCallback) {
   std::filesystem::remove(path);
 }
 
+#if UVPP_HAS_PIPE_BIND2 && UVPP_HAS_PIPE_CONNECT2
+TEST(Uvpp2Pipe, bindsAndConnectsWithPipeNameFlags) {
+  auto path = pipe_path() + "-bind2";
+  std::filesystem::remove(path);
+
+  uv::loop loop;
+  uv::pipe server(loop);
+  uv::pipe client(loop);
+  uv::connect_request connect_req;
+  std::unique_ptr<uv::pipe> accepted;
+
+  bool accepted_connection = false;
+  bool client_connected = false;
+  bool accepted_closed = false;
+  bool client_closed = false;
+  bool server_closed = false;
+
+  server.bind(path, uv::pipe_name_flag::no_truncate);
+  server.listen([&](uv::pipe &srv, uv::result status) {
+    ASSERT_TRUE(status);
+    accepted_connection = true;
+
+    accepted = std::make_unique<uv::pipe>(loop);
+    srv.accept(*accepted);
+
+    accepted->close([&](uv::pipe &) {
+      accepted_closed = true;
+    });
+    srv.close([&](uv::pipe &) {
+      server_closed = true;
+    });
+  });
+
+  client.connect(connect_req, path, uv::pipe_name_flag::no_truncate,
+    [&](uv::connect_request &, uv::result status) {
+      ASSERT_TRUE(status);
+      client_connected = true;
+      client.close([&](uv::pipe &) {
+        client_closed = true;
+      });
+    });
+
+  loop.run();
+
+  EXPECT_TRUE(accepted_connection);
+  EXPECT_TRUE(client_connected);
+  EXPECT_TRUE(accepted_closed);
+  EXPECT_TRUE(client_closed);
+  EXPECT_TRUE(server_closed);
+
+  loop.close();
+  std::filesystem::remove(path);
+}
+
+TEST(Uvpp2Pipe, connect2ImmediateFailureClearsCallback) {
+  uv::loop loop;
+  uv::pipe client(loop);
+  uv::connect_request connect_req;
+
+  bool callback_called = false;
+
+  EXPECT_THROW(client.connect(connect_req, "uvpp-invalid-flags", 1u << 8,
+    [&](uv::connect_request &, uv::result) {
+      callback_called = true;
+    }), uv::error);
+
+  client.close();
+  loop.run();
+
+  EXPECT_FALSE(callback_called);
+  loop.close();
+}
+#endif
+
 TEST(Uvpp2Pipe, writeWithHandleSendsStreamOverIpc) {
   auto path = pipe_path() + "-ipc";
   std::filesystem::remove(path);

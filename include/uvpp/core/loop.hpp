@@ -177,6 +177,12 @@ inline loop_view default_loop() noexcept {
   return loop_view{uv_default_loop()};
 }
 
+// High-resolution monotonic clock, independent of the event loop.
+// Reports time in nanosecond units; actual resolution is platform-dependent.
+inline std::chrono::nanoseconds hrtime() noexcept {
+  return std::chrono::nanoseconds{uv_hrtime()};
+}
+
 template<class F>
   requires std::invocable<F&, handle_view>
 void loop_view::walk(F &&callback) {

@@ -9,6 +9,7 @@
 #include "uvpp/core/callback.hpp"
 #include "uvpp/core/error.hpp"
 #include "uvpp/core/loop.hpp"
+#include "uvpp/core/version.hpp"
 #include "uvpp/handles/handle.hpp"
 
 namespace uv {
@@ -54,10 +55,30 @@ namespace uv {
       throw_if_error(uv_timer_again(native()));
     }
 
+    template<class Rep, class Period>
+    void set_repeat(std::chrono::duration<Rep, Period> interval) noexcept {
+      uv_timer_set_repeat(native(), millis(interval));
+    }
+
+    std::chrono::milliseconds repeat() const noexcept {
+      return std::chrono::milliseconds{
+        uv_timer_get_repeat(native())
+      };
+    }
+
+#if UVPP_HAS_TIMER_GET_DUE_IN
+    std::chrono::milliseconds due_in() const noexcept {
+      return std::chrono::milliseconds{
+        uv_timer_get_due_in(native())
+      };
+    }
+#endif
+
   private:
     template<class Rep, class Period>
-    static uint64_t millis(std::chrono::duration<Rep, Period> duration) {
-      return static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::milliseconds>(duration).count());
+    static uint64_t millis(std::chrono::duration<Rep, Period> duration) noexcept {
+      auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(duration).count();
+      return ms >= 0 ? static_cast<uint64_t>(ms) : uint64_t{0};
     }
 
     static void timer_trampoline(uv_timer_t *raw) noexcept {

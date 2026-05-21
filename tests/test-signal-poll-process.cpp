@@ -1,5 +1,6 @@
 #include <csignal>
 #include <cstdlib>
+#include <type_traits>
 #include <unistd.h>
 
 #include "gtest/gtest.h"
@@ -13,7 +14,7 @@ TEST(Uvpp2Signal, runsRuntimeCallback) {
   int called = 0;
 
   signal.user_data(marker);
-  signal.start_oneshot(SIGUSR1, [&](uv::signal &self, int signum) {
+  signal.start_oneshot(SIGUSR1, [&](uv::signal &self, uv::signal_number signum) {
     called++;
     EXPECT_EQ(signum, SIGUSR1);
     EXPECT_EQ(self.user_data<int>(), &marker);
@@ -31,7 +32,7 @@ namespace {
 
 int static_signal_called = 0;
 
-void on_static_signal(uv::signal &signal, int signum) {
+void on_static_signal(uv::signal &signal, uv::signal_number signum) {
   static_signal_called++;
   EXPECT_EQ(signum, SIGUSR1);
   signal.close();
@@ -60,11 +61,17 @@ TEST(Uvpp2Poll, reportsReadableFileDescriptor) {
   uv::loop loop;
   uv::poll poll(loop, fds[0]);
 
+  auto requested = uv::poll_event::readable | uv::poll_event::disconnect;
+  EXPECT_TRUE(requested.has(uv::poll_event::readable));
+  EXPECT_TRUE(uv::has_poll_event(requested, uv::poll_event::disconnect));
+
   int called = 0;
-  poll.start(uv::poll_event::readable, [&](uv::poll &self, uv::result status, int events) {
+  poll.start(uv::poll_event::readable, [&](uv::poll &self, uv::poll_result event) {
     called++;
-    EXPECT_TRUE(status);
-    EXPECT_TRUE(uv::has_poll_event(events, uv::poll_event::readable));
+    EXPECT_TRUE(event);
+    EXPECT_TRUE(event.status());
+    EXPECT_TRUE(event.has_event(uv::poll_event::readable));
+    EXPECT_TRUE(uv::has_poll_event(event.events(), uv::poll_event::readable));
 
     char byte = 0;
     EXPECT_EQ(::read(fds[0], &byte, 1), 1);
@@ -89,10 +96,11 @@ uv::poll *static_poll_handle = nullptr;
 int static_poll_read_fd = -1;
 int static_poll_called = 0;
 
-void on_static_poll(uv::poll &, uv::result status, int events) {
+void on_static_poll(uv::poll &, uv::poll_result event) {
   static_poll_called++;
-  EXPECT_TRUE(status);
-  EXPECT_TRUE(uv::has_poll_event(events, uv::poll_event::readable));
+  EXPECT_TRUE(event);
+  EXPECT_TRUE(event.status());
+  EXPECT_TRUE(uv::has_poll_event(event.events(), uv::poll_event::readable));
 
   char byte = 0;
   EXPECT_EQ(::read(static_poll_read_fd, &byte, 1), 1);
@@ -149,6 +157,15 @@ TEST(Uvpp2ProcessOptions, buildsFluentOptions) {
   EXPECT_FALSE(options.inherit_parent_environment);
   EXPECT_TRUE((options.flags & UV_PROCESS_DETACHED) != 0);
   EXPECT_TRUE((options.flags & UV_PROCESS_WINDOWS_HIDE) != 0);
+#if UVPP_HAS_PROCESS_WINDOWS_HIDE_CONSOLE_GUI
+  options.windows_hide_console().windows_hide_gui();
+  EXPECT_TRUE((options.flags & UV_PROCESS_WINDOWS_HIDE_CONSOLE) != 0);
+  EXPECT_TRUE((options.flags & UV_PROCESS_WINDOWS_HIDE_GUI) != 0);
+#endif
+#if UVPP_HAS_PROCESS_WINDOWS_FILE_PATH_EXACT_NAME
+  options.windows_file_path_exact_name();
+  EXPECT_TRUE((options.flags & UV_PROCESS_WINDOWS_FILE_PATH_EXACT_NAME) != 0);
+#endif
 
   ASSERT_EQ(options.stdio_entries.size(), 3);
   EXPECT_EQ(options.stdio_entries[0].flags, UV_IGNORE);
@@ -156,6 +173,17 @@ TEST(Uvpp2ProcessOptions, buildsFluentOptions) {
   EXPECT_EQ(options.stdio_entries[1].data.fd, 1);
   EXPECT_EQ(options.stdio_entries[2].flags, UV_INHERIT_FD);
   EXPECT_EQ(options.stdio_entries[2].data.fd, 2);
+}
+
+TEST(Uvpp2ProcessOptions, carriesUidAndGid) {
+  auto options = uv::process_options::make("tool")
+    .set_uid(static_cast<uv_uid_t>(123))
+    .set_gid(static_cast<uv_gid_t>(456));
+
+  EXPECT_EQ(options.uid, static_cast<uv_uid_t>(123));
+  EXPECT_EQ(options.gid, static_cast<uv_gid_t>(456));
+  EXPECT_TRUE((options.flags & UV_PROCESS_SETUID) != 0);
+  EXPECT_TRUE((options.flags & UV_PROCESS_SETGID) != 0);
 }
 
 TEST(Uvpp2ProcessOptions, acceptsExplicitStdioEntries) {
@@ -250,6 +278,7 @@ TEST(Uvpp2Process, reportsExitStatus) {
     EXPECT_EQ(exit.status, 7);
     EXPECT_EQ(exit.signal, 0);
     EXPECT_GT(self.pid(), 0);
+    static_assert(std::is_same_v<decltype(self.pid()), uv_pid_t>);
     EXPECT_EQ(&self, &uv::process::from_native(self.native()));
     self.close([&](uv::process &) {
       closed = true;
@@ -261,6 +290,11 @@ TEST(Uvpp2Process, reportsExitStatus) {
   EXPECT_TRUE(exited);
   EXPECT_TRUE(closed);
   loop.close();
+}
+
+TEST(Uvpp2Process, exposesGlobalStdioInheritanceHelper) {
+  auto helper = &uv::process::disable_stdio_inheritance;
+  (void)helper;
 }
 
 namespace {

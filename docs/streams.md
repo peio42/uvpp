@@ -90,3 +90,35 @@ client.shutdown(request, [](uv::shutdown_request&, uv::result result) {
   }
 });
 ```
+
+## Pipe Names
+
+`uv::pipe::bind()` and `uv::pipe::connect()` accept `std::string_view` names.
+When building against libuv 1.46.0 or newer, uvpp uses the length-aware libuv
+pipe APIs, so names may contain embedded null bytes for platform features such
+as Linux abstract namespace sockets.
+
+```cpp
+#if UVPP_HAS_PIPE_BIND2 && UVPP_HAS_PIPE_CONNECT2
+server.bind(name, uv::pipe_name_flag::no_truncate);
+client.connect(request, name, uv::pipe_name_flag::no_truncate, callback);
+#endif
+```
+
+`uv::pipe_name_flag::no_truncate` asks libuv to reject overlong pipe names
+instead of silently truncating them.
+
+## TTY Virtual Terminal State
+
+When building against libuv 1.33.0 or newer, `uv::tty` exposes the process-wide
+virtual terminal state helpers:
+
+```cpp
+#if UVPP_HAS_TTY_VTERM_STATE
+uv::tty::set_vterm_state(uv::tty_vterm_state::supported);
+auto state = uv::tty::vterm_state();
+#endif
+```
+
+This feature is meaningful on Windows. On Unix, libuv reports
+`UV_ENOTSUP` when reading the current state.

@@ -29,9 +29,7 @@ uvpp is a C++ API over libuv with explicit lifetime rules, typed callbacks, nati
 
 ## Status
 
-uvpp v2 covers the core loop, main handle families, stream requests, UDP, filesystem operations, watchers, and process spawning. The core design is in place, but the public API may still evolve slightly before the first stable release.
-
-Additional handles and utilities will be added in upcoming releases.
+uvpp 2.0.0 is the first stable release. It covers the core loop, all main handle families, stream requests, UDP, filesystem operations (`uv::fs` and `uv::fs::raw`), watchers, and process spawning. Post-2.0.0 additions are tracked in [Future features](docs/future.md).
 
 ## Requirements
 
@@ -320,7 +318,8 @@ Versions containing a prerelease suffix such as `2.0.0-rc.1` are published as Gi
 
 Contributor design notes live under [docs/design](docs/design/).
 
-The repository also ships a TCP echo server in [`examples/tcp-echo-server.cpp`](examples/tcp-echo-server.cpp).
+The repository also ships runnable examples under [`examples/`](examples/), including TCP,
+UDP, timer/watchers, and process stdout capture.
 
 ## License
 

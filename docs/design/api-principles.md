@@ -209,12 +209,22 @@ Where libuv exposes compact bitmasks, v2 should prefer thin typed helpers withou
 ```cpp
 poll.start(poll_event::readable | poll_event::disconnect, callback);
 
-if (has_poll_event(events, poll_event::readable)) {
+if (event.has_event(poll_event::readable)) {
   // fd is readable
 }
 ```
 
-The wrapper still accepts raw `int` events for native interop. The enum helpers document common flags and avoid spelling libuv constants in ordinary C++ call sites.
+The wrapper exposes callback events through typed result objects, such as
+`poll_result`, and raw masks only through explicit helpers such as
+`raw_events()` or `start_raw()`. The enum helpers document common flags and
+avoid spelling libuv constants in ordinary C++ call sites.
+
+Do not force a strong type where libuv intentionally accepts platform-defined
+integer identifiers rather than a compact uvpp-owned domain. Use a semantic
+alias when it improves readability without hiding the native model. For example,
+`uv::signal_number` aliases `int`: signal numbers remain POSIX/platform values
+such as `SIGINT` or `SIGTERM`, but callback signatures no longer expose an
+anonymous integer.
 
 ## Minimal Surprises
 

@@ -162,6 +162,20 @@ TEST(Uvpp2Tcp, bindsWithTypedFlags) {
 #endif
 }
 
+TEST(Uvpp2Tcp, socknameToStringMatchesBoundAddress) {
+  uv::loop loop;
+  uv::tcp server(loop);
+  server.bind(uv::ipv4{"127.0.0.1", 0});
+
+  auto addr = server.sockname();
+  ASSERT_TRUE(addr.is_v4());
+  EXPECT_EQ(addr.to_string(), "127.0.0.1");
+
+  server.close();
+  loop.run();
+  loop.close();
+}
+
 TEST(Uvpp2Tcp, exposesStaticIpv6ConnectOverload) {
   using connect_static_ipv6 = void (uv::tcp::*)(uv::connect_request &, const uv::ipv6 &);
   connect_static_ipv6 fn = &uv::tcp::connect_static<on_static_ipv6_connect>;

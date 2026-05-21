@@ -31,6 +31,12 @@ namespace uv {
 
     int port() const noexcept { return ntohs(raw_.sin_port); }
 
+    std::string to_string() const {
+      char buf[16];
+      throw_if_error(uv_ip4_name(&raw_, buf, sizeof(buf)));
+      return std::string{buf};
+    }
+
   private:
     sockaddr_in raw_{};
   };
@@ -56,6 +62,12 @@ namespace uv {
     const sockaddr_in6 *native() const noexcept { return &raw_; }
 
     int port() const noexcept { return ntohs(raw_.sin6_port); }
+
+    std::string to_string() const {
+      char buf[46];
+      throw_if_error(uv_ip6_name(&raw_, buf, sizeof(buf)));
+      return std::string{buf};
+    }
 
   private:
     sockaddr_in6 raw_{};

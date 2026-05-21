@@ -7,6 +7,19 @@ The filesystem API is split into two layers:
 
 This split keeps the public API aligned with the rest of v2: lifetime rules are encoded by default, while the low-level layer remains available when the caller wants exact libuv control or zero-extra-copy behavior.
 
+## Choosing a Layer
+
+Use `uv::fs` by default. Switch to `uv::fs::raw` only when you need one of the following:
+
+| Requirement | `uv::fs` | `uv::fs::raw` |
+|---|---|---|
+| Automatic cleanup after callback | ✅ | ❌ Manual `req.cleanup()` |
+| Results safe to copy or keep after callback | ✅ | ⚠️ Views expire at cleanup |
+| Reuse the same request across operations | ❌ Hidden, internal | ✅ Caller-owned `raw::request` |
+| Zero-copy read / write (caller-owned buffer) | ❌ Copies into owned buffer | ✅ |
+| Static callbacks with no heap allocation | ❌ | ✅ `*_static<Callback>()` |
+| `opendir` / `readdir` / `closedir` | ❌ Not available | ✅ |
+
 ## Public API
 
 `uv::fs` allocates one internal raw request per operation and destroys it after the callback has received an owned or scalar result.
@@ -24,7 +37,7 @@ uv::fs::open(loop, "file.txt", O_RDONLY, 0,
 
 The callback does not receive a request. There is no public cleanup step.
 
-The initial public API includes:
+The public API includes:
 
 - `fs::open`
 - `fs::close`
@@ -34,13 +47,21 @@ The initial public API includes:
 - `fs::unlink`
 - `fs::rename`
 - `fs::mkdir`
+- `fs::mkdtemp`
+- `fs::mkstemp` when `UVPP_HAS_FS_MKSTEMP` is available
 - `fs::rmdir`
 - `fs::fstat`
 - `fs::lstat`
+- `fs::statfs` when `UVPP_HAS_FS_STATFS` is available
 - `fs::access`
 - `fs::chmod`
+- `fs::fchmod`
 - `fs::chown`
+- `fs::fchown`
+- `fs::lchown`
 - `fs::utime`
+- `fs::futime`
+- `fs::lutime`
 - `fs::fsync`
 - `fs::fdatasync`
 - `fs::ftruncate`
@@ -64,11 +85,24 @@ Public result objects are safe to keep after the callback returns.
 - `read_result`: owns the read buffer and exposes `bytes()`.
 - `stat_result`: contains a copied `uv_stat_t`.
 - `path_result`: owns the returned path string.
+- `temp_file_result`: owns the generated path and returns the created file descriptor.
+- `statfs_result`: contains a copied `uv_statfs_t`.
 - `scandir_result`: owns a vector of directory entries.
 
 All result types support `operator bool()` and `error_code()`.
 
-Operations such as `rename`, `mkdir`, `rmdir`, `access`, `chmod`, `chown`, `utime`, `fsync`, `fdatasync`, `ftruncate`, `link`, and `symlink` return `status_result`. `fstat` and `lstat` return `stat_result`, like `stat`.
+`uv::fs` defines its own result types, distinct from those in `uv::fs::raw`, even though they share the same names. The `uv::fs` variants own their data and are safe to copy, store, or pass out of a callback. The `uv::fs::raw` variants may hold views into request-owned memory that expire when `req.cleanup()` is called.
+
+All result types also expose a `.raw()` accessor returning the raw `ssize_t` from libuv. It is only needed when `ok()` and `error_code()` are insufficient — for example to distinguish a zero-byte read from a genuine error when the result value carries semantic meaning beyond success/failure.
+
+Operations such as `rename`, `mkdir`, `rmdir`, `access`, `chmod`, `fchmod`,
+`chown`, `fchown`, `lchown`, `utime`, `futime`, `lutime`, `fsync`,
+`fdatasync`, `ftruncate`, `link`, and `symlink` return `status_result`.
+`fstat` and `lstat` return `stat_result`, like `stat`.
+
+`mkdtemp` returns a `path_result` with the generated directory path. `mkstemp`
+returns `temp_file_result`; callers are responsible for closing the returned
+file descriptor.
 
 Example:
 
@@ -180,6 +214,8 @@ Views into request-owned data are valid only until `req.cleanup()` is called:
 
 - `raw::stat_result::native()`
 - `raw::path_result::path()`
+- `raw::temp_file_result::path()`
+- `raw::statfs_result::native()`
 - `raw::scandir_result` entries
 
 Copy request-owned data before cleanup if it must survive the callback.
@@ -331,7 +367,7 @@ Both wrappers follow normal handle lifetime rules: `stop()` stops watching, and 
 
 ## Callback Forms
 
-`uv::fs` currently exposes ergonomic runtime callbacks and owns operation state internally.
+`uv::fs` exposes ergonomic runtime callbacks and owns operation state internally.
 
 `uv::fs::raw` supports both runtime callbacks and static callbacks.
 

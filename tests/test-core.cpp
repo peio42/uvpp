@@ -143,3 +143,29 @@ TEST(Uvpp2CoreDeathTest, successfulOpendirResultMustBeConsumed) {
   EXPECT_DEATH(leak_opendir_result_for_death_test(), ".*");
 }
 #endif
+
+// ---------------------------------------------------------------------------
+// Address to_string
+// ---------------------------------------------------------------------------
+
+TEST(Uvpp2Address, ipv4ToStringReturnsIPPart) {
+  uv::ipv4 addr{"127.0.0.1", 8080};
+  EXPECT_EQ(addr.to_string(), "127.0.0.1");
+}
+
+TEST(Uvpp2Address, ipv4ToStringIgnoresPort) {
+  uv::ipv4 a{"10.0.0.1", 1234};
+  uv::ipv4 b{"10.0.0.1", 5678};
+  EXPECT_EQ(a.to_string(), b.to_string());
+}
+
+TEST(Uvpp2Address, ipv6ToStringReturnsIPPart) {
+  uv::ipv6 addr{"::1", 8080};
+  EXPECT_EQ(addr.to_string(), "::1");
+}
+
+TEST(Uvpp2Address, ipv6ToStringIgnoresPort) {
+  uv::ipv6 a{"::1", 1234};
+  uv::ipv6 b{"::1", 5678};
+  EXPECT_EQ(a.to_string(), b.to_string());
+}

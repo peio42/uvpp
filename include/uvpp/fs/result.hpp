@@ -126,6 +126,60 @@ namespace uv::fs::raw {
     const char *path_ = nullptr;
   };
 
+  class temp_file_result {
+  public:
+    temp_file_result(ssize_t result, const char *path) noexcept
+      : result_{result}, path_{path} {}
+
+    bool ok() const noexcept { return result_ >= 0; }
+    explicit operator bool() const noexcept { return ok(); }
+    ssize_t raw() const noexcept { return result_; }
+
+    std::error_code error_code() const noexcept {
+      return make_error_code(static_cast<int>(result_));
+    }
+
+    file_descriptor file() const noexcept {
+      return ok() ? file_descriptor{static_cast<uv_file>(result_)} : file_descriptor{};
+    }
+
+    std::string_view path() const noexcept {
+      return ok() && path_ ? std::string_view{path_} : std::string_view{};
+    }
+
+  private:
+    ssize_t result_ = 0;
+    const char *path_ = nullptr;
+  };
+
+  class statfs_result {
+  public:
+    statfs_result(ssize_t result, const uv_statfs_t *statfs) noexcept
+      : result_{result}, statfs_{statfs} {}
+
+    bool ok() const noexcept { return result_ >= 0; }
+    explicit operator bool() const noexcept { return ok(); }
+    int status() const noexcept { return static_cast<int>(result_); }
+    ssize_t raw() const noexcept { return result_; }
+
+    std::error_code error_code() const noexcept {
+      return make_error_code(status());
+    }
+
+    const uv_statfs_t &native() const noexcept {
+      assert(statfs_ != nullptr);
+      return *statfs_;
+    }
+
+    const uv_statfs_t *native_ptr() const noexcept {
+      return statfs_;
+    }
+
+  private:
+    ssize_t result_ = 0;
+    const uv_statfs_t *statfs_ = nullptr;
+  };
+
   class scandir_result {
   public:
     class iterator {
