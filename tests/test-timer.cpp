@@ -50,6 +50,44 @@ TEST(Uvpp2Timer, startReplacesRuntimeCallbackSlot) {
   loop.close();
 }
 
+TEST(Uvpp2Timer, exposesRepeatInterval) {
+  uv::loop loop;
+  uv::timer timer(loop);
+
+  EXPECT_EQ(timer.repeat(), 0ms);
+
+  timer.set_repeat(25ms);
+  EXPECT_EQ(timer.repeat(), 25ms);
+
+  timer.start(1ms, 10ms, [&](uv::timer &self) {
+    EXPECT_EQ(self.repeat(), 10ms);
+    self.set_repeat(0ms);
+    EXPECT_EQ(self.repeat(), 0ms);
+    self.close();
+  });
+
+  loop.run();
+  loop.close();
+}
+
+#if UVPP_HAS_TIMER_GET_DUE_IN
+TEST(Uvpp2Timer, exposesDueIn) {
+  uv::loop loop;
+  uv::timer timer(loop);
+
+  timer.start(1s, [](uv::timer &) {});
+
+  auto due = timer.due_in();
+  EXPECT_GT(due, 0ms);
+  EXPECT_LE(due, 1s);
+
+  timer.stop();
+  timer.close();
+  loop.run();
+  loop.close();
+}
+#endif
+
 static int static_timer_called = 0;
 static int static_timer_marker = 0;
 

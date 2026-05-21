@@ -9,6 +9,7 @@
 #include "uvpp/core/callback.hpp"
 #include "uvpp/core/error.hpp"
 #include "uvpp/core/loop.hpp"
+#include "uvpp/core/version.hpp"
 #include "uvpp/handles/handle.hpp"
 
 namespace uv {
@@ -53,6 +54,25 @@ namespace uv {
     void again() {
       throw_if_error(uv_timer_again(native()));
     }
+
+    template<class Rep, class Period>
+    void set_repeat(std::chrono::duration<Rep, Period> interval) noexcept {
+      uv_timer_set_repeat(native(), millis(interval));
+    }
+
+    std::chrono::milliseconds repeat() const noexcept {
+      return std::chrono::milliseconds{
+        uv_timer_get_repeat(native())
+      };
+    }
+
+#if UVPP_HAS_TIMER_GET_DUE_IN
+    std::chrono::milliseconds due_in() const noexcept {
+      return std::chrono::milliseconds{
+        uv_timer_get_due_in(native())
+      };
+    }
+#endif
 
   private:
     template<class Rep, class Period>
