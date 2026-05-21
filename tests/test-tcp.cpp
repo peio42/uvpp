@@ -135,6 +135,7 @@ void on_static_ipv6_connect(uv::connect_request &, uv::result) {}
 
 }
 
+#if UVPP_HAS_TCP_INIT_EX
 TEST(Uvpp2Tcp, initializesWithSocketFamily) {
   uv::loop loop;
   uv::tcp tcp(loop, uv::tcp_socket_family::ipv4);
@@ -147,6 +148,7 @@ TEST(Uvpp2Tcp, initializesWithSocketFamily) {
   loop.run();
   loop.close();
 }
+#endif
 
 TEST(Uvpp2Tcp, bindsWithTypedFlags) {
   using bind_with_flag = void (uv::tcp::*)(const uv::ipv4 &, uv::tcp_bind_flag);
@@ -154,7 +156,7 @@ TEST(Uvpp2Tcp, bindsWithTypedFlags) {
   auto flag = uv::tcp_bind_flag::ipv6_only;
   (void)fn;
   (void)flag;
-#if UV_VERSION_HEX >= 0x013100
+#if UVPP_HAS_TCP_REUSEPORT
   auto reuse = uv::tcp_bind_flag::reuse_port;
   (void)reuse;
 #endif
@@ -166,6 +168,7 @@ TEST(Uvpp2Tcp, exposesStaticIpv6ConnectOverload) {
   (void)fn;
 }
 
+#if UVPP_HAS_TCP_CLOSE_RESET
 TEST(Uvpp2Tcp, closeResetClosesConnectedTcp) {
   uv::loop loop;
   uv::tcp server(loop);
@@ -221,3 +224,4 @@ TEST(Uvpp2Tcp, closeResetClosesConnectedTcp) {
 
   loop.close();
 }
+#endif

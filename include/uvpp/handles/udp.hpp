@@ -13,6 +13,7 @@
 #include "uvpp/core/callback.hpp"
 #include "uvpp/core/error.hpp"
 #include "uvpp/core/loop.hpp"
+#include "uvpp/core/version.hpp"
 #include "uvpp/handles/handle.hpp"
 #include "uvpp/net/address.hpp"
 #include "uvpp/net/buffer.hpp"
@@ -31,12 +32,12 @@ namespace uv {
     bool empty() const noexcept { return nread_ == 0; }
     bool empty_event() const noexcept { return nread_ == 0 && addr_ == nullptr; }
     bool partial() const noexcept { return (flags_ & UV_UDP_PARTIAL) != 0; }
-#if UV_VERSION_HEX >= 0x012300
+#if UVPP_HAS_UDP_MMSG_CHUNK
     bool mmsg_chunk() const noexcept { return (flags_ & UV_UDP_MMSG_CHUNK) != 0; }
 #else
     bool mmsg_chunk() const noexcept { return false; }
 #endif
-#if UV_VERSION_HEX >= 0x012800
+#if UVPP_HAS_UDP_MMSG_FREE
     bool mmsg_free() const noexcept { return (flags_ & UV_UDP_MMSG_FREE) != 0; }
 #else
     bool mmsg_free() const noexcept { return false; }
@@ -75,7 +76,7 @@ namespace uv {
   };
 
   enum class udp_init_flag : unsigned int {
-#if UV_VERSION_HEX >= 0x012500
+#if UVPP_HAS_UDP_RECVMMSG_FLAG
     recvmmsg = UV_UDP_RECVMMSG
 #endif
   };
@@ -95,11 +96,11 @@ namespace uv {
   enum class udp_bind_flag : unsigned int {
     ipv6_only = UV_UDP_IPV6ONLY,
     reuse_address = UV_UDP_REUSEADDR
-#if UV_VERSION_HEX >= 0x012300
+#if UVPP_HAS_UDP_LINUX_RECVERR
     ,
     linux_receive_error = UV_UDP_LINUX_RECVERR
 #endif
-#if UV_VERSION_HEX >= 0x013100
+#if UVPP_HAS_UDP_REUSEPORT
     ,
     reuse_port = UV_UDP_REUSEPORT
 #endif
@@ -135,7 +136,7 @@ namespace uv {
     int value_;
   };
 
-#if UV_VERSION_HEX >= 0x013200
+#if UVPP_HAS_UDP_TRY_SEND2
   class send_many_now_result {
   public:
     explicit send_many_now_result(int value) noexcept : value_{value} {}
@@ -201,6 +202,7 @@ namespace uv {
       throw_if_error(uv_udp_init(l.native(), native()));
     }
 
+#if UVPP_HAS_UDP_INIT_EX
     udp(loop &l, udp_socket_family family) {
       throw_if_error(uv_udp_init_ex(l.native(), native(), static_cast<unsigned int>(family)));
     }
@@ -208,8 +210,9 @@ namespace uv {
     udp(loop_view l, udp_socket_family family) {
       throw_if_error(uv_udp_init_ex(l.native(), native(), static_cast<unsigned int>(family)));
     }
+#endif
 
-#if UV_VERSION_HEX >= 0x012500
+#if UVPP_HAS_UDP_INIT_EX && UVPP_HAS_UDP_RECVMMSG_FLAG
     udp(loop &l, udp_socket_family family, udp_init_flag flag) {
       throw_if_error(uv_udp_init_ex(l.native(), native(), family | flag));
     }
@@ -239,6 +242,7 @@ namespace uv {
       bind(addr, static_cast<unsigned int>(flag));
     }
 
+#if UVPP_HAS_UDP_CONNECT
     void connect(const ipv4 &addr) {
       throw_if_error(uv_udp_connect(native(), addr.native_sockaddr()));
     }
@@ -250,6 +254,7 @@ namespace uv {
     void disconnect() {
       throw_if_error(uv_udp_connect(native(), nullptr));
     }
+#endif
 
     socket_address sockname() {
       socket_address addr;
@@ -257,11 +262,13 @@ namespace uv {
       return addr;
     }
 
+#if UVPP_HAS_UDP_CONNECT
     socket_address peername() {
       socket_address addr;
       throw_if_error(uv_udp_getpeername(native(), addr.native(), addr.native_len()));
       return addr;
     }
+#endif
 
     void receive_start(allocate_callback allocator, receive_callback receiver) {
       allocate_callback_ = std::move(allocator);
@@ -383,7 +390,7 @@ namespace uv {
       return send_now(bytes, static_cast<const sockaddr *>(nullptr));
     }
 
-#if UV_VERSION_HEX >= 0x013200
+#if UVPP_HAS_UDP_TRY_SEND2
     send_many_now_result send_many_now(udp_send_many_view batch) noexcept {
       return send_many_now_result{uv_udp_try_send2(native(), batch.count(), batch.buffers(),
                                                    batch.buffer_counts(), batch.addresses(), 0)};
@@ -415,6 +422,7 @@ namespace uv {
       throw_if_error(uv_udp_set_membership(native(), multicast.c_str(), nullptr, static_cast<uv_membership>(m)));
     }
 
+#if UVPP_HAS_UDP_SOURCE_MEMBERSHIP
     void set_source_membership(std::string_view multicast_addr, std::string_view interface_addr,
                                std::string_view source_addr, membership m) {
       std::string multicast{multicast_addr};
@@ -431,8 +439,9 @@ namespace uv {
       throw_if_error(uv_udp_set_source_membership(native(), multicast.c_str(), nullptr,
                                                   source.c_str(), static_cast<uv_membership>(m)));
     }
+#endif
 
-#if UV_VERSION_HEX >= 0x012700
+#if UVPP_HAS_UDP_USING_RECVMMSG
     bool using_recvmmsg() const noexcept {
       return uv_udp_using_recvmmsg(native()) != 0;
     }

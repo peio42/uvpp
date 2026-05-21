@@ -8,6 +8,7 @@
 #include "uvpp/core/callback.hpp"
 #include "uvpp/core/error.hpp"
 #include "uvpp/core/loop.hpp"
+#include "uvpp/core/version.hpp"
 #include "uvpp/handles/stream.hpp"
 #include "uvpp/net/address.hpp"
 #include "uvpp/net/socket_address.hpp"
@@ -22,7 +23,7 @@ namespace uv {
 
   enum class tcp_bind_flag : unsigned int {
     ipv6_only = UV_TCP_IPV6ONLY
-#if UV_VERSION_HEX >= 0x013100
+#if UVPP_HAS_TCP_REUSEPORT
     ,
     reuse_port = UV_TCP_REUSEPORT
 #endif
@@ -46,6 +47,7 @@ namespace uv {
       throw_if_error(uv_tcp_init(l.native(), native()));
     }
 
+#if UVPP_HAS_TCP_INIT_EX
     tcp(loop &l, tcp_socket_family family) {
       throw_if_error(uv_tcp_init_ex(l.native(), native(), static_cast<unsigned int>(family)));
     }
@@ -53,6 +55,7 @@ namespace uv {
     tcp(loop_view l, tcp_socket_family family) {
       throw_if_error(uv_tcp_init_ex(l.native(), native(), static_cast<unsigned int>(family)));
     }
+#endif
 
     void open(uv_os_sock_t socket) {
       throw_if_error(uv_tcp_open(native(), socket));
@@ -112,6 +115,7 @@ namespace uv {
       }));
     }
 
+#if UVPP_HAS_TCP_CLOSE_RESET
     void close_reset() {
       throw_if_error(uv_tcp_close_reset(native(), nullptr));
     }
@@ -132,6 +136,7 @@ namespace uv {
         detail::invoke_static_callback<Callback>(tcp::from_native(raw));
       }));
     }
+#endif
 
     void no_delay(bool enable) {
       throw_if_error(uv_tcp_nodelay(native(), enable ? 1 : 0));

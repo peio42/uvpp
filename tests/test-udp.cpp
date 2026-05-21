@@ -229,7 +229,7 @@ TEST(Uvpp2Udp, sendNowReportsImmediateErrorWithoutThrowing) {
   loop.close();
 }
 
-#if UV_VERSION_HEX >= 0x013200
+#if UVPP_HAS_UDP_TRY_SEND2
 TEST(Uvpp2Udp, sendManyNowSendsMultipleDatagrams) {
   uv::loop loop;
   uv::udp server(loop);
@@ -297,7 +297,7 @@ TEST(Uvpp2Udp, sendManyNowSendsMultipleDatagrams) {
 }
 #endif
 
-#if UV_VERSION_HEX >= 0x012700
+#if UVPP_HAS_UDP_USING_RECVMMSG
 TEST(Uvpp2Udp, initializesWithSocketFamilyAndRecvmmsgFlag) {
   uv::loop loop;
   uv::udp udp(loop, uv::udp_socket_family::ipv4, uv::udp_init_flag::recvmmsg);
@@ -313,6 +313,7 @@ TEST(Uvpp2Udp, initializesWithSocketFamilyAndRecvmmsgFlag) {
 }
 #endif
 
+#if UVPP_HAS_UDP_SOURCE_MEMBERSHIP
 TEST(Uvpp2Udp, sourceMembershipReportsInvalidAddresses) {
   uv::loop loop;
   uv::udp udp(loop, uv::udp_socket_family::ipv4);
@@ -324,6 +325,7 @@ TEST(Uvpp2Udp, sourceMembershipReportsInvalidAddresses) {
   loop.run();
   loop.close();
 }
+#endif
 
 TEST(Uvpp2Udp, appliesSocketOptions) {
   uv::loop loop;

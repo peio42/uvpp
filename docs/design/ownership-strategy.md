@@ -163,6 +163,23 @@ stream.write(req, view, [](write_request&, result status) {
 
 For read and UDP receive allocation callbacks, returning a `buffer_view` does not transfer ownership to uvpp. The allocator must ensure that the backing storage remains valid until the corresponding read/receive callback has run and released or reused it.
 
+## Immediate Batch Metadata
+
+Immediate low-level APIs that operate on multiple native items must not allocate
+batch metadata internally. Their signatures should make every borrowed array
+and address lifetime visible.
+
+For UDP `send_many_now()`, the payload buffers, the arrays of buffer pointers,
+the per-datagram buffer counts, and the destination address pointers are all
+borrowed for the duration of the call. The wrapper must not store those pointers
+after `uv_udp_try_send2()` returns, and it must not allocate replacement arrays
+inside the call.
+
+An ergonomic batch builder may be added as a higher-level value that explicitly
+owns reusable metadata arrays. Such a builder should still borrow payload bytes
+and destination addresses unless its type name and documentation clearly state
+that it copies them.
+
 ## Callback State
 
 Runtime callbacks require storage. The owner should be clear:
