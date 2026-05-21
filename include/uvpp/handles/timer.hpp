@@ -76,8 +76,9 @@ namespace uv {
 
   private:
     template<class Rep, class Period>
-    static uint64_t millis(std::chrono::duration<Rep, Period> duration) {
-      return static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::milliseconds>(duration).count());
+    static uint64_t millis(std::chrono::duration<Rep, Period> duration) noexcept {
+      auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(duration).count();
+      return ms >= 0 ? static_cast<uint64_t>(ms) : uint64_t{0};
     }
 
     static void timer_trampoline(uv_timer_t *raw) noexcept {

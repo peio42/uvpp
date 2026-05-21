@@ -424,8 +424,8 @@ namespace uv {
       throw_if_error(uv_process_kill(native(), signum));
     }
 
-    static void kill(int pid, int signum) {
-      throw_if_error(uv_kill(pid, signum));
+    static void kill(uv_pid_t pid, int signum) {
+      throw_if_error(uv_kill(static_cast<int>(pid), signum));
     }
 
     static void disable_stdio_inheritance() noexcept {
