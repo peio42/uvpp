@@ -219,6 +219,13 @@ The wrapper exposes callback events through typed result objects, such as
 `raw_events()` or `start_raw()`. The enum helpers document common flags and
 avoid spelling libuv constants in ordinary C++ call sites.
 
+Do not force a strong type where libuv intentionally accepts platform-defined
+integer identifiers rather than a compact uvpp-owned domain. Use a semantic
+alias when it improves readability without hiding the native model. For example,
+`uv::signal_number` aliases `int`: signal numbers remain POSIX/platform values
+such as `SIGINT` or `SIGTERM`, but callback signatures no longer expose an
+anonymous integer.
+
 ## Minimal Surprises
 
 The API should make asynchronous lifetime visible. If a method starts an operation that outlives the call, its request object or callback state must have a clear owner.

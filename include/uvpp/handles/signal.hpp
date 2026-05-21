@@ -12,9 +12,11 @@
 
 namespace uv {
 
+  using signal_number = int;
+
   class signal final : public basic_handle<signal, uv_signal_t> {
   public:
-    using callback = std::function<void(signal&, int)>;
+    using callback = std::function<void(signal&, signal_number)>;
 
     explicit signal(loop &l) {
       throw_if_error(uv_signal_init(l.native(), native()));
@@ -24,25 +26,25 @@ namespace uv {
       throw_if_error(uv_signal_init(l.native(), native()));
     }
 
-    void start(int signum, callback cb) {
+    void start(signal_number signum, callback cb) {
       callback_ = std::move(cb);
       throw_if_error(uv_signal_start(native(), &signal::signal_trampoline, signum));
     }
 
     template<auto Callback>
-    void start_static(int signum) {
+    void start_static(signal_number signum) {
       throw_if_error(uv_signal_start(native(), [](uv_signal_t *raw, int received) noexcept {
         detail::invoke_static_callback<Callback>(signal::from_native(raw), received);
       }, signum));
     }
 
-    void start_oneshot(int signum, callback cb) {
+    void start_oneshot(signal_number signum, callback cb) {
       callback_ = std::move(cb);
       throw_if_error(uv_signal_start_oneshot(native(), &signal::signal_trampoline, signum));
     }
 
     template<auto Callback>
-    void start_oneshot_static(int signum) {
+    void start_oneshot_static(signal_number signum) {
       throw_if_error(uv_signal_start_oneshot(native(), [](uv_signal_t *raw, int received) noexcept {
         detail::invoke_static_callback<Callback>(signal::from_native(raw), received);
       }, signum));
@@ -53,7 +55,7 @@ namespace uv {
     }
 
   private:
-    static void signal_trampoline(uv_signal_t *raw, int signum) noexcept {
+    static void signal_trampoline(uv_signal_t *raw, signal_number signum) noexcept {
       auto &self = signal::from_native(raw);
       if (self.callback_) {
         detail::invoke_callback(self.callback_, self, signum);

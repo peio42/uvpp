@@ -14,7 +14,7 @@ TEST(Uvpp2Signal, runsRuntimeCallback) {
   int called = 0;
 
   signal.user_data(marker);
-  signal.start_oneshot(SIGUSR1, [&](uv::signal &self, int signum) {
+  signal.start_oneshot(SIGUSR1, [&](uv::signal &self, uv::signal_number signum) {
     called++;
     EXPECT_EQ(signum, SIGUSR1);
     EXPECT_EQ(self.user_data<int>(), &marker);
@@ -32,7 +32,7 @@ namespace {
 
 int static_signal_called = 0;
 
-void on_static_signal(uv::signal &signal, int signum) {
+void on_static_signal(uv::signal &signal, uv::signal_number signum) {
   static_signal_called++;
   EXPECT_EQ(signum, SIGUSR1);
   signal.close();
