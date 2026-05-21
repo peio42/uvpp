@@ -7,6 +7,19 @@ The filesystem API is split into two layers:
 
 This split keeps the public API aligned with the rest of v2: lifetime rules are encoded by default, while the low-level layer remains available when the caller wants exact libuv control or zero-extra-copy behavior.
 
+## Choosing a Layer
+
+Use `uv::fs` by default. Switch to `uv::fs::raw` only when you need one of the following:
+
+| Requirement | `uv::fs` | `uv::fs::raw` |
+|---|---|---|
+| Automatic cleanup after callback | ✅ | ❌ Manual `req.cleanup()` |
+| Results safe to copy or keep after callback | ✅ | ⚠️ Views expire at cleanup |
+| Reuse the same request across operations | ❌ Hidden, internal | ✅ Caller-owned `raw::request` |
+| Zero-copy read / write (caller-owned buffer) | ❌ Copies into owned buffer | ✅ |
+| Static callbacks with no heap allocation | ❌ | ✅ `*_static<Callback>()` |
+| `opendir` / `readdir` / `closedir` | ❌ Not available | ✅ |
+
 ## Public API
 
 `uv::fs` allocates one internal raw request per operation and destroys it after the callback has received an owned or scalar result.
@@ -77,6 +90,10 @@ Public result objects are safe to keep after the callback returns.
 - `scandir_result`: owns a vector of directory entries.
 
 All result types support `operator bool()` and `error_code()`.
+
+`uv::fs` defines its own result types, distinct from those in `uv::fs::raw`, even though they share the same names. The `uv::fs` variants own their data and are safe to copy, store, or pass out of a callback. The `uv::fs::raw` variants may hold views into request-owned memory that expire when `req.cleanup()` is called.
+
+All result types also expose a `.raw()` accessor returning the raw `ssize_t` from libuv. It is only needed when `ok()` and `error_code()` are insufficient — for example to distinguish a zero-byte read from a genuine error when the result value carries semantic meaning beyond success/failure.
 
 Operations such as `rename`, `mkdir`, `rmdir`, `access`, `chmod`, `fchmod`,
 `chown`, `fchown`, `lchown`, `utime`, `futime`, `lutime`, `fsync`,
