@@ -34,13 +34,21 @@ The initial public API includes:
 - `fs::unlink`
 - `fs::rename`
 - `fs::mkdir`
+- `fs::mkdtemp`
+- `fs::mkstemp` when `UVPP_HAS_FS_MKSTEMP` is available
 - `fs::rmdir`
 - `fs::fstat`
 - `fs::lstat`
+- `fs::statfs` when `UVPP_HAS_FS_STATFS` is available
 - `fs::access`
 - `fs::chmod`
+- `fs::fchmod`
 - `fs::chown`
+- `fs::fchown`
+- `fs::lchown`
 - `fs::utime`
+- `fs::futime`
+- `fs::lutime`
 - `fs::fsync`
 - `fs::fdatasync`
 - `fs::ftruncate`
@@ -64,11 +72,20 @@ Public result objects are safe to keep after the callback returns.
 - `read_result`: owns the read buffer and exposes `bytes()`.
 - `stat_result`: contains a copied `uv_stat_t`.
 - `path_result`: owns the returned path string.
+- `temp_file_result`: owns the generated path and returns the created file descriptor.
+- `statfs_result`: contains a copied `uv_statfs_t`.
 - `scandir_result`: owns a vector of directory entries.
 
 All result types support `operator bool()` and `error_code()`.
 
-Operations such as `rename`, `mkdir`, `rmdir`, `access`, `chmod`, `chown`, `utime`, `fsync`, `fdatasync`, `ftruncate`, `link`, and `symlink` return `status_result`. `fstat` and `lstat` return `stat_result`, like `stat`.
+Operations such as `rename`, `mkdir`, `rmdir`, `access`, `chmod`, `fchmod`,
+`chown`, `fchown`, `lchown`, `utime`, `futime`, `lutime`, `fsync`,
+`fdatasync`, `ftruncate`, `link`, and `symlink` return `status_result`.
+`fstat` and `lstat` return `stat_result`, like `stat`.
+
+`mkdtemp` returns a `path_result` with the generated directory path. `mkstemp`
+returns `temp_file_result`; callers are responsible for closing the returned
+file descriptor.
 
 Example:
 
@@ -180,6 +197,8 @@ Views into request-owned data are valid only until `req.cleanup()` is called:
 
 - `raw::stat_result::native()`
 - `raw::path_result::path()`
+- `raw::temp_file_result::path()`
+- `raw::statfs_result::native()`
 - `raw::scandir_result` entries
 
 Copy request-owned data before cleanup if it must survive the callback.

@@ -753,6 +753,55 @@ TEST(Uvpp2FsSafe, createsRenamesAccessesAndRemovesDirectories) {
   EXPECT_FALSE(std::filesystem::exists(renamed));
 }
 
+TEST(Uvpp2FsSafe, createsTemporaryDirectoryAndFile) {
+  auto dir_tpl = temp_path("safe-mkdtemp-XXXXXX");
+  auto file_tpl = temp_path("safe-mkstemp-XXXXXX");
+  std::filesystem::remove(dir_tpl);
+  std::filesystem::remove(file_tpl);
+
+  uv::loop loop;
+  bool mkdtemp_done = false;
+#if UVPP_HAS_FS_MKSTEMP
+  bool mkstemp_done = false;
+#endif
+  std::filesystem::path created_dir;
+  std::filesystem::path created_file;
+
+  uv::fs::mkdtemp(loop, dir_tpl.string(), [&](uv::fs::path_result result) {
+    ASSERT_TRUE(result);
+    created_dir = std::filesystem::path{std::string{result.path()}};
+    EXPECT_TRUE(std::filesystem::is_directory(created_dir));
+    mkdtemp_done = true;
+  });
+  loop.run();
+
+#if UVPP_HAS_FS_MKSTEMP
+  uv::fs::mkstemp(loop, file_tpl.string(), [&](uv::fs::temp_file_result result) {
+    ASSERT_TRUE(result);
+    created_file = std::filesystem::path{std::string{result.path()}};
+    EXPECT_TRUE(std::filesystem::is_regular_file(created_file));
+    EXPECT_GE(result.file().native(), 0);
+    ::close(result.file().native());
+    mkstemp_done = true;
+  });
+  loop.run();
+#endif
+
+  loop.close();
+
+  EXPECT_TRUE(mkdtemp_done);
+#if UVPP_HAS_FS_MKSTEMP
+  EXPECT_TRUE(mkstemp_done);
+#endif
+
+  if (!created_file.empty()) {
+    std::filesystem::remove(created_file);
+  }
+  if (!created_dir.empty()) {
+    std::filesystem::remove(created_dir);
+  }
+}
+
 TEST(Uvpp2FsSafe, handlesDescriptorOperations) {
   auto path = temp_path("safe-fd.txt");
   std::filesystem::remove(path);
@@ -768,6 +817,9 @@ TEST(Uvpp2FsSafe, handlesDescriptorOperations) {
   uv::loop loop;
   bool fstat_done = false;
   bool truncate_done = false;
+  bool fchmod_done = false;
+  bool futime_done = false;
+  bool fchown_done = false;
   bool fsync_done = false;
   bool fdatasync_done = false;
   bool second_fstat_done = false;
@@ -783,6 +835,25 @@ TEST(Uvpp2FsSafe, handlesDescriptorOperations) {
     EXPECT_TRUE(result);
     truncate_done = true;
   });
+  loop.run();
+
+  uv::fs::fchmod(loop, file, 0644, [&](uv::fs::status_result result) {
+    EXPECT_TRUE(result);
+    fchmod_done = true;
+  });
+  loop.run();
+
+  uv::fs::futime(loop, file, 1100.0, 1101.0, [&](uv::fs::status_result result) {
+    EXPECT_TRUE(result);
+    futime_done = true;
+  });
+  loop.run();
+
+  uv::fs::fchown(loop, file, static_cast<uv_uid_t>(::getuid()), static_cast<uv_gid_t>(::getgid()),
+    [&](uv::fs::status_result result) {
+      EXPECT_TRUE(result);
+      fchown_done = true;
+    });
   loop.run();
 
   uv::fs::fsync(loop, file, [&](uv::fs::status_result result) {
@@ -807,6 +878,9 @@ TEST(Uvpp2FsSafe, handlesDescriptorOperations) {
 
   EXPECT_TRUE(fstat_done);
   EXPECT_TRUE(truncate_done);
+  EXPECT_TRUE(fchmod_done);
+  EXPECT_TRUE(futime_done);
+  EXPECT_TRUE(fchown_done);
   EXPECT_TRUE(fsync_done);
   EXPECT_TRUE(fdatasync_done);
   EXPECT_TRUE(second_fstat_done);
@@ -832,6 +906,8 @@ TEST(Uvpp2FsSafe, handlesLinksMetadataAndTimes) {
   bool chmod_done = false;
   bool chown_done = false;
   bool utime_done = false;
+  bool lutime_done = false;
+  bool lchown_done = false;
   bool link_done = false;
   bool symlink_done = false;
   bool symlink_forbidden = false;
@@ -886,11 +962,37 @@ TEST(Uvpp2FsSafe, handlesLinksMetadataAndTimes) {
     lstat_done = true;
   });
   loop.run();
+
+  uv::fs::lutime(loop, symlink.string(), 1200.0, 1201.0, [&](uv::fs::status_result result) {
+    if (!result && result.error_code() == uv::make_error_code(UV_ENOSYS)) {
+      lutime_done = true;
+      return;
+    }
+
+    EXPECT_TRUE(result);
+    lutime_done = true;
+  });
+  loop.run();
+
+  uv::fs::lchown(loop, symlink.string(), static_cast<uv_uid_t>(::getuid()), static_cast<uv_gid_t>(::getgid()),
+    [&](uv::fs::status_result result) {
+      if (!result && (result.error_code() == uv::make_error_code(UV_ENOSYS) ||
+                      result.error_code() == uv::make_error_code(UV_EPERM))) {
+        lchown_done = true;
+        return;
+      }
+
+      EXPECT_TRUE(result);
+      lchown_done = true;
+    });
+  loop.run();
   loop.close();
 
   EXPECT_TRUE(chmod_done);
   EXPECT_TRUE(chown_done);
   EXPECT_TRUE(utime_done);
+  EXPECT_TRUE(lutime_done);
+  EXPECT_TRUE(lchown_done);
   EXPECT_TRUE(link_done);
   EXPECT_TRUE(symlink_done);
   EXPECT_TRUE(lstat_done);
@@ -900,3 +1002,21 @@ TEST(Uvpp2FsSafe, handlesLinksMetadataAndTimes) {
   std::filesystem::remove(hardlink);
   std::filesystem::remove(target);
 }
+
+#if UVPP_HAS_FS_STATFS
+TEST(Uvpp2FsSafe, reportsFilesystemStats) {
+  uv::loop loop;
+  bool statfs_done = false;
+
+  uv::fs::statfs(loop, std::filesystem::temp_directory_path().string(),
+    [&](uv::fs::statfs_result result) {
+      ASSERT_TRUE(result);
+      EXPECT_GT(result.native().f_bsize, 0u);
+      statfs_done = true;
+    });
+  loop.run();
+  loop.close();
+
+  EXPECT_TRUE(statfs_done);
+}
+#endif
