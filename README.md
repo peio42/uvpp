@@ -320,7 +320,8 @@ Versions containing a prerelease suffix such as `2.0.0-rc.1` are published as Gi
 
 Contributor design notes live under [docs/design](docs/design/).
 
-The repository also ships a TCP echo server in [`examples/tcp-echo-server.cpp`](examples/tcp-echo-server.cpp).
+The repository also ships runnable examples under [`examples/`](examples/), including TCP,
+UDP, timer/watchers, and process stdout capture.
 
 ## License
 

@@ -102,3 +102,6 @@ Build examples:
 ```sh
 make examples
 ```
+
+The example sources live under `examples/`; built binaries are written to
+`build/<compiler>/examples/`.

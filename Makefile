@@ -12,7 +12,8 @@ EXAMPLE_LDLIBS ?= -luv -pthread
 TEST_SRCS = tests/main.cpp $(wildcard tests/test-*.cpp)
 TEST_OBJS = $(patsubst %.cpp,$(BUILD_DIR)/%.o,$(TEST_SRCS))
 TEST_BIN = $(BUILD_DIR)/tests/main
-EXAMPLE_BIN = $(BUILD_DIR)/examples/tcp-echo-server
+EXAMPLE_SRCS = $(wildcard examples/*.cpp)
+EXAMPLE_BINS = $(patsubst examples/%.cpp,$(BUILD_DIR)/examples/%,$(EXAMPLE_SRCS))
 
 build: $(TEST_BIN) examples
 
@@ -24,9 +25,9 @@ $(TEST_BIN): $(TEST_OBJS)
 	mkdir -p $(dir $@)
 	$(CXX) $(TEST_OBJS) $(LDLIBS) -o $@
 
-examples: $(EXAMPLE_BIN)
+examples: $(EXAMPLE_BINS)
 
-$(EXAMPLE_BIN): examples/tcp-echo-server.cpp
+$(BUILD_DIR)/examples/%: examples/%.cpp
 	mkdir -p $(dir $@)
 	$(CXX) $(CXXFLAGS) $< $(EXAMPLE_LDLIBS) -o $@
 
