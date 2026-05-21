@@ -76,7 +76,9 @@ namespace uv {
   };
 
   enum class udp_init_flag : unsigned int {
+    none = 0
 #if UVPP_HAS_UDP_RECVMMSG_FLAG
+    ,
     recvmmsg = UV_UDP_RECVMMSG
 #endif
   };

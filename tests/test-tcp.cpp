@@ -186,7 +186,7 @@ TEST(Uvpp2Tcp, closeResetClosesConnectedTcp) {
     ASSERT_TRUE(status);
     accepted_connection = true;
 
-    auto *accepted = new uv::tcp(loop);
+    auto accepted = std::make_unique<uv::tcp>(loop);
     srv.accept(*accepted);
     srv.close([&](uv::tcp &) {
       server_closed = true;
@@ -203,6 +203,8 @@ TEST(Uvpp2Tcp, closeResetClosesConnectedTcp) {
         delete &closed;
       });
     });
+
+    accepted.release();
   });
 
   auto bound = server.sockname();
