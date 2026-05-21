@@ -61,11 +61,17 @@ TEST(Uvpp2Poll, reportsReadableFileDescriptor) {
   uv::loop loop;
   uv::poll poll(loop, fds[0]);
 
+  auto requested = uv::poll_event::readable | uv::poll_event::disconnect;
+  EXPECT_TRUE(requested.has(uv::poll_event::readable));
+  EXPECT_TRUE(uv::has_poll_event(requested, uv::poll_event::disconnect));
+
   int called = 0;
-  poll.start(uv::poll_event::readable, [&](uv::poll &self, uv::result status, int events) {
+  poll.start(uv::poll_event::readable, [&](uv::poll &self, uv::poll_result event) {
     called++;
-    EXPECT_TRUE(status);
-    EXPECT_TRUE(uv::has_poll_event(events, uv::poll_event::readable));
+    EXPECT_TRUE(event);
+    EXPECT_TRUE(event.status());
+    EXPECT_TRUE(event.has_event(uv::poll_event::readable));
+    EXPECT_TRUE(uv::has_poll_event(event.events(), uv::poll_event::readable));
 
     char byte = 0;
     EXPECT_EQ(::read(fds[0], &byte, 1), 1);
@@ -90,10 +96,11 @@ uv::poll *static_poll_handle = nullptr;
 int static_poll_read_fd = -1;
 int static_poll_called = 0;
 
-void on_static_poll(uv::poll &, uv::result status, int events) {
+void on_static_poll(uv::poll &, uv::poll_result event) {
   static_poll_called++;
-  EXPECT_TRUE(status);
-  EXPECT_TRUE(uv::has_poll_event(events, uv::poll_event::readable));
+  EXPECT_TRUE(event);
+  EXPECT_TRUE(event.status());
+  EXPECT_TRUE(uv::has_poll_event(event.events(), uv::poll_event::readable));
 
   char byte = 0;
   EXPECT_EQ(::read(static_poll_read_fd, &byte, 1), 1);
