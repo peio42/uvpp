@@ -37,7 +37,7 @@ uv::fs::open(loop, "file.txt", O_RDONLY, 0,
 
 The callback does not receive a request. There is no public cleanup step.
 
-The initial public API includes:
+The public API includes:
 
 - `fs::open`
 - `fs::close`
@@ -367,7 +367,7 @@ Both wrappers follow normal handle lifetime rules: `stop()` stops watching, and 
 
 ## Callback Forms
 
-`uv::fs` currently exposes ergonomic runtime callbacks and owns operation state internally.
+`uv::fs` exposes ergonomic runtime callbacks and owns operation state internally.
 
 `uv::fs::raw` supports both runtime callbacks and static callbacks.
 
