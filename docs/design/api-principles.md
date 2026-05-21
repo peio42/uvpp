@@ -133,6 +133,17 @@ pipe.pending_instances(4);
 
 These functions should remain thin: validate through libuv, throw `uv::error` on immediate failure, and avoid storing extra state in the wrapper.
 
+For immediate operations that need caller-provided native metadata, keep the raw
+shape visible instead of hiding allocation in the wrapper. The operation should
+still live on the relevant handle when it is semantically a handle operation.
+For example, UDP batch send remains `udp.send_many_now(...)`, but the low-level
+argument is an explicit borrowed batch view over libuv-compatible arrays.
+
+Do not move isolated raw-shaped handle operations into a global `uv::raw`
+namespace just because their arguments are close to libuv. Use a separate raw
+namespace only when a whole sub-domain has a distinct ownership and lifetime
+model, as filesystem does with `uv::fs::raw`.
+
 ## User Data
 
 The native `data` field is reserved for the application, not for wrapper internals.

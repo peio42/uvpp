@@ -100,7 +100,10 @@ namespace uv {
     basic_handle() = default;
     ~basic_handle() = default;
 
-  private:
+    void set_close_callback(close_callback callback) {
+      close_callback_ = std::move(callback);
+    }
+
     static void close_trampoline(uv_handle_t *raw) noexcept {
       auto &self = native_storage::from_native(raw);
       auto &base = static_cast<basic_handle<Derived, Raw>&>(self);
@@ -111,6 +114,7 @@ namespace uv {
       }
     }
 
+  private:
     close_callback close_callback_{};
   };
 

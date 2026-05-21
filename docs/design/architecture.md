@@ -64,6 +64,7 @@ include/uvpp/
     loop.hpp
     native.hpp
     callback.hpp
+    version.hpp
   handles/
     handle.hpp
     stream.hpp
@@ -292,3 +293,26 @@ Filesystem operations are intentionally split from normal request wrappers.
 `uv::fs::raw` is the direct libuv-facing layer: it exposes `raw::request`, manual cleanup, request reuse, caller-owned buffers, request-scoped result views, and static callbacks.
 
 This is the preferred pattern when libuv exposes a protocol that cannot be made safe with a thin wrapper alone: keep the raw protocol available, but do not make it the default public API.
+
+`uv::fs::raw` is not a precedent for moving every low-level operation into a
+global raw namespace. It exists because filesystem has two complete API layers
+with different ownership rules. Handle APIs such as TCP and UDP are already the
+low-level layer; individual native-shaped operations should stay on the relevant
+handle unless a higher-level layer is introduced above them.
+
+## Libuv Feature Availability
+
+uvpp compiles against the user's installed libuv headers. Newer libuv constants
+and functions must therefore be guarded when they are not available in older
+commonly used packages.
+
+Feature checks live in `include/uvpp/core/version.hpp` as named
+`UVPP_HAS_*` capability macros. Public headers should depend on those macros,
+not on repeated numeric `UV_VERSION_HEX` comparisons. This keeps version policy
+centralized and gives users a stable compile-time spelling for portable code.
+
+The capability macros are compile-time API availability checks. If a native
+symbol is absent from the libuv headers, uvpp omits the corresponding wrapper
+API. It does not declare a replacement function that fails at runtime, because
+that would require spelling or emulating a native function that the installed
+headers do not provide.

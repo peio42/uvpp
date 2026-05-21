@@ -23,6 +23,7 @@ namespace uv {
       : nread_{nread}, buffer_{buf ? buffer_view::from_native(*buf) : buffer_view{}} {}
 
     bool ok() const noexcept { return nread_ >= 0; }
+    explicit operator bool() const noexcept { return ok(); }
     bool eof() const noexcept { return nread_ == UV_EOF; }
     ssize_t count() const noexcept { return nread_; }
     result status() const noexcept { return result{static_cast<int>(nread_)}; }

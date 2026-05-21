@@ -128,3 +128,102 @@ TEST(Uvpp2Tcp, acceptsReadsAndWrites) {
 
   loop.close();
 }
+
+namespace {
+
+void on_static_ipv6_connect(uv::connect_request &, uv::result) {}
+
+}
+
+#if UVPP_HAS_TCP_INIT_EX
+TEST(Uvpp2Tcp, initializesWithSocketFamily) {
+  uv::loop loop;
+  uv::tcp tcp(loop, uv::tcp_socket_family::ipv4);
+
+  tcp.bind(uv::ipv4{"127.0.0.1", 0});
+  auto bound = tcp.sockname();
+  EXPECT_GT(bound.port(), 0);
+
+  tcp.close();
+  loop.run();
+  loop.close();
+}
+#endif
+
+TEST(Uvpp2Tcp, bindsWithTypedFlags) {
+  using bind_with_flag = void (uv::tcp::*)(const uv::ipv4 &, uv::tcp_bind_flag);
+  bind_with_flag fn = &uv::tcp::bind;
+  auto flag = uv::tcp_bind_flag::ipv6_only;
+  (void)fn;
+  (void)flag;
+#if UVPP_HAS_TCP_REUSEPORT
+  auto reuse = uv::tcp_bind_flag::reuse_port;
+  (void)reuse;
+#endif
+}
+
+TEST(Uvpp2Tcp, exposesStaticIpv6ConnectOverload) {
+  using connect_static_ipv6 = void (uv::tcp::*)(uv::connect_request &, const uv::ipv6 &);
+  connect_static_ipv6 fn = &uv::tcp::connect_static<on_static_ipv6_connect>;
+  (void)fn;
+}
+
+#if UVPP_HAS_TCP_CLOSE_RESET
+TEST(Uvpp2Tcp, closeResetClosesConnectedTcp) {
+  uv::loop loop;
+  uv::tcp server(loop);
+  uv::tcp client(loop);
+  uv::connect_request connect_req;
+
+  bool accepted_connection = false;
+  bool server_observed_close = false;
+  bool accepted_closed = false;
+  bool client_closed = false;
+  bool server_closed = false;
+
+  server.bind(uv::ipv4{"127.0.0.1", 0});
+  server.listen([&](uv::tcp &srv, uv::result status) {
+    ASSERT_TRUE(status);
+    accepted_connection = true;
+
+    auto accepted = std::make_unique<uv::tcp>(loop);
+    srv.accept(*accepted);
+    srv.close([&](uv::tcp &) {
+      server_closed = true;
+    });
+
+    accepted->read_start(test_alloc, [&](uv::tcp &stream, uv::read_result read) {
+      if (read) {
+        return;
+      }
+
+      server_observed_close = true;
+      stream.close([&](uv::tcp &closed) {
+        accepted_closed = true;
+        delete &closed;
+      });
+    });
+
+    accepted.release();
+  });
+
+  auto bound = server.sockname();
+  client.connect(connect_req, uv::ipv4{"127.0.0.1", bound.port()},
+    [&](uv::connect_request &, uv::result status) {
+      ASSERT_TRUE(status);
+      client.close_reset([&](uv::tcp &) {
+        client_closed = true;
+      });
+    });
+
+  loop.run();
+
+  EXPECT_TRUE(accepted_connection);
+  EXPECT_TRUE(server_observed_close);
+  EXPECT_TRUE(accepted_closed);
+  EXPECT_TRUE(client_closed);
+  EXPECT_TRUE(server_closed);
+
+  loop.close();
+}
+#endif

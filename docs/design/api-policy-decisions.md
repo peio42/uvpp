@@ -41,6 +41,18 @@ for that operation, model it explicitly in a typed result object instead of
 throwing. For example, an operation based on `uv_try_write()` should expose a
 `would_block()` branch for `UV_EAGAIN`.
 
+Immediate low-level wrappers must not allocate hidden operation metadata. If a
+libuv immediate operation needs temporary arrays or scratch storage, require the
+caller to provide those arrays or introduce an explicitly owning higher-level
+value. Do not build `std::vector` or similar storage inside the immediate
+wrapper.
+
+Example: `udp::send_many_now()` maps to `uv_udp_try_send2()`, whose native shape
+requires parallel arrays of buffer pointers, buffer counts, and destination
+addresses. The low-level uvpp API accepts an explicit borrowed batch view over
+caller-provided arrays. A future ergonomic batch builder may own that metadata,
+but the low-level `*_now()` operation itself stays allocation-free.
+
 ## Typed Result Objects
 
 Use a typed result object when a libuv return value contains meaningful payload
@@ -126,6 +138,43 @@ uv_handle_t* handle = tcp.native_handle();
 ```
 
 Do not add implicit conversion operators to raw libuv pointers.
+
+## Version-Gated Libuv Features
+
+uvpp is header-only and compiles against the libuv headers available to the
+consumer. Public wrappers for libuv APIs or constants introduced after the
+project's practical baseline must be gated at compile time.
+
+Use named capability macros from `uvpp/core/version.hpp` instead of repeating
+raw `UV_VERSION_HEX` comparisons in feature headers or tests:
+
+```cpp
+#if UVPP_HAS_UDP_TRY_SEND2
+auto result = udp.send_many_now(batch);
+#endif
+```
+
+The macro name should describe the libuv capability, not the wrapper spelling.
+For example, prefer `UVPP_HAS_UDP_TRY_SEND2` over
+`UVPP_HAS_UDP_SEND_MANY_NOW`.
+
+Apply the same capability macro to:
+
+- public types that depend on a newer libuv constant;
+- public member functions that call a newer libuv function;
+- tests that reference the gated API;
+- documentation examples when the feature may not exist for all supported
+  libuv packages.
+
+Do not provide a stub member that compiles but always returns "unsupported" when
+the underlying declaration is absent. If the libuv header cannot declare the
+native function or constant, the uvpp wrapper should not declare that specific
+API either. Users can test the `UVPP_HAS_*` macro when writing portable code.
+
+Prefer documented libuv introduction versions. When the docs only describe a
+behavior change and not the original symbol introduction, use the earliest
+version that is known to expose the symbol and keep the decision centralized in
+`version.hpp`.
 
 ## Public Template Constraints
 
