@@ -14,6 +14,7 @@ uvpp is a header-only C++20 wrapper around libuv. Include `uvpp/uv.hpp`, use nam
 - [Buffers](buffers.md): `buffer_view`, `owned_buffer`, spans, and async buffer lifetime.
 - [Streams](streams.md): TCP/pipe/TTY stream operations, accept, read, write, and shutdown requests.
 - [UDP](udp.md): datagram sockets, immediate sends, receive callbacks, and multicast helpers.
+- [Network utilities](network.md): DNS lookup requests and interface-index helpers.
 - [Filesystem](filesystem.md): recommended `uv::fs` APIs and the lower-level `uv::fs::raw` layer.
 - [Process](process.md): process spawning and process options.
 - [Future features](future.md): post-`2.0.0` features identified for `2.x`.

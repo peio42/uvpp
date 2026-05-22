@@ -4,10 +4,6 @@ This page tracks features identified for uvpp `2.x` after the `2.0.0` API
 stabilization. These additions are intended to extend the library without
 changing the low-level contracts already published in `2.0.0`.
 
-## Network Utilities
-
-- `getaddrinfo` and `getnameinfo` wrappers with typed request/result objects.
-
 ## Work Queue And Random
 
 - `queue_work` wrappers for libuv thread-pool work.
@@ -68,8 +64,3 @@ Planned scope:
 - **Directories and paths**: `uv_os_tmpdir`, `uv_os_homedir`, `uv_cwd`,
   `uv_chdir`, `uv_exepath`
 - **Misc**: `uv_sleep`
-
-## Network Interface Utilities
-
-- `uv_if_indextoname` and `uv_if_indextoiid` for looking up a network
-  interface name by its index.
