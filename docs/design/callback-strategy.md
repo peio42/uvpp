@@ -164,13 +164,55 @@ Rules:
 - `fs_event.start(...)` and `fs_poll.start(...)` replace their watcher callback slot before calling the corresponding libuv start function;
 - `process` stores its exit callback at construction because `uv_spawn` receives the exit callback when the process is created;
 - `handle.close(callback)` replaces the close callback slot and must only be called once for a given handle close lifecycle;
-- request callbacks such as `write_request`, `connect_request`, `shutdown_request`, and `udp_send_request` are one-shot slots owned by the request object and replaced when submitting a new operation with that request.
+- request callbacks such as `write_request`, `connect_request`, `shutdown_request`, `udp_send_request`, `getaddrinfo_request`, and `getnameinfo_request` are one-shot slots owned by the request object and replaced when submitting a new operation with that request.
 - `fs::raw::request` also owns one operation callback slot, but raw FS callbacks must call `req.cleanup()` after consuming the result and before reusing the request.
 - `fs` operations own their internal raw request and cleanup it before invoking the public callback with an owned or scalar result.
 
 Calling a start/listen/read API a second time follows libuv's underlying validity rules. If libuv rejects the operation immediately, the wrapper throws `uv::error`. If libuv accepts it, the stored callback slot has already been replaced.
 
 After `close()` has been called on a handle, starting new operations on that handle is a logic error. The wrapper does not try to recover from it beyond surfacing immediate libuv failures where libuv reports them.
+
+## Request `invoke()` Invariants
+
+Every request class that owns a callback slot must implement an `invoke()` method
+called by the trampoline. That method must:
+
+1. **Extract and clear the callback slot atomically before calling it.** Use
+   `std::move` to take the stored callable, then reset the slot to a default
+   state. This ensures the request is in a clean state before the user code runs,
+   so re-submitting the request from inside the callback is safe.
+
+2. **Free any owned libuv resources even when the callback slot is empty.** If
+   libuv transfers ownership of a heap object to the callback (for example, the
+   `addrinfo*` list in a `getaddrinfo` completion), the invoke method must free
+   that object when no callback is present to consume it.
+
+3. **Be marked `noexcept`.** Exceptions must not propagate through the libuv C
+   callback boundary. Any exception thrown by the user callback is caught and
+   forwarded to `std::terminate` by `detail::invoke_callback`.
+
+4. **Clear any borrowed submission inputs before returning.** Inputs copied at
+   submission time (node name, service name, hints, address storage) must be
+   cleared so the request does not retain stale data after completion.
+
+Example of a correct `invoke()`:
+
+```cpp
+void invoke(int status, addrinfo *addresses) noexcept {
+  auto callback = std::move(callback_);
+  callback_ = {};
+  clear_inputs();
+
+  if (callback) {
+    detail::invoke_callback(callback, *this, result_type{status, addresses});
+  } else if (addresses) {
+    uv_freeaddrinfo(addresses);  // free even when no callback consumed it
+  }
+}
+```
+
+The static `invoke_static<Callback>()` variant follows the same rules except that
+it never stores or clears a runtime callable.
 
 ## Trampolines
 

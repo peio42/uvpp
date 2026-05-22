@@ -49,13 +49,17 @@ docs/
   buffers.md
   streams.md
   filesystem.md
+  network.md
   process.md
   design/
     architecture.md
     api-principles.md
+    api-policy-decisions.md
     callback-strategy.md
+    coroutine-strategy.md
     error-handling-strategy.md
     ownership-strategy.md
+    request-guide.md
     thread-safety.md
 include/uvpp/
   uv.hpp
@@ -85,6 +89,7 @@ include/uvpp/
   requests/
     request.hpp
     connect.hpp
+    dns.hpp
     fs.hpp
     write.hpp
     shutdown.hpp
@@ -92,6 +97,8 @@ include/uvpp/
   net/
     address.hpp
     buffer.hpp
+    dns.hpp
+    interface.hpp
     socket_address.hpp
   fs/
     file.hpp

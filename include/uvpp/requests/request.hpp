@@ -42,6 +42,15 @@ namespace uv {
 
   namespace detail {
 
+    // submit_request is suitable for requests whose submission inputs are
+    // pointers or values owned by the caller (buffers, addresses). It sets the
+    // callback, calls libuv, and rolls back the callback on immediate failure.
+    //
+    // Do NOT use submit_request when the request itself must store the
+    // submission inputs and pass pointers to those stored copies into libuv
+    // (e.g. getaddrinfo_request stores node/service strings and passes their
+    // c_str() pointers). In that case set_inputs() must be called before the
+    // libuv call, and clear_inputs() must be added to the catch rollback.
     template<class Request, class Callback, class Submit>
     void submit_request(Request &request, Callback callback, Submit submit) {
       request.set_callback(std::move(callback));

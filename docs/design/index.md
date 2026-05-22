@@ -9,4 +9,5 @@ These documents describe uvpp's API and implementation strategy. They are primar
 - [Coroutine strategy draft](coroutine-strategy.md): target coroutine API direction, task/awaitable layers, stream abstractions, and open design decisions.
 - [Error handling strategy](error-handling-strategy.md): immediate failures, async completion results, EOF, and callback failure policy.
 - [Ownership strategy](ownership-strategy.md): handle lifetime, request lifetime, buffers, user data, loop ownership, and deallocation rules.
+- [Request guide](request-guide.md): step-by-step checklist for adding a new request type (classes, overloads, tests, documentation).
 - [Thread safety](thread-safety.md): libuv threading model and cross-thread communication rules.

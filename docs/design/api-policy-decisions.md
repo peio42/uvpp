@@ -291,3 +291,22 @@ auto result = stream.write_now(buffer);
 Do not hide request lifetime behind a low-level convenience that accepts only
 data and a callback unless the API name and documentation make ownership
 explicit.
+
+## Loop and Loop View Overloads
+
+Every free function that accepts a loop must provide two overloads: one taking
+`loop_view` and one taking `loop&`. The `loop&` overload forwards to the
+`loop_view` overload via `.view()`.
+
+```cpp
+inline void getaddrinfo(loop_view loop, getaddrinfo_request &request, ...);
+
+inline void getaddrinfo(loop &loop, getaddrinfo_request &request, ...) {
+  getaddrinfo(loop.view(), request, ...);
+}
+```
+
+This ensures callers who hold a `loop&` do not need to call `.view()` manually,
+while the implementation stays in the `loop_view` overload. Apply the same
+pattern to every argument combination that produces additional overloads (for
+example, `nullptr_t` vs `string_view` variants for getaddrinfo).
