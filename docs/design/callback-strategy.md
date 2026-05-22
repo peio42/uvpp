@@ -214,6 +214,10 @@ void invoke(int status, addrinfo *addresses) noexcept {
 The static `invoke_static<Callback>()` variant follows the same rules except that
 it never stores or clears a runtime callable.
 
+For the submission side, see `detail::submit_request` (4-argument form) and
+`detail::submit_with_rollback` in `requests/request.hpp`, which encode these
+rollback rules as reusable helpers.
+
 ## Trampolines
 
 Every libuv callback should go through a named trampoline in `core/callback.hpp` or a local `detail` namespace.

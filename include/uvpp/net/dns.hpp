@@ -33,16 +33,12 @@ namespace uv {
                                    const addrinfo *hints,
                                    getaddrinfo_request::callback callback) {
       request.set_inputs(node, service, hints);
-      request.set_callback(std::move(callback));
-
-      try {
-        throw_if_error(uv_getaddrinfo(loop.native(), request.native(), getaddrinfo_trampoline,
-                                      request.node_arg(), request.service_arg(), request.hints_arg()));
-      } catch (...) {
-        request.set_callback({});
-        request.clear_inputs();
-        throw;
-      }
+      detail::submit_request(request, std::move(callback),
+        [&] {
+          return uv_getaddrinfo(loop.native(), request.native(), getaddrinfo_trampoline,
+                                request.node_arg(), request.service_arg(), request.hints_arg());
+        },
+        [&] { request.clear_inputs(); });
     }
 
     template<auto Callback>
@@ -51,49 +47,41 @@ namespace uv {
                                    std::optional<std::string_view> service,
                                    const addrinfo *hints) {
       request.set_inputs(node, service, hints);
-
-      try {
-        throw_if_error(uv_getaddrinfo(loop.native(), request.native(),
-          [](uv_getaddrinfo_t *raw, int status, addrinfo *addresses) noexcept {
-            getaddrinfo_request::from_native(raw).template invoke_static<Callback>(status, addresses);
-          },
-          request.node_arg(), request.service_arg(), request.hints_arg()));
-      } catch (...) {
-        request.clear_inputs();
-        throw;
-      }
+      detail::submit_with_rollback(
+        [&] {
+          return uv_getaddrinfo(loop.native(), request.native(),
+            [](uv_getaddrinfo_t *raw, int status, addrinfo *addresses) noexcept {
+              getaddrinfo_request::from_native(raw).template invoke_static<Callback>(status, addresses);
+            },
+            request.node_arg(), request.service_arg(), request.hints_arg());
+        },
+        [&] { request.clear_inputs(); });
     }
 
     inline void submit_getnameinfo(loop_view loop, getnameinfo_request &request, const sockaddr *addr,
                                    int flags, getnameinfo_request::callback callback) {
       request.set_address(addr);
-      request.set_callback(std::move(callback));
-
-      try {
-        throw_if_error(uv_getnameinfo(loop.native(), request.native(), getnameinfo_trampoline,
-                                      request.address_arg(), flags));
-      } catch (...) {
-        request.set_callback({});
-        request.clear_address();
-        throw;
-      }
+      detail::submit_request(request, std::move(callback),
+        [&] {
+          return uv_getnameinfo(loop.native(), request.native(), getnameinfo_trampoline,
+                                request.address_arg(), flags);
+        },
+        [&] { request.clear_address(); });
     }
 
     template<auto Callback>
     void submit_getnameinfo_static(loop_view loop, getnameinfo_request &request, const sockaddr *addr,
                                    int flags) {
       request.set_address(addr);
-
-      try {
-        throw_if_error(uv_getnameinfo(loop.native(), request.native(),
-          [](uv_getnameinfo_t *raw, int status, const char *hostname, const char *service) noexcept {
-            getnameinfo_request::from_native(raw).template invoke_static<Callback>(status, hostname, service);
-          },
-          request.address_arg(), flags));
-      } catch (...) {
-        request.clear_address();
-        throw;
-      }
+      detail::submit_with_rollback(
+        [&] {
+          return uv_getnameinfo(loop.native(), request.native(),
+            [](uv_getnameinfo_t *raw, int status, const char *hostname, const char *service) noexcept {
+              getnameinfo_request::from_native(raw).template invoke_static<Callback>(status, hostname, service);
+            },
+            request.address_arg(), flags);
+        },
+        [&] { request.clear_address(); });
     }
 
   }

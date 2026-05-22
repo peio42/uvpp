@@ -42,15 +42,8 @@ namespace uv {
 
   namespace detail {
 
-    // submit_request is suitable for requests whose submission inputs are
-    // pointers or values owned by the caller (buffers, addresses). It sets the
-    // callback, calls libuv, and rolls back the callback on immediate failure.
-    //
-    // Do NOT use submit_request when the request itself must store the
-    // submission inputs and pass pointers to those stored copies into libuv
-    // (e.g. getaddrinfo_request stores node/service strings and passes their
-    // c_str() pointers). In that case set_inputs() must be called before the
-    // libuv call, and clear_inputs() must be added to the catch rollback.
+    // Use when the request stores only its callback before submission (all
+    // submission inputs are caller-owned borrows: buffer views, addresses, …).
     template<class Request, class Callback, class Submit>
     void submit_request(Request &request, Callback callback, Submit submit) {
       request.set_callback(std::move(callback));
@@ -59,6 +52,36 @@ namespace uv {
         throw_if_error(submit());
       } catch (...) {
         request.set_callback({});
+        throw;
+      }
+    }
+
+    // Use when the request also stores submission inputs (e.g. string copies
+    // needed for null-termination). Caller must call set_inputs() before this
+    // helper; on_error() is invoked — alongside the callback rollback — if
+    // libuv rejects the submission immediately.
+    template<class Request, class Callback, class Submit, class OnError>
+    void submit_request(Request &request, Callback callback, Submit submit, OnError on_error) {
+      request.set_callback(std::move(callback));
+
+      try {
+        throw_if_error(submit());
+      } catch (...) {
+        request.set_callback({});
+        on_error();
+        throw;
+      }
+    }
+
+    // Use for static-callback paths where no runtime callback is stored.
+    // Caller must call set_inputs() before this helper; on_error() is invoked
+    // if libuv rejects the submission immediately.
+    template<class Submit, class OnError>
+    void submit_with_rollback(Submit submit, OnError on_error) {
+      try {
+        throw_if_error(submit());
+      } catch (...) {
+        on_error();
         throw;
       }
     }

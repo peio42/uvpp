@@ -110,27 +110,42 @@ void foo_static(loop &loop, foo_request &request, ...) {
 
 ### When `detail::submit_request` applies
 
-`detail::submit_request` from `requests/request.hpp` is suitable when:
-- the submission inputs are owned by the **caller** (buffer views, address
-  pointers, scalars);
-- the libuv call does not require pointers that live inside the request object.
+`detail::submit_request` from `requests/request.hpp` has two overloads.
 
-Do **not** use `detail::submit_request` when the request must copy inputs into
-its own storage and pass pointers to those copies into libuv (as
-`getaddrinfo_request` does for node/service strings). In that case, follow the
-manual pattern:
+**3-argument form** — use when all submission inputs are owned by the caller
+(buffer views, address pointers, scalars) and libuv borrows them for the
+duration of the operation:
+
+```cpp
+detail::submit_request(request, std::move(callback),
+  [&] { return uv_foo(loop.native(), request.native(), trampoline, buffer, addr); });
+```
+
+**4-argument form** — use when the request must store copies of submission
+inputs (for example, strings copied to provide null-termination for libuv's
+`const char*` parameters). Caller must call `set_inputs()` before this helper;
+the `on_error` lambda is invoked alongside the callback rollback on immediate
+failure:
 
 ```cpp
 request.set_inputs(node, service, hints);
-request.set_callback(std::move(callback));
-try {
-  throw_if_error(uv_getaddrinfo(loop.native(), request.native(),
-                                trampoline, request.node_arg(), ...));
-} catch (...) {
-  request.set_callback({});
-  request.clear_inputs();
-  throw;
-}
+detail::submit_request(request, std::move(callback),
+  [&] { return uv_getaddrinfo(loop.native(), request.native(), trampoline,
+                              request.node_arg(), request.service_arg(),
+                              request.hints_arg()); },
+  [&] { request.clear_inputs(); });
+```
+
+For **static callback paths** where no runtime callback is stored, use
+`detail::submit_with_rollback` instead:
+
+```cpp
+request.set_inputs(node, service, hints);
+detail::submit_with_rollback(
+  [&] { return uv_getaddrinfo(loop.native(), request.native(), static_trampoline,
+                              request.node_arg(), request.service_arg(),
+                              request.hints_arg()); },
+  [&] { request.clear_inputs(); });
 ```
 
 ## 3. Update `include/uvpp/uv.hpp`
