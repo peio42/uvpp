@@ -28,6 +28,9 @@ client.connect(request, uv::ipv4{"127.0.0.1", 2345},
   });
 ```
 
+For cancellable requests, `uv::result::canceled()` is the named branch for
+`UV_ECANCELED`.
+
 Filesystem operations use typed results such as `uv::fs::open_result`, `uv::fs::read_result`, and `uv::fs::status_result`.
 
 ```cpp

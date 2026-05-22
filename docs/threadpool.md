@@ -47,7 +47,7 @@ uv::queue_work(loop, req,
   [](uv::work_request& req, uv::result status) {
     auto* state = req.user_data<job_state>();
 
-    if (status.status() == UV_ECANCELED) {
+    if (status.canceled()) {
       state->cancelled = true;
       return;
     }

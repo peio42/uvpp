@@ -41,14 +41,23 @@ TEST(Uvpp2Core, resultUsesOneErrorGrammar) {
   uv::result ok;
   EXPECT_TRUE(ok);
   EXPECT_TRUE(ok.ok());
+  EXPECT_FALSE(ok.canceled());
   EXPECT_EQ(ok.status(), 0);
   EXPECT_FALSE(ok.error_code());
 
   uv::result failed{UV_ECONNREFUSED};
   EXPECT_FALSE(failed);
   EXPECT_FALSE(failed.ok());
+  EXPECT_FALSE(failed.canceled());
   EXPECT_EQ(failed.status(), UV_ECONNREFUSED);
   EXPECT_EQ(failed.error_code(), uv::make_error_code(UV_ECONNREFUSED));
+
+  uv::result canceled{UV_ECANCELED};
+  EXPECT_FALSE(canceled);
+  EXPECT_FALSE(canceled.ok());
+  EXPECT_TRUE(canceled.canceled());
+  EXPECT_EQ(canceled.status(), UV_ECANCELED);
+  EXPECT_EQ(canceled.error_code(), uv::make_error_code(UV_ECANCELED));
 }
 
 TEST(Uvpp2Core, loopCloseIsExplicitAndReportsBusyLoops) {
