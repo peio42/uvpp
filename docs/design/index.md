@@ -6,6 +6,7 @@ These documents describe uvpp's API and implementation strategy. They are primar
 - [API principles](api-principles.md): public API shape, naming, native access, user data, and value types.
 - [API policy decisions](api-policy-decisions.md): concrete naming and result-shape policies for future API additions.
 - [Callback strategy](callback-strategy.md): runtime callbacks, static callbacks, callback slots, trampolines, and exception boundaries.
+- [Coroutine strategy draft](coroutine-strategy.md): target coroutine API direction, task/awaitable layers, stream abstractions, and open design decisions.
 - [Error handling strategy](error-handling-strategy.md): immediate failures, async completion results, EOF, and callback failure policy.
 - [Ownership strategy](ownership-strategy.md): handle lifetime, request lifetime, buffers, user data, loop ownership, and deallocation rules.
 - [Thread safety](thread-safety.md): libuv threading model and cross-thread communication rules.
