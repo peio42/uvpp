@@ -4,7 +4,6 @@
 #include <cstring>
 #include <functional>
 #include <iterator>
-#include <netdb.h>
 #include <optional>
 #include <string>
 #include <string_view>

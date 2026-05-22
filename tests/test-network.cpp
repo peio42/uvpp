@@ -90,6 +90,38 @@ TEST(Uvpp2Network, exposesStaticDnsOverloads) {
   (void)reverse;
 }
 
+TEST(Uvpp2Network, immediateGetnameinfoFailureLeavesRequestReusable) {
+  uv::loop loop;
+  uv::getnameinfo_request request;
+
+  bool failed_callback_called = false;
+  EXPECT_THROW(
+    uv::getnameinfo(loop, request, static_cast<const sockaddr *>(nullptr), 0,
+      [&](uv::getnameinfo_request &, uv::getnameinfo_result) {
+        failed_callback_called = true;
+      }),
+    uv::error);
+  EXPECT_FALSE(failed_callback_called);
+
+  bool reused_callback_called = false;
+  uv::ipv4 address{"127.0.0.1", 443};
+
+  uv::getnameinfo(loop, request, address, NI_NUMERICHOST | NI_NUMERICSERV,
+    [&](uv::getnameinfo_request &completed, uv::getnameinfo_result result) {
+      reused_callback_called = true;
+
+      EXPECT_EQ(&completed, &request);
+      ASSERT_TRUE(result);
+      EXPECT_EQ(result.hostname(), "127.0.0.1");
+      EXPECT_EQ(result.service(), "443");
+    });
+
+  loop.run();
+
+  EXPECT_TRUE(reused_callback_called);
+  loop.close();
+}
+
 #if UVPP_HAS_IF_INDEX_TO_NAME
 TEST(Uvpp2Network, invalidInterfaceIndexThrows) {
   EXPECT_THROW((void)uv::interface_name(0), uv::error);
