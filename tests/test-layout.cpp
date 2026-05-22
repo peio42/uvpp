@@ -109,16 +109,24 @@ TEST(Uvpp2Layout, reconstructsRequestsFromNativePointers) {
   static_assert(std::is_standard_layout_v<uv::getaddrinfo_request::native_storage>);
   static_assert(std::is_standard_layout_v<uv::getnameinfo_request::native_storage>);
   static_assert(std::is_standard_layout_v<uv::fs::raw::request::native_storage>);
+#if UVPP_HAS_RANDOM
+  static_assert(std::is_standard_layout_v<uv::random_request::native_storage>);
+#endif
   static_assert(std::is_standard_layout_v<uv::shutdown_request::native_storage>);
   static_assert(std::is_standard_layout_v<uv::udp_send_request::native_storage>);
+  static_assert(std::is_standard_layout_v<uv::work_request::native_storage>);
 
   uv::write_request write;
   uv::connect_request connect;
   uv::getaddrinfo_request getaddrinfo;
   uv::getnameinfo_request getnameinfo;
   uv::fs::raw::request fs;
+#if UVPP_HAS_RANDOM
+  uv::random_request random;
+#endif
   uv::shutdown_request shutdown;
   uv::udp_send_request udp_send;
+  uv::work_request work;
 
   EXPECT_EQ(&write, &uv::write_request::from_native(write.native()));
   EXPECT_EQ(&write, &uv::write_request::from_native(write.native_request()));
@@ -130,8 +138,14 @@ TEST(Uvpp2Layout, reconstructsRequestsFromNativePointers) {
   EXPECT_EQ(&getnameinfo, &uv::getnameinfo_request::from_native(getnameinfo.native_request()));
   EXPECT_EQ(&fs, &uv::fs::raw::request::from_native(fs.native()));
   EXPECT_EQ(&fs, &uv::fs::raw::request::from_native(fs.native_request()));
+#if UVPP_HAS_RANDOM
+  EXPECT_EQ(&random, &uv::random_request::from_native(random.native()));
+  EXPECT_EQ(&random, &uv::random_request::from_native(random.native_request()));
+#endif
   EXPECT_EQ(&shutdown, &uv::shutdown_request::from_native(shutdown.native()));
   EXPECT_EQ(&shutdown, &uv::shutdown_request::from_native(shutdown.native_request()));
   EXPECT_EQ(&udp_send, &uv::udp_send_request::from_native(udp_send.native()));
   EXPECT_EQ(&udp_send, &uv::udp_send_request::from_native(udp_send.native_request()));
+  EXPECT_EQ(&work, &uv::work_request::from_native(work.native()));
+  EXPECT_EQ(&work, &uv::work_request::from_native(work.native_request()));
 }

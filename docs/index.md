@@ -17,6 +17,8 @@ uvpp is a header-only C++20 wrapper around libuv. Include `uvpp/uv.hpp`, use nam
 - [Network utilities](network.md): DNS lookup requests and interface-index helpers.
 - [Filesystem](filesystem.md): recommended `uv::fs` APIs and the lower-level `uv::fs::raw` layer.
 - [Process](process.md): process spawning and process options.
+- [Thread pool work](threadpool.md): `queue_work` requests and worker-thread completion.
+- [Random bytes](random.md): synchronous and asynchronous random byte generation.
 - [Future features](future.md): post-`2.1.0` features identified for `2.x`.
 
 ## Design Notes

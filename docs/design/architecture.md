@@ -91,15 +91,21 @@ include/uvpp/
     connect.hpp
     dns.hpp
     fs.hpp
+    random.hpp
     write.hpp
     shutdown.hpp
     udp_send.hpp
+    work.hpp
   net/
     address.hpp
     buffer.hpp
     dns.hpp
     interface.hpp
     socket_address.hpp
+  misc/
+    random.hpp
+  threadpool/
+    work.hpp
   fs/
     file.hpp
     dir.hpp

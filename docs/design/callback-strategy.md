@@ -164,7 +164,8 @@ Rules:
 - `fs_event.start(...)` and `fs_poll.start(...)` replace their watcher callback slot before calling the corresponding libuv start function;
 - `process` stores its exit callback at construction because `uv_spawn` receives the exit callback when the process is created;
 - `handle.close(callback)` replaces the close callback slot and must only be called once for a given handle close lifecycle;
-- request callbacks such as `write_request`, `connect_request`, `shutdown_request`, `udp_send_request`, `getaddrinfo_request`, and `getnameinfo_request` are one-shot slots owned by the request object and replaced when submitting a new operation with that request.
+- request callbacks such as `write_request`, `connect_request`, `shutdown_request`, `udp_send_request`, `getaddrinfo_request`, `getnameinfo_request`, and `random_request` are one-shot slots owned by the request object and replaced when submitting a new operation with that request.
+- `work_request` owns one worker callback slot and one after-work callback slot. The worker callback runs on a libuv worker thread; the after-work callback runs on the loop thread. Both slots are cleared before or during completion, including cancellation.
 - `fs::raw::request` also owns one operation callback slot, but raw FS callbacks must call `req.cleanup()` after consuming the result and before reusing the request.
 - `fs` operations own their internal raw request and cleanup it before invoking the public callback with an owned or scalar result.
 

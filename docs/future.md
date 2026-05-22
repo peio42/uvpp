@@ -4,11 +4,6 @@ This page tracks features identified for uvpp `2.x` after the `2.1.0` release.
 These additions are intended to extend the library without changing the
 low-level contracts already published in `2.1.0`.
 
-## Work Queue And Random
-
-- `queue_work` wrappers for libuv thread-pool work.
-- `random` wrappers for asynchronous and synchronous random byte generation.
-
 ## Coroutines
 
 - Coroutine adapters for selected asynchronous operations.
