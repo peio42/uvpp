@@ -29,7 +29,7 @@ uvpp is a C++ API over libuv with explicit lifetime rules, typed callbacks, nati
 
 ## Status
 
-uvpp 2.0.0 is the first stable release. It covers the core loop, all main handle families, stream requests, UDP, filesystem operations (`uv::fs` and `uv::fs::raw`), watchers, and process spawning. Post-2.0.0 additions are tracked in [Future features](docs/future.md).
+uvpp 2.1.0 is the current release. It covers the core loop, all main handle families, stream requests, UDP, DNS utilities, filesystem operations (`uv::fs` and `uv::fs::raw`), watchers, and process spawning. Post-2.1.0 additions are tracked in [Future features](docs/future.md).
 
 ## Requirements
 
@@ -128,6 +128,7 @@ uv::connect_request connect;
 uv::write_request write;
 uv::shutdown_request shutdown;
 uv::udp_send_request send;
+uv::getaddrinfo_request dns;
 ```
 
 This keeps ownership visible and avoids hidden per-operation allocation in the low-level API.
@@ -282,12 +283,12 @@ make clean
 Create a local header-only package:
 
 ```sh
-make package VERSION=2.0.0
+make package VERSION=2.1.0
 ```
 
 This produces:
 
-- `dist/uvpp-2.0.0.tar.gz`
+- `dist/uvpp-2.1.0.tar.gz`
 - `dist/checksums.txt`
 
 The CI workflow runs the GCC and Clang suites on pull requests and on pushes to `main`. Branch pushes are intentionally not tested separately to avoid duplicating the same commit validation when a pull request is open.
@@ -312,6 +313,7 @@ Versions containing a prerelease suffix such as `2.0.0-rc.1` are published as Gi
 - [Buffers](docs/buffers.md)
 - [Streams](docs/streams.md)
 - [UDP](docs/udp.md)
+- [Network utilities](docs/network.md)
 - [Filesystem](docs/filesystem.md)
 - [Process](docs/process.md)
 - [Future features](docs/future.md)

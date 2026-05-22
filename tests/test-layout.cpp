@@ -106,12 +106,16 @@ TEST(Uvpp2Layout, reconstructsTtyFromNativePointersWhenAvailable) {
 TEST(Uvpp2Layout, reconstructsRequestsFromNativePointers) {
   static_assert(std::is_standard_layout_v<uv::write_request::native_storage>);
   static_assert(std::is_standard_layout_v<uv::connect_request::native_storage>);
+  static_assert(std::is_standard_layout_v<uv::getaddrinfo_request::native_storage>);
+  static_assert(std::is_standard_layout_v<uv::getnameinfo_request::native_storage>);
   static_assert(std::is_standard_layout_v<uv::fs::raw::request::native_storage>);
   static_assert(std::is_standard_layout_v<uv::shutdown_request::native_storage>);
   static_assert(std::is_standard_layout_v<uv::udp_send_request::native_storage>);
 
   uv::write_request write;
   uv::connect_request connect;
+  uv::getaddrinfo_request getaddrinfo;
+  uv::getnameinfo_request getnameinfo;
   uv::fs::raw::request fs;
   uv::shutdown_request shutdown;
   uv::udp_send_request udp_send;
@@ -120,6 +124,10 @@ TEST(Uvpp2Layout, reconstructsRequestsFromNativePointers) {
   EXPECT_EQ(&write, &uv::write_request::from_native(write.native_request()));
   EXPECT_EQ(&connect, &uv::connect_request::from_native(connect.native()));
   EXPECT_EQ(&connect, &uv::connect_request::from_native(connect.native_request()));
+  EXPECT_EQ(&getaddrinfo, &uv::getaddrinfo_request::from_native(getaddrinfo.native()));
+  EXPECT_EQ(&getaddrinfo, &uv::getaddrinfo_request::from_native(getaddrinfo.native_request()));
+  EXPECT_EQ(&getnameinfo, &uv::getnameinfo_request::from_native(getnameinfo.native()));
+  EXPECT_EQ(&getnameinfo, &uv::getnameinfo_request::from_native(getnameinfo.native_request()));
   EXPECT_EQ(&fs, &uv::fs::raw::request::from_native(fs.native()));
   EXPECT_EQ(&fs, &uv::fs::raw::request::from_native(fs.native_request()));
   EXPECT_EQ(&shutdown, &uv::shutdown_request::from_native(shutdown.native()));

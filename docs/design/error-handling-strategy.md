@@ -90,6 +90,36 @@ v2 must handle both:
 
 This distinction should be covered by tests for every request family.
 
+## Result Object Interface Contract
+
+Every typed result object that reports asynchronous completion status must expose
+the following interface:
+
+```cpp
+bool ok() const noexcept;
+explicit operator bool() const noexcept { return ok(); }
+result status() const noexcept;
+int raw_status() const noexcept;
+std::error_code error_code() const noexcept;
+```
+
+`ok()` returns `true` when the status value is non-negative (i.e., libuv
+considers the operation successful). `status()` wraps the raw integer in
+`uv::result`. `raw_status()` is available for interop. `error_code()` converts
+to a `std::error_code` via the libuv error category.
+
+Do not expose a direct `error()` accessor that throws or returns `uv::error` on
+the result object. Callers who need to throw should test `ok()` and throw
+themselves, or use `throw_if_error(result.raw_status())`.
+
+Result objects that carry payload beyond status follow the same pattern and add
+payload accessors (`hostname()`, `bytes()`, etc.) alongside the status members.
+
+Owned result types (those that manage a heap-allocated libuv resource, such as
+`getaddrinfo_result`) must be move-only. Borrowed result types (those that hold
+views into caller or libuv storage, such as `read_result`) may use value
+semantics if the borrow rules are documented.
+
 ## Default Policy
 
 Initial v2 should use:

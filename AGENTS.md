@@ -18,7 +18,7 @@ uv::timer timer(loop);
 - Build and run the default test suite with `make test`.
 - Run both compiler suites with `make test-all`.
 - Build examples with `make examples`.
-- Build a local package with `make package VERSION=2.0.0`.
+- Build a local package with `make package VERSION=2.1.0`.
 - Use C++20 and link applications with libuv and pthread.
 
 ## Coding Rules
