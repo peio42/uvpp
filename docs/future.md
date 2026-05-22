@@ -1,8 +1,8 @@
 # Future Features
 
-This page tracks features identified for uvpp `2.x` after the `2.0.0` API
-stabilization. These additions are intended to extend the library without
-changing the low-level contracts already published in `2.0.0`.
+This page tracks features identified for uvpp `2.x` after the `2.1.0` release.
+These additions are intended to extend the library without changing the
+low-level contracts already published in `2.1.0`.
 
 ## Work Queue And Random
 
