@@ -11,7 +11,7 @@ uv::work_request req;
 int value = 0;
 
 uv::queue_work(loop, req,
-  [&](uv::work_request&) {
+  [&value](uv::work_request&) {         // only value crosses the thread boundary
     value = expensive_blocking_call();
   },
   [&](uv::work_request&, uv::result status) {
@@ -25,6 +25,13 @@ uv::queue_work(loop, req,
 loop.run();
 loop.close();
 ```
+
+The work callback runs on a libuv worker thread. Capturing only the variables
+that must be shared with the worker makes the thread boundary explicit and
+prevents accidental access to loop-owned objects. `value` is safe here because
+libuv guarantees the work callback completes before the after-work callback
+runs, providing the necessary synchronization. The after-work callback runs on
+the loop thread and can safely read `value`.
 
 The request object must stay alive until the after-work callback runs. This is
 true even when cancellation succeeds: libuv still reports cancellation through

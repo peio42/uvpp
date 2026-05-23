@@ -71,6 +71,22 @@ TEST(Uvpp2Threadpool, queueWorkRunsWorkerAndAfterCallbacks) {
   loop.close();
 }
 
+TEST(Uvpp2Threadpool, queueWorkCancelAfterCompletionFails) {
+  uv::loop loop;
+  uv::work_request request;
+
+  uv::queue_work(loop, request,
+    [](uv::work_request &) {},
+    [](uv::work_request &, uv::result) {});
+
+  loop.run();
+
+  EXPECT_THROW(request.cancel(), uv::error);
+  EXPECT_TRUE(request.try_cancel());
+
+  loop.close();
+}
+
 TEST(Uvpp2Threadpool, queueWorkSupportsStaticCallbacks) {
   uv::loop loop;
   uv::work_request request;
@@ -138,6 +154,22 @@ TEST(Uvpp2Random, randomFillSupportsStaticCallbacks) {
   EXPECT_TRUE(state.ok);
   EXPECT_EQ(state.size, bytes.size());
   EXPECT_EQ(request.type(), uv::request_type::random);
+
+  loop.close();
+}
+
+TEST(Uvpp2Random, randomFillCancelAfterCompletionFails) {
+  uv::loop loop;
+  uv::random_request request;
+  std::array<std::byte, 32> bytes{};
+
+  uv::random_fill(loop, request, std::span<std::byte>{bytes},
+    [](uv::random_request &, uv::random_result) {});
+
+  loop.run();
+
+  EXPECT_THROW(request.cancel(), uv::error);
+  EXPECT_TRUE(request.try_cancel());
 
   loop.close();
 }

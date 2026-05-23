@@ -37,10 +37,6 @@ namespace uv {
       return {buffer_, size_};
     }
 
-    std::span<std::byte> storage() const noexcept {
-      return {buffer_, size_};
-    }
-
   private:
     int status_ = 0;
     std::byte *buffer_ = nullptr;
