@@ -193,6 +193,27 @@ namespace uv {
     sockaddr **addresses_;
   };
 
+  class udp_send_batch_view {
+  public:
+    udp_send_batch_view(unsigned int count, const uv_buf_t * const *buffers,
+                        const unsigned int *buffer_counts,
+                        const sockaddr * const *addresses) noexcept
+      : count_{count}, buffers_{buffers}, buffer_counts_{buffer_counts}, addresses_{addresses} {}
+
+    unsigned int count() const noexcept { return count_; }
+    const uv_buf_t * const *buffers() const noexcept { return buffers_; }
+    const unsigned int *buffer_counts() const noexcept { return buffer_counts_; }
+    const sockaddr * const *addresses() const noexcept { return addresses_; }
+
+  private:
+    unsigned int count_;
+    const uv_buf_t * const *buffers_;
+    const unsigned int *buffer_counts_;
+    const sockaddr * const *addresses_;
+  };
+
+  class udp;
+
   class udp_send_batch {
   public:
     udp_send_batch() = default;
@@ -235,11 +256,19 @@ namespace uv {
     }
 
     udp_send_batch &reserve(std::size_t datagram_count, std::size_t buffer_count = 0) {
-      raw_buffers_.reserve(buffer_count);
+      check_count(datagram_count);
+      check_count(buffer_count);
+
       buffer_starts_.reserve(datagram_count);
       buffer_counts_.reserve(datagram_count);
       addresses_.reserve(datagram_count);
       buffer_arrays_.reserve(datagram_count);
+
+      const auto *previous_data = raw_buffers_.data();
+      raw_buffers_.reserve(buffer_count);
+      if (raw_buffers_.data() != previous_data) {
+        rebuild_buffer_pointers();
+      }
       return *this;
     }
 
@@ -317,14 +346,15 @@ namespace uv {
     udp_send_batch &add(std::span<const std::byte>, ipv4 &&) = delete;
     udp_send_batch &add(std::span<const std::byte>, ipv6 &&) = delete;
 
-    udp_send_many_view view() const noexcept {
-      return udp_send_many_view{static_cast<unsigned int>(buffer_arrays_.size()),
-                                const_cast<uv_buf_t **>(buffer_arrays_.data()),
-                                const_cast<unsigned int *>(buffer_counts_.data()),
-                                const_cast<sockaddr **>(addresses_.data())};
+    udp_send_batch_view view() const noexcept {
+      return udp_send_batch_view{static_cast<unsigned int>(buffer_arrays_.size()),
+                                 buffer_arrays_.data(), buffer_counts_.data(),
+                                 addresses_.data()};
     }
 
   private:
+    friend class udp;
+
     static constexpr std::size_t max_native_count() noexcept {
       return static_cast<std::size_t>(std::numeric_limits<unsigned int>::max());
     }
@@ -339,14 +369,14 @@ namespace uv {
       check_count(buffers.size());
       check_count(buffer_counts_.size() + 1);
 
-      raw_buffers_.reserve(raw_buffers_.size() + buffers.size());
       buffer_starts_.reserve(buffer_starts_.size() + 1);
       buffer_counts_.reserve(buffer_counts_.size() + 1);
       addresses_.reserve(addresses_.size() + 1);
       buffer_arrays_.reserve(buffer_arrays_.size() + 1);
 
-      const auto first = raw_buffers_.size();
       const auto *previous_data = raw_buffers_.data();
+      raw_buffers_.reserve(raw_buffers_.size() + buffers.size());
+      const auto first = raw_buffers_.size();
       for (const auto &buffer : buffers) {
         raw_buffers_.push_back(*buffer.native());
       }
@@ -358,14 +388,14 @@ namespace uv {
       check_count(buffers.size());
       check_count(buffer_counts_.size() + 1);
 
-      raw_buffers_.reserve(raw_buffers_.size() + buffers.size());
       buffer_starts_.reserve(buffer_starts_.size() + 1);
       buffer_counts_.reserve(buffer_counts_.size() + 1);
       addresses_.reserve(addresses_.size() + 1);
       buffer_arrays_.reserve(buffer_arrays_.size() + 1);
 
-      const auto first = raw_buffers_.size();
       const auto *previous_data = raw_buffers_.data();
+      raw_buffers_.reserve(raw_buffers_.size() + buffers.size());
+      const auto first = raw_buffers_.size();
       raw_buffers_.insert(raw_buffers_.end(), buffers.begin(), buffers.end());
       append_datagram(first, buffers.size(), addr, raw_buffers_.data() != previous_data);
     }
@@ -374,7 +404,7 @@ namespace uv {
                          bool buffer_storage_reallocated) {
       buffer_starts_.push_back(first);
       buffer_counts_.push_back(static_cast<unsigned int>(count));
-      addresses_.push_back(const_cast<sockaddr *>(addr));
+      addresses_.push_back(addr);
 
       if (buffer_storage_reallocated) {
         rebuild_buffer_pointers();
@@ -390,15 +420,22 @@ namespace uv {
       }
     }
 
-    uv_buf_t *buffer_pointer(std::size_t first, std::size_t count) noexcept {
+    udp_send_many_view native_view() const noexcept {
+      return udp_send_many_view{static_cast<unsigned int>(buffer_arrays_.size()),
+                                const_cast<uv_buf_t **>(buffer_arrays_.data()),
+                                const_cast<unsigned int *>(buffer_counts_.data()),
+                                const_cast<sockaddr **>(addresses_.data())};
+    }
+
+    const uv_buf_t *buffer_pointer(std::size_t first, std::size_t count) noexcept {
       return count == 0 ? nullptr : raw_buffers_.data() + first;
     }
 
     std::vector<uv_buf_t> raw_buffers_{};
     std::vector<std::size_t> buffer_starts_{};
     std::vector<unsigned int> buffer_counts_{};
-    std::vector<sockaddr *> addresses_{};
-    std::vector<uv_buf_t *> buffer_arrays_{};
+    std::vector<const sockaddr *> addresses_{};
+    std::vector<const uv_buf_t *> buffer_arrays_{};
   };
 #endif
 
@@ -610,7 +647,7 @@ namespace uv {
     }
 
     send_many_now_result send_many_now(const udp_send_batch &batch) noexcept {
-      return send_many_now(batch.view());
+      return send_many_now(batch.native_view());
     }
 
     send_many_now_result send_many_now(unsigned int count, uv_buf_t **buffers,

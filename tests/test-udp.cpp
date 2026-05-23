@@ -396,8 +396,7 @@ TEST(Uvpp2Udp, sendBatchBuildsManySendMetadata) {
   };
 
   auto batch = uv::udp_send_batch{};
-  batch.reserve(2, 3)
-       .add(first_buffers, destination)
+  batch.add(first_buffers, destination)
        .add(std::as_bytes(std::span{second}), destination);
 
   EXPECT_FALSE(batch.empty());
