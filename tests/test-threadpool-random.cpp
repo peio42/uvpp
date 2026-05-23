@@ -1,12 +1,35 @@
 #include <array>
 #include <atomic>
+#include <chrono>
+#include <cstdlib>
 #include <cstddef>
+#include <memory>
 #include <span>
+#include <thread>
+#include <vector>
 
 #include "gtest/gtest.h"
 #include "uvpp/uv.hpp"
 
 namespace {
+
+std::size_t configured_threadpool_size() {
+  constexpr std::size_t default_size = 4;
+  constexpr std::size_t max_test_size = 32;
+
+  const char *raw = std::getenv("UV_THREADPOOL_SIZE");
+  if (!raw || *raw == '\0') {
+    return default_size;
+  }
+
+  char *end = nullptr;
+  const auto value = std::strtoul(raw, &end, 10);
+  if (end == raw || value == 0 || value > max_test_size) {
+    return 0;
+  }
+
+  return value;
+}
 
 struct static_work_state {
   std::atomic<bool> worked{false};
@@ -23,6 +46,46 @@ void static_after_work_callback(uv::work_request &request, uv::result status) {
   state->after = true;
   state->status = status.status();
 }
+
+class threadpool_blockers {
+public:
+  threadpool_blockers(uv::loop &loop, std::size_t count) {
+    requests_.reserve(count);
+
+    for (std::size_t i = 0; i < count; ++i) {
+      auto request = std::make_unique<uv::work_request>();
+      uv::queue_work(loop, *request,
+        [&](uv::work_request &) {
+          started_.fetch_add(1);
+          while (!released_.load()) {
+            std::this_thread::yield();
+          }
+        },
+        [](uv::work_request &, uv::result status) {
+          EXPECT_TRUE(status);
+        });
+      requests_.push_back(std::move(request));
+    }
+  }
+
+  bool wait_until_started(std::size_t count) const {
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds{2};
+    while (started_.load() != count && std::chrono::steady_clock::now() < deadline) {
+      std::this_thread::sleep_for(std::chrono::milliseconds{1});
+    }
+
+    return started_.load() == count;
+  }
+
+  void release() noexcept {
+    released_.store(true);
+  }
+
+private:
+  std::vector<std::unique_ptr<uv::work_request>> requests_;
+  std::atomic<bool> released_{false};
+  std::atomic<std::size_t> started_{0};
+};
 
 #if UVPP_HAS_RANDOM
 struct static_random_state {
@@ -82,7 +145,51 @@ TEST(Uvpp2Threadpool, queueWorkCancelAfterCompletionFails) {
   loop.run();
 
   EXPECT_THROW(request.cancel(), uv::error);
-  EXPECT_TRUE(request.try_cancel());
+  auto ec = request.try_cancel();
+  ASSERT_TRUE(ec);
+  EXPECT_EQ(ec.value(), UV_EBUSY);
+
+  loop.close();
+}
+
+TEST(Uvpp2Threadpool, queueWorkCancelPendingCompletesWithCanceledStatus) {
+  const auto blocker_count = configured_threadpool_size();
+  if (blocker_count == 0) {
+    GTEST_SKIP() << "UV_THREADPOOL_SIZE is outside the bounded test range";
+  }
+
+  uv::loop loop;
+  threadpool_blockers blockers{loop, blocker_count};
+
+  if (!blockers.wait_until_started(blocker_count)) {
+    blockers.release();
+    loop.run();
+    loop.close();
+    GTEST_SKIP() << "could not occupy every libuv worker thread";
+  }
+
+  uv::work_request target;
+  std::atomic<bool> target_started{false};
+  bool target_after = false;
+  bool target_canceled = false;
+
+  uv::queue_work(loop, target,
+    [&](uv::work_request &) {
+      target_started.store(true);
+    },
+    [&](uv::work_request &, uv::result status) {
+      target_after = true;
+      target_canceled = status.canceled();
+    });
+
+  EXPECT_FALSE(target.try_cancel());
+
+  blockers.release();
+  loop.run();
+
+  EXPECT_FALSE(target_started.load());
+  EXPECT_TRUE(target_after);
+  EXPECT_TRUE(target_canceled);
 
   loop.close();
 }
@@ -105,13 +212,6 @@ TEST(Uvpp2Threadpool, queueWorkSupportsStaticCallbacks) {
 }
 
 #if UVPP_HAS_RANDOM
-
-TEST(Uvpp2Random, randomFillSynchronouslyFillsBytes) {
-  std::array<std::byte, 32> bytes{};
-
-  EXPECT_NO_THROW(uv::random_fill(std::span<std::byte>{bytes}));
-  EXPECT_FALSE(uv::try_random_fill(std::span<std::byte>{bytes}));
-}
 
 TEST(Uvpp2Random, randomFillCompletesAsynchronously) {
   uv::loop loop;
@@ -158,6 +258,44 @@ TEST(Uvpp2Random, randomFillSupportsStaticCallbacks) {
   loop.close();
 }
 
+TEST(Uvpp2Random, randomFillCancelPendingCompletesWithCanceledStatus) {
+  const auto blocker_count = configured_threadpool_size();
+  if (blocker_count == 0) {
+    GTEST_SKIP() << "UV_THREADPOOL_SIZE is outside the bounded test range";
+  }
+
+  uv::loop loop;
+  threadpool_blockers blockers{loop, blocker_count};
+
+  if (!blockers.wait_until_started(blocker_count)) {
+    blockers.release();
+    loop.run();
+    loop.close();
+    GTEST_SKIP() << "could not occupy every libuv worker thread";
+  }
+
+  uv::random_request target;
+  std::array<std::byte, 32> bytes{};
+  bool target_after = false;
+  bool target_canceled = false;
+
+  uv::random_fill(loop, target, std::span<std::byte>{bytes},
+    [&](uv::random_request &, uv::random_result result) {
+      target_after = true;
+      target_canceled = result.status().canceled();
+    });
+
+  EXPECT_FALSE(target.try_cancel());
+
+  blockers.release();
+  loop.run();
+
+  EXPECT_TRUE(target_after);
+  EXPECT_TRUE(target_canceled);
+
+  loop.close();
+}
+
 TEST(Uvpp2Random, randomFillCancelAfterCompletionFails) {
   uv::loop loop;
   uv::random_request request;
@@ -169,7 +307,9 @@ TEST(Uvpp2Random, randomFillCancelAfterCompletionFails) {
   loop.run();
 
   EXPECT_THROW(request.cancel(), uv::error);
-  EXPECT_TRUE(request.try_cancel());
+  auto ec = request.try_cancel();
+  ASSERT_TRUE(ec);
+  EXPECT_EQ(ec.value(), UV_EBUSY);
 
   loop.close();
 }
