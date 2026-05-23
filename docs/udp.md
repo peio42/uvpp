@@ -169,7 +169,12 @@ auto result = socket.send_many_now(batch);
 `udp_send_batch::add()` accepts a single `buffer_view`, a span of
 `buffer_view`s, or a `std::span<const std::byte>`. Passing no destination sends
 on a connected UDP socket. Payload storage and address objects must remain alive
-until `send_many_now()` returns.
+until `send_many_now()` returns. Do not call `add()` while the batch is being
+consumed by `send_many_now()`.
+
+`add()` provides a strong exception guarantee: if allocation fails during
+pre-reservation, the batch is left unchanged. Operations that successfully
+pre-reserve will not throw during element insertion.
 
 ## Multicast
 

@@ -220,9 +220,8 @@ namespace uv {
       : raw_buffers_{std::move(other.raw_buffers_)},
         buffer_starts_{std::move(other.buffer_starts_)},
         buffer_counts_{std::move(other.buffer_counts_)},
-        addresses_{std::move(other.addresses_)} {
-      rebuild_buffer_pointers();
-    }
+        addresses_{std::move(other.addresses_)},
+        buffer_arrays_{std::move(other.buffer_arrays_)} {}
 
     udp_send_batch &operator=(udp_send_batch &&other) noexcept {
       if (this != &other) {
@@ -230,7 +229,7 @@ namespace uv {
         buffer_starts_ = std::move(other.buffer_starts_);
         buffer_counts_ = std::move(other.buffer_counts_);
         addresses_ = std::move(other.addresses_);
-        rebuild_buffer_pointers();
+        buffer_arrays_ = std::move(other.buffer_arrays_);
       }
       return *this;
     }
@@ -241,7 +240,6 @@ namespace uv {
       buffer_counts_.reserve(datagram_count);
       addresses_.reserve(datagram_count);
       buffer_arrays_.reserve(datagram_count);
-      rebuild_buffer_pointers();
       return *this;
     }
 
@@ -319,10 +317,11 @@ namespace uv {
     udp_send_batch &add(std::span<const std::byte>, ipv4 &&) = delete;
     udp_send_batch &add(std::span<const std::byte>, ipv6 &&) = delete;
 
-    udp_send_many_view view() noexcept {
-      return udp_send_many_view{std::span<uv_buf_t *>{buffer_arrays_},
-                                std::span<unsigned int>{buffer_counts_},
-                                std::span<sockaddr *>{addresses_}};
+    udp_send_many_view view() const noexcept {
+      return udp_send_many_view{static_cast<unsigned int>(buffer_arrays_.size()),
+                                const_cast<uv_buf_t **>(buffer_arrays_.data()),
+                                const_cast<unsigned int *>(buffer_counts_.data()),
+                                const_cast<sockaddr **>(addresses_.data())};
     }
 
   private:
@@ -340,6 +339,12 @@ namespace uv {
       check_count(buffers.size());
       check_count(buffer_counts_.size() + 1);
 
+      raw_buffers_.reserve(raw_buffers_.size() + buffers.size());
+      buffer_starts_.reserve(buffer_starts_.size() + 1);
+      buffer_counts_.reserve(buffer_counts_.size() + 1);
+      addresses_.reserve(addresses_.size() + 1);
+      buffer_arrays_.reserve(buffer_arrays_.size() + 1);
+
       const auto first = raw_buffers_.size();
       const auto *previous_data = raw_buffers_.data();
       for (const auto &buffer : buffers) {
@@ -352,6 +357,12 @@ namespace uv {
     void append(std::span<const uv_buf_t> buffers, const sockaddr *addr) {
       check_count(buffers.size());
       check_count(buffer_counts_.size() + 1);
+
+      raw_buffers_.reserve(raw_buffers_.size() + buffers.size());
+      buffer_starts_.reserve(buffer_starts_.size() + 1);
+      buffer_counts_.reserve(buffer_counts_.size() + 1);
+      addresses_.reserve(addresses_.size() + 1);
+      buffer_arrays_.reserve(buffer_arrays_.size() + 1);
 
       const auto first = raw_buffers_.size();
       const auto *previous_data = raw_buffers_.data();
@@ -598,7 +609,7 @@ namespace uv {
                                                    batch.buffer_counts(), batch.addresses(), 0)};
     }
 
-    send_many_now_result send_many_now(udp_send_batch &batch) noexcept {
+    send_many_now_result send_many_now(const udp_send_batch &batch) noexcept {
       return send_many_now(batch.view());
     }
 
