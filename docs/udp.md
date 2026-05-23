@@ -170,11 +170,15 @@ auto result = socket.send_many_now(batch);
 `buffer_view`s, or a `std::span<const std::byte>`. Passing no destination sends
 on a connected UDP socket. Payload storage and address objects must remain alive
 until `send_many_now()` returns. Do not call `add()` while the batch is being
-consumed by `send_many_now()`.
+consumed by `send_many_now()`. The batch overload of `send_many_now()` takes a
+mutable batch because libuv receives mutable metadata arrays for the immediate
+call.
 
-`add()` provides a strong exception guarantee: if allocation fails during
-pre-reservation, the batch is left unchanged. Operations that successfully
-pre-reserve will not throw during element insertion.
+If allocation fails during `add()` pre-reservation, the batch's datagrams and
+payload metadata remain unchanged, but previously obtained `udp_send_batch_view`
+values may be invalidated by successful reallocations before the failure.
+Operations that successfully pre-reserve will not throw during element
+insertion.
 
 ## Multicast
 
