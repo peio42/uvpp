@@ -37,6 +37,13 @@ Only the specific cross-thread entry points documented by libuv and by this proj
 
 If another thread publishes data before calling `send()`, synchronization is still the application's responsibility. The wrapper does not add memory fences or queues around `uv_async_send`.
 
+`uv::queue_work()` is a separate thread-pool mechanism: its work callback runs
+on a libuv worker thread, and its after-work callback runs on the loop thread.
+The work callback must follow the same rule as any other external thread: it
+must not access loop-owned handles or requests except through APIs documented as
+cross-thread safe. Shared application state still needs application-provided
+synchronization.
+
 ## Future High-Level Layer
 
 A future higher-level layer may provide synchronized queues, executor-style APIs, or thread-safe owners. Those facilities should be explicit types built on top of the low-level wrappers, not hidden behavior inside every handle/request.

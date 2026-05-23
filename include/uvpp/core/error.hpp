@@ -46,6 +46,7 @@ namespace uv {
 
     bool ok() const noexcept { return status_ >= 0; }
     explicit operator bool() const noexcept { return ok(); }
+    bool canceled() const noexcept { return status_ == UV_ECANCELED; }
     int status() const noexcept { return status_; }
 
     std::error_code error_code() const noexcept {
@@ -57,4 +58,3 @@ namespace uv {
   };
 
 }
-
