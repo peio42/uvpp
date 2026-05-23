@@ -175,10 +175,9 @@ borrowed for the duration of the call. The wrapper must not store those pointers
 after `uv_udp_try_send2()` returns, and it must not allocate replacement arrays
 inside the call.
 
-An ergonomic batch builder may be added as a higher-level value that explicitly
-owns reusable metadata arrays. Such a builder should still borrow payload bytes
-and destination addresses unless its type name and documentation clearly state
-that it copies them.
+`udp_send_batch` is the higher-level value that explicitly owns reusable
+metadata arrays. It still borrows payload bytes and destination addresses; the
+type name and documentation do not imply copied payloads or owned addresses.
 
 ## Callback State
 

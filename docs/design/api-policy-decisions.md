@@ -50,8 +50,9 @@ wrapper.
 Example: `udp::send_many_now()` maps to `uv_udp_try_send2()`, whose native shape
 requires parallel arrays of buffer pointers, buffer counts, and destination
 addresses. The low-level uvpp API accepts an explicit borrowed batch view over
-caller-provided arrays. A future ergonomic batch builder may own that metadata,
-but the low-level `*_now()` operation itself stays allocation-free.
+caller-provided arrays. `udp_send_batch` is the higher-level value that owns
+that metadata while still borrowing payload bytes and destination addresses.
+The low-level `*_now()` operation itself stays allocation-free.
 
 ## Typed Result Objects
 

@@ -10,27 +10,6 @@ low-level v2 contracts.
 - Coroutine support should layer on top of the explicit request/lifetime model
   rather than replacing the low-level API.
 
-## UDP Batch Builder
-
-uvpp v2 exposes `udp_send_many_view` and `udp::send_many_now()` as the low-level
-shape for `uv_udp_try_send2()`. The low-level API stays allocation-free by
-requiring caller-provided libuv batch arrays. A future v2 release may add a
-fluent builder that owns the batch metadata while still borrowing payload
-buffers.
-
-Possible shape:
-
-```cpp
-auto batch = uv::udp_send_batch{}
-  .add(first_buffers, destination)
-  .add(second_buffers, destination);
-
-auto result = socket.send_many_now(batch);
-```
-
-The builder should own only the metadata needed to call libuv. It must not imply
-that payload bytes are copied or that asynchronous state is hidden.
-
 ## Thread and Synchronization Primitives
 
 libuv provides cross-platform wrappers around OS threading and synchronization
