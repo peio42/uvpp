@@ -48,7 +48,7 @@ uv::queue_work(loop, req,
     auto* state = req.user_data<job_state>();
 
     if (status.canceled()) {
-      state->cancelled = true;
+      state->canceled = true;
       return;
     }
 
@@ -88,4 +88,4 @@ after-work callback still runs on the loop thread.
 request. `work_request::try_cancel()` returns `std::error_code` instead.
 
 Cancellation only succeeds before libuv starts executing the work callback. A
-request that has started or already completed cannot be cancelled by libuv.
+request that has started or already completed cannot be canceled by libuv.
