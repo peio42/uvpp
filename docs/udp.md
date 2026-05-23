@@ -148,8 +148,37 @@ if (result.ok()) {
 
 `uv::udp_send_many_view` is a raw borrowed view over the parallel arrays expected
 by libuv. It does not own buffers, address objects, or batch metadata; keep all
-arrays alive for the duration of the immediate call. For a more ergonomic owned
-batch builder, see [Future features](future.md).
+arrays alive for the duration of the immediate call.
+
+For ordinary C++ call sites, use `uv::udp_send_batch`. The batch owns the
+metadata arrays needed by libuv while still borrowing payload bytes and
+destination addresses.
+
+```cpp
+std::array first{'o', 'n', 'e', '!'};
+std::array second{'t', 'w', 'o', '!'};
+
+auto batch = uv::udp_send_batch{};
+batch.reserve(2, 2)
+     .add(std::as_bytes(std::span{first}), destination)
+     .add(std::as_bytes(std::span{second}), destination);
+
+auto result = socket.send_many_now(batch);
+```
+
+`udp_send_batch::add()` accepts a single `buffer_view`, a span of
+`buffer_view`s, or a `std::span<const std::byte>`. Passing no destination sends
+on a connected UDP socket. Payload storage and address objects must remain alive
+until `send_many_now()` returns. Do not call `add()` while the batch is being
+consumed by `send_many_now()`. The batch overload of `send_many_now()` takes a
+mutable batch because libuv receives mutable metadata arrays for the immediate
+call.
+
+If allocation fails during `add()` pre-reservation, the batch's datagrams and
+payload metadata remain unchanged, but previously obtained `udp_send_batch_view`
+values may be invalidated by successful reallocations before the failure.
+Operations that successfully pre-reserve will not throw during element
+insertion.
 
 ## Multicast
 

@@ -2,6 +2,7 @@
 #include <cstring>
 #include <memory>
 #include <span>
+#include <utility>
 
 #include "gtest/gtest.h"
 #include "uvpp/uv.hpp"
@@ -286,6 +287,133 @@ TEST(Uvpp2Udp, sendManyNowSendsMultipleDatagrams) {
   EXPECT_FALSE(result.would_block());
   EXPECT_FALSE(result.has_error());
   EXPECT_EQ(result.datagrams_sent(), buffer_arrays.size());
+
+  loop.run();
+
+  EXPECT_EQ(datagrams_read, 2);
+  EXPECT_TRUE(server_closed);
+  EXPECT_TRUE(client_closed);
+
+  loop.close();
+}
+
+TEST(Uvpp2Udp, sendBatchMovePreservesValidPointers) {
+  uv::ipv4 destination{"127.0.0.1", 1234};
+  std::array first{'o', 'n', 'e', '!'};
+  std::array second{'t', 'w', 'o', '!'};
+  std::array first_buffers{
+    uv::buffer_view{first.data(), 2},
+    uv::buffer_view{first.data() + 2, 2}
+  };
+
+  auto batch = uv::udp_send_batch{};
+  batch.add(first_buffers, destination)
+       .add(std::as_bytes(std::span{second}), destination);
+
+  auto moved = std::move(batch);
+
+  EXPECT_EQ(moved.size(), 2u);
+  EXPECT_EQ(moved.buffer_count(), 3u);
+
+  auto v = moved.view();
+  EXPECT_EQ(v.count(), 2u);
+  ASSERT_NE(v.buffers(), nullptr);
+  EXPECT_NE(v.buffers()[0], nullptr);
+  EXPECT_NE(v.buffers()[1], nullptr);
+}
+
+TEST(Uvpp2Udp, sendBatchClearAllowsReuse) {
+  uv::ipv4 destination{"127.0.0.1", 1234};
+  std::array payload{'d', 'a', 't', 'a'};
+
+  auto batch = uv::udp_send_batch{};
+  batch.add(std::as_bytes(std::span{payload}), destination);
+
+  EXPECT_EQ(batch.size(), 1u);
+  EXPECT_EQ(batch.buffer_count(), 1u);
+
+  batch.clear();
+
+  EXPECT_TRUE(batch.empty());
+  EXPECT_EQ(batch.size(), 0u);
+  EXPECT_EQ(batch.buffer_count(), 0u);
+  EXPECT_EQ(batch.view().count(), 0u);
+
+  batch.add(std::as_bytes(std::span{payload}), destination)
+       .add(std::as_bytes(std::span{payload}), destination);
+
+  EXPECT_EQ(batch.size(), 2u);
+  EXPECT_EQ(batch.buffer_count(), 2u);
+}
+
+
+TEST(Uvpp2Udp, sendBatchBuildsManySendMetadata) {
+  uv::loop loop;
+  uv::udp server(loop);
+  uv::udp client(loop);
+
+  int datagrams_read = 0;
+  bool server_closed = false;
+  bool client_closed = false;
+
+  server.bind(uv::ipv4{"127.0.0.1", 0});
+  client.bind(uv::ipv4{"127.0.0.1", 0});
+
+  server.receive_start(udp_alloc, [&](uv::udp &, uv::udp_receive_result received) {
+    if (received.empty_event()) {
+      return;
+    }
+
+    ASSERT_TRUE(received);
+    auto bytes = received.bytes();
+    ASSERT_EQ(bytes.size(), 4u);
+
+    if (datagrams_read == 0) {
+      EXPECT_EQ(std::memcmp(bytes.data(), "one!", 4), 0);
+    } else if (datagrams_read == 1) {
+      EXPECT_EQ(std::memcmp(bytes.data(), "two!", 4), 0);
+    }
+
+    ++datagrams_read;
+    if (datagrams_read == 2) {
+      server.close([&](uv::udp &) {
+        server_closed = true;
+      });
+      client.close([&](uv::udp &) {
+        client_closed = true;
+      });
+    }
+  });
+
+  auto bound = server.sockname();
+  uv::ipv4 destination{"127.0.0.1", bound.port()};
+
+  std::array first{'o', 'n', 'e', '!'};
+  std::array second{'t', 'w', 'o', '!'};
+  std::array first_buffers{
+    uv::buffer_view{first.data(), 2},
+    uv::buffer_view{first.data() + 2, 2}
+  };
+
+  auto batch = uv::udp_send_batch{};
+  batch.add(first_buffers, destination)
+       .add(std::as_bytes(std::span{second}), destination);
+
+  EXPECT_FALSE(batch.empty());
+  EXPECT_EQ(batch.size(), 2u);
+  EXPECT_EQ(batch.buffer_count(), 3u);
+
+  auto batch_view = batch.view();
+  EXPECT_EQ(batch_view.count(), 2u);
+
+  auto copy = batch;
+  auto moved = std::move(copy);
+  auto result = client.send_many_now(moved);
+
+  ASSERT_TRUE(result.ok());
+  EXPECT_FALSE(result.would_block());
+  EXPECT_FALSE(result.has_error());
+  EXPECT_EQ(result.datagrams_sent(), moved.size());
 
   loop.run();
 
