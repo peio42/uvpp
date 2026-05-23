@@ -332,7 +332,7 @@ namespace uv {
 
     static void check_count(std::size_t count) {
       if (count > max_native_count()) {
-        throw std::length_error{"uv::udp_send_batch exceeds libuv UDP batch count limits"};
+        throw std::length_error{"uv::udp_send_batch value exceeds libuv limits"};
       }
     }
 
@@ -341,12 +341,12 @@ namespace uv {
       check_count(buffer_counts_.size() + 1);
 
       const auto first = raw_buffers_.size();
-      raw_buffers_.reserve(raw_buffers_.size() + buffers.size());
+      const auto *previous_data = raw_buffers_.data();
       for (const auto &buffer : buffers) {
         raw_buffers_.push_back(*buffer.native());
       }
 
-      append_datagram(first, buffers.size(), addr);
+      append_datagram(first, buffers.size(), addr, raw_buffers_.data() != previous_data);
     }
 
     void append(std::span<const uv_buf_t> buffers, const sockaddr *addr) {
@@ -354,24 +354,33 @@ namespace uv {
       check_count(buffer_counts_.size() + 1);
 
       const auto first = raw_buffers_.size();
+      const auto *previous_data = raw_buffers_.data();
       raw_buffers_.insert(raw_buffers_.end(), buffers.begin(), buffers.end());
-      append_datagram(first, buffers.size(), addr);
+      append_datagram(first, buffers.size(), addr, raw_buffers_.data() != previous_data);
     }
 
-    void append_datagram(std::size_t first, std::size_t count, const sockaddr *addr) {
+    void append_datagram(std::size_t first, std::size_t count, const sockaddr *addr,
+                         bool buffer_storage_reallocated) {
       buffer_starts_.push_back(first);
       buffer_counts_.push_back(static_cast<unsigned int>(count));
       addresses_.push_back(const_cast<sockaddr *>(addr));
-      rebuild_buffer_pointers();
+
+      if (buffer_storage_reallocated) {
+        rebuild_buffer_pointers();
+      } else {
+        buffer_arrays_.push_back(buffer_pointer(first, count));
+      }
     }
 
     void rebuild_buffer_pointers() {
       buffer_arrays_.resize(buffer_starts_.size());
       for (std::size_t index = 0; index < buffer_starts_.size(); ++index) {
-        buffer_arrays_[index] = buffer_counts_[index] == 0
-          ? nullptr
-          : raw_buffers_.data() + buffer_starts_[index];
+        buffer_arrays_[index] = buffer_pointer(buffer_starts_[index], buffer_counts_[index]);
       }
+    }
+
+    uv_buf_t *buffer_pointer(std::size_t first, std::size_t count) noexcept {
+      return count == 0 ? nullptr : raw_buffers_.data() + first;
     }
 
     std::vector<uv_buf_t> raw_buffers_{};
