@@ -1,8 +1,8 @@
 # Future Features
 
-This page tracks features identified for uvpp `2.x` after the `2.1.0` release.
-These additions are intended to extend the library without changing the
-low-level contracts already published in `2.1.0`.
+This page tracks features identified for future uvpp v2 releases. These
+additions are intended to extend the library without changing the published
+low-level v2 contracts.
 
 ## Coroutines
 
@@ -12,9 +12,9 @@ low-level contracts already published in `2.1.0`.
 
 ## UDP Batch Builder
 
-`2.0.0` exposes `udp_send_many_view` and `udp::send_many_now()` as the low-level
+uvpp v2 exposes `udp_send_many_view` and `udp::send_many_now()` as the low-level
 shape for `uv_udp_try_send2()`. The low-level API stays allocation-free by
-requiring caller-provided libuv batch arrays. A future `2.x` release may add a
+requiring caller-provided libuv batch arrays. A future v2 release may add a
 fluent builder that owns the batch metadata while still borrowing payload
 buffers.
 
@@ -36,7 +36,7 @@ that payload bytes are copied or that asynchronous state is hidden.
 libuv provides cross-platform wrappers around OS threading and synchronization
 primitives. In a C++20 codebase `std::thread`, `std::mutex`, and related
 standard facilities cover most use cases, so these wrappers have lower
-priority. A future `2.x` release may expose them for callers that must stay
+priority. A future v2 release may expose them for callers that must stay
 within the libuv ecosystem.
 
 Planned scope: `uv_thread_t`, `uv_mutex_t`, `uv_rwlock_t`, `uv_sem_t`,
@@ -46,7 +46,7 @@ Planned scope: `uv_thread_t`, `uv_mutex_t`, `uv_rwlock_t`, `uv_sem_t`,
 
 libuv exposes a collection of cross-platform system information functions.
 These are lower priority than the async I/O surface but may be added in a
-future `2.x` release.
+future v2 release.
 
 Planned scope:
 

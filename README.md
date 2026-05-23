@@ -29,7 +29,7 @@ uvpp is a C++ API over libuv with explicit lifetime rules, typed callbacks, nati
 
 ## Status
 
-uvpp 2.1.0 is the current release. It covers the core loop, all main handle families, stream requests, UDP, DNS utilities, filesystem operations (`uv::fs` and `uv::fs::raw`), watchers, and process spawning. The current development branch also includes thread-pool work requests and random byte generation. Future additions are tracked in [Future features](docs/future.md).
+uvpp v2 covers the core loop, all main handle families, stream requests, UDP, DNS utilities, filesystem operations (`uv::fs` and `uv::fs::raw`), watchers, process spawning, thread-pool work requests, and random byte generation. Future additions are tracked in [Future features](docs/future.md).
 
 ## Requirements
 
@@ -284,12 +284,12 @@ make clean
 Create a local header-only package:
 
 ```sh
-make package VERSION=2.1.0
+make package VERSION=<version>
 ```
 
 This produces:
 
-- `dist/uvpp-2.1.0.tar.gz`
+- `dist/uvpp-<version>.tar.gz`
 - `dist/checksums.txt`
 
 The CI workflow runs the GCC and Clang suites on pull requests and on pushes to `main`. Branch pushes are intentionally not tested separately to avoid duplicating the same commit validation when a pull request is open.
@@ -301,7 +301,7 @@ Release assets:
 - `uvpp-<version>.tar.gz`
 - `checksums.txt`
 
-Versions containing a prerelease suffix such as `2.0.0-rc.1` are published as GitHub prereleases.
+Versions containing a prerelease suffix such as `<version>-rc.1` are published as GitHub prereleases.
 
 ## Documentation
 
