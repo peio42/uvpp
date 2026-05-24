@@ -11,3 +11,5 @@ These documents describe uvpp's API and implementation strategy. They are primar
 - [Ownership strategy](ownership-strategy.md): handle lifetime, request lifetime, buffers, user data, loop ownership, and deallocation rules.
 - [Request guide](request-guide.md): step-by-step checklist for adding a new request type (classes, overloads, tests, documentation).
 - [Thread safety](thread-safety.md): libuv threading model and cross-thread communication rules.
+- [Threading primitives strategy](threading-primitives.md): target API shape for libuv thread and synchronization primitive wrappers.
+- [v3 design notes](v3-notes.md): possible breaking-release cleanups and naming changes.

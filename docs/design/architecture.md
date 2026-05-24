@@ -51,6 +51,7 @@ docs/
   filesystem.md
   network.md
   process.md
+  threading.md
   design/
     architecture.md
     api-principles.md
@@ -61,6 +62,8 @@ docs/
     ownership-strategy.md
     request-guide.md
     thread-safety.md
+    threading-primitives.md
+    v3-notes.md
 include/uvpp/
   uv.hpp
   core/
@@ -104,6 +107,9 @@ include/uvpp/
     socket_address.hpp
   misc/
     random.hpp
+    system.hpp
+  threading/
+    primitives.hpp
   threadpool/
     work.hpp
   fs/
