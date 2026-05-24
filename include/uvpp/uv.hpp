@@ -22,6 +22,7 @@
 #include "uvpp/requests/work.hpp"
 #include "uvpp/requests/write.hpp"
 #include "uvpp/misc/random.hpp"
+#include "uvpp/misc/system.hpp"
 #include "uvpp/net/dns.hpp"
 #include "uvpp/threadpool/work.hpp"
 #include "uvpp/handles/handle.hpp"
