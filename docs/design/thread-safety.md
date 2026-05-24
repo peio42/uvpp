@@ -50,9 +50,9 @@ A future higher-level layer may provide synchronized queues, executor-style APIs
 
 ## Threading Primitives
 
-Future wrappers for libuv thread and synchronization primitives should
-synchronize application-owned state. They must not change the baseline rule that
-`loop`, handles, requests, callback slots, and `user_data` are not generally
+Wrappers for libuv thread and synchronization primitives synchronize
+application-owned state. They do not change the baseline rule that `loop`,
+handles, requests, callback slots, and `user_data` are not generally
 thread-safe.
 
 The design direction for those wrappers is recorded in

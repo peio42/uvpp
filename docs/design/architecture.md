@@ -51,6 +51,7 @@ docs/
   filesystem.md
   network.md
   process.md
+  threading.md
   design/
     architecture.md
     api-principles.md
@@ -106,6 +107,9 @@ include/uvpp/
     socket_address.hpp
   misc/
     random.hpp
+    system.hpp
+  threading/
+    primitives.hpp
   threadpool/
     work.hpp
   fs/

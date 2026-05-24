@@ -24,6 +24,7 @@
 #include "uvpp/misc/random.hpp"
 #include "uvpp/misc/system.hpp"
 #include "uvpp/net/dns.hpp"
+#include "uvpp/threading/primitives.hpp"
 #include "uvpp/threadpool/work.hpp"
 #include "uvpp/handles/handle.hpp"
 #include "uvpp/handles/async.hpp"

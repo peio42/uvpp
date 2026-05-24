@@ -1,6 +1,6 @@
 # Threading Primitives Strategy
 
-Status: design direction for a future v2 implementation.
+Status: design direction for the v2 implementation.
 
 This document records the intended shape for wrappers around libuv's threading
 and synchronization primitives. These wrappers should extend uvpp's low-level
@@ -8,7 +8,7 @@ libuv coverage without changing the existing event-loop and handle contracts.
 
 ## Scope
 
-The intended v2 scope is:
+The v2 scope is:
 
 - `uv_thread_t`;
 - `uv_mutex_t`;
@@ -89,11 +89,10 @@ catch it and apply the documented failure policy for this wrapper. A simple
 initial policy may be `std::terminate()`, matching the usual rule that
 uncaught exceptions escaping a thread function terminate the program.
 
-Callable-owning constructors may need to allocate state that is handed to the
-native thread entry point. That is acceptable when the constructor explicitly
-owns a thread operation, but it should be documented. If useful, provide a
-static-callback construction form later for callers that want to avoid runtime
-callable storage.
+Callable-owning constructors allocate state that is handed to the native thread
+entry point. That is acceptable because the constructor explicitly owns a
+thread operation. If useful, provide a static-callback construction form later
+for callers that want to avoid runtime callable storage.
 
 ## Mutexes And Locks
 
@@ -167,7 +166,7 @@ policy are clear.
 
 ## Documentation Requirements
 
-When these wrappers are implemented, add user-facing documentation explaining:
+User-facing documentation should explain:
 
 - that the primitives synchronize application state, not uvpp handles;
 - that loop, handle, request, callback-slot, and `user_data` thread-safety rules

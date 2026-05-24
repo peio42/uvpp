@@ -29,7 +29,7 @@ uvpp is a C++ API over libuv with explicit lifetime rules, typed callbacks, nati
 
 ## Status
 
-uvpp v2 covers the core loop, all main handle families, stream requests, UDP, DNS utilities, filesystem operations (`uv::fs` and `uv::fs::raw`), watchers, process spawning, thread-pool work requests, and random byte generation. Future additions are tracked in [Future features](docs/future.md).
+uvpp v2 covers the core loop, all main handle families, stream requests, UDP, DNS utilities, filesystem operations (`uv::fs` and `uv::fs::raw`), watchers, process spawning, libuv threading primitives, thread-pool work requests, and random byte generation. Future additions are tracked in [Future features](docs/future.md).
 
 ## Requirements
 
@@ -317,6 +317,7 @@ Versions containing a prerelease suffix such as `<version>-rc.1` are published a
 - [Network utilities](docs/network.md)
 - [Filesystem](docs/filesystem.md)
 - [Process](docs/process.md)
+- [Threading primitives](docs/threading.md)
 - [Future features](docs/future.md)
 
 Contributor design notes live under [docs/design](docs/design/).
