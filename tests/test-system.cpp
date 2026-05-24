@@ -114,7 +114,7 @@ TEST(Uvpp2System, sleepBlockingForAcceptsChronoDuration) {
 #if UVPP_HAS_SLEEP
   auto start = std::chrono::steady_clock::now();
   uv::sleep_blocking_for(std::chrono::milliseconds{1});
-  EXPECT_GE(std::chrono::steady_clock::now() - start, std::chrono::milliseconds{0});
+  EXPECT_GE(std::chrono::steady_clock::now() - start, std::chrono::milliseconds{1});
 #else
   GTEST_SKIP() << "uv_sleep is unavailable in this libuv version";
 #endif

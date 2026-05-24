@@ -258,10 +258,11 @@ namespace uv {
       std::memcpy(address.physical_address.data(), item.phys_addr, address.physical_address.size());
       address.internal = item.is_internal != 0;
 
-      if (item.address.address4.sin_family == AF_INET) {
+      const auto family = reinterpret_cast<const sockaddr*>(&item.address)->sa_family;
+      if (family == AF_INET) {
         address.address = detail::make_socket_address(item.address.address4);
         address.netmask = detail::make_socket_address(item.netmask.netmask4);
-      } else if (item.address.address4.sin_family == AF_INET6) {
+      } else if (family == AF_INET6) {
         address.address = detail::make_socket_address(item.address.address6);
         address.netmask = detail::make_socket_address(item.netmask.netmask6);
       }
@@ -339,13 +340,12 @@ namespace uv {
       return;
     }
 
-    const auto millis = ceil<milliseconds>(duration);
-    const auto max_millis = static_cast<milliseconds::rep>(std::numeric_limits<unsigned int>::max());
-    if (millis.count() > max_millis) {
+    constexpr auto max_allowed = milliseconds{std::numeric_limits<unsigned int>::max()};
+    if (duration > max_allowed) {
       throw std::length_error{"uv::sleep_blocking_for duration exceeds libuv limits"};
     }
 
-    uv_sleep(static_cast<unsigned int>(millis.count()));
+    uv_sleep(static_cast<unsigned int>(ceil<milliseconds>(duration).count()));
   }
 #endif
 
