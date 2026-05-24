@@ -2,6 +2,7 @@
 #include <mutex>
 #include <type_traits>
 
+#include "uvpp/core/version.hpp"
 #include "gtest/gtest.h"
 #include "uvpp/uv.hpp"
 
@@ -226,6 +227,7 @@ TEST(Uvpp2Threading, threadRunsAndJoins) {
   EXPECT_TRUE(ran.load());
 }
 
+#if UVPP_HAS_THREAD_DETACH
 TEST(Uvpp2Threading, threadCanDetachExplicitly) {
   uv::semaphore finished;
 
@@ -241,6 +243,7 @@ TEST(Uvpp2Threading, threadCanDetachExplicitly) {
 
   finished.wait();
 }
+#endif
 
 TEST(Uvpp2Threading, threadSelfCanBeCompared) {
   const auto current = uv::thread::self();

@@ -13,6 +13,7 @@
 
 #include "uvpp/core/callback.hpp"
 #include "uvpp/core/error.hpp"
+#include "uvpp/core/version.hpp"
 
 namespace uv {
 
@@ -433,6 +434,7 @@ namespace uv {
       joinable_ = false;
     }
 
+#if UVPP_HAS_THREAD_DETACH
     void detach() {
       if (!joinable_) {
         throw error(UV_EINVAL);
@@ -441,6 +443,7 @@ namespace uv {
       throw_if_error(uv_thread_detach(&raw_));
       joinable_ = false;
     }
+#endif
 
     static raw_type self() noexcept {
       return uv_thread_self();

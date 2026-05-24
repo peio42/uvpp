@@ -19,8 +19,11 @@ worker.join();
 ```
 
 The wrapper is non-copyable and non-movable. Like `std::thread`, destroying a
-joinable `uv::thread` calls `std::terminate()`. Call `join()` or `detach()`
-explicitly before the object is destroyed.
+joinable `uv::thread` calls `std::terminate()`. Call `join()` explicitly before
+the object is destroyed.
+
+When compiling against libuv 1.50.0 or newer, `UVPP_HAS_THREAD_DETACH` is true
+and `uv::thread::detach()` is also available.
 
 User callbacks are invoked behind uvpp's exception boundary. If a callback
 throws out of the thread entry point, uvpp terminates the program instead of

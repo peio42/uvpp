@@ -81,7 +81,8 @@ The intended model is deliberately close to `std::thread`:
 
 Do not join implicitly in the destructor. Blocking in a destructor hides a
 large lifetime decision and can deadlock user code. Do not detach implicitly
-either; detached execution should be an explicit API if uvpp exposes it.
+either. Detached execution is exposed only when compiling against libuv 1.50.0
+or newer, where `uv_thread_detach()` is available.
 
 The public callback shape should prevent exceptions from escaping through the
 native libuv thread entry point. If a user callback throws, the trampoline must
