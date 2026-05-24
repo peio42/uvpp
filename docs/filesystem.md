@@ -89,11 +89,16 @@ Public result objects are safe to keep after the callback returns.
 - `statfs_result`: contains a copied `uv_statfs_t`.
 - `scandir_result`: owns a vector of directory entries.
 
-All result types support `operator bool()` and `error_code()`.
+All result types support `operator bool()`, `status()`, `raw_status()`, and
+`error_code()`. `status()` returns `uv::result`; `raw_status()` returns `0` on
+success or the raw negative libuv status used for error-code conversion.
 
 `uv::fs` defines its own result types, distinct from those in `uv::fs::raw`, even though they share the same names. The `uv::fs` variants own their data and are safe to copy, store, or pass out of a callback. The `uv::fs::raw` variants may hold views into request-owned memory that expire when `req.cleanup()` is called.
 
-All result types also expose a `.raw()` accessor returning the raw `ssize_t` from libuv. It is only needed when `ok()` and `error_code()` are insufficient — for example to distinguish a zero-byte read from a genuine error when the result value carries semantic meaning beyond success/failure.
+All result types also expose a `.raw()` accessor returning the raw `ssize_t`
+from libuv. It is only needed when `ok()`, `status()`, and `error_code()` are
+insufficient — for example to distinguish a zero-byte read from a genuine error
+when the result value carries semantic meaning beyond success/failure.
 
 Operations such as `rename`, `mkdir`, `rmdir`, `access`, `chmod`, `fchmod`,
 `chown`, `fchown`, `lchown`, `utime`, `futime`, `lutime`, `fsync`,

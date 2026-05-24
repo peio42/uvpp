@@ -1,10 +1,12 @@
 #include <array>
 #include <algorithm>
+#include <concepts>
 #include <cstring>
 #include <filesystem>
 #include <fstream>
 #include <span>
 #include <string>
+#include <system_error>
 #include <vector>
 #include <unistd.h>
 #include <fcntl.h>
@@ -41,6 +43,14 @@ struct static_status_state {
 };
 
 static_status_state *current_static_status = nullptr;
+
+template<class Result>
+concept fs_result_status_contract = requires(const Result &result) {
+  { result.ok() } -> std::same_as<bool>;
+  { result.status() } -> std::same_as<uv::result>;
+  { result.raw_status() } -> std::same_as<int>;
+  { result.error_code() } -> std::same_as<std::error_code>;
+};
 
 void on_static_fs_close(uv::fs::raw::request &request, uv::fs::raw::status_result result) {
   auto cleanup = request.scoped_cleanup();
@@ -198,6 +208,47 @@ TEST(Uvpp2Fs, reportsOpenMissingFile) {
   loop.run();
   EXPECT_TRUE(done);
   loop.close();
+}
+
+TEST(Uvpp2Fs, resultTypesExposeCommonStatusInterface) {
+  static_assert(fs_result_status_contract<uv::fs::raw::status_result>);
+  static_assert(fs_result_status_contract<uv::fs::raw::open_result>);
+  static_assert(fs_result_status_contract<uv::fs::raw::byte_count_result>);
+  static_assert(fs_result_status_contract<uv::fs::raw::stat_result>);
+  static_assert(fs_result_status_contract<uv::fs::raw::path_result>);
+  static_assert(fs_result_status_contract<uv::fs::raw::temp_file_result>);
+  static_assert(fs_result_status_contract<uv::fs::raw::statfs_result>);
+  static_assert(fs_result_status_contract<uv::fs::raw::scandir_result>);
+  static_assert(fs_result_status_contract<uv::fs::raw::opendir_result>);
+  static_assert(fs_result_status_contract<uv::fs::raw::readdir_result>);
+
+  static_assert(fs_result_status_contract<uv::fs::status_result>);
+  static_assert(fs_result_status_contract<uv::fs::open_result>);
+  static_assert(fs_result_status_contract<uv::fs::byte_count_result>);
+  static_assert(fs_result_status_contract<uv::fs::read_result>);
+  static_assert(fs_result_status_contract<uv::fs::stat_result>);
+  static_assert(fs_result_status_contract<uv::fs::path_result>);
+  static_assert(fs_result_status_contract<uv::fs::temp_file_result>);
+  static_assert(fs_result_status_contract<uv::fs::statfs_result>);
+  static_assert(fs_result_status_contract<uv::fs::scandir_result>);
+
+  uv::fs::raw::status_result failed{UV_ENOENT};
+  EXPECT_FALSE(failed.status());
+  EXPECT_EQ(failed.status().status(), UV_ENOENT);
+  EXPECT_EQ(failed.raw_status(), UV_ENOENT);
+  EXPECT_EQ(failed.error_code(), uv::make_error_code(UV_ENOENT));
+
+  uv::fs::open_result opened{7};
+  EXPECT_TRUE(opened.status());
+  EXPECT_EQ(opened.status().status(), 0);
+  EXPECT_EQ(opened.raw(), 7);
+  EXPECT_EQ(opened.raw_status(), 0);
+
+  uv::fs::status_result ok{0};
+  EXPECT_TRUE(ok.status());
+  EXPECT_EQ(ok.status().status(), 0);
+  EXPECT_EQ(ok.raw_status(), 0);
+  EXPECT_FALSE(ok.error_code());
 }
 
 TEST(Uvpp2Fs, unlinksFile) {

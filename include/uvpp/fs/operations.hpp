@@ -1262,8 +1262,9 @@ namespace uv::fs {
     bool ok() const noexcept { return result_ >= 0; }
     explicit operator bool() const noexcept { return ok(); }
     ssize_t raw() const noexcept { return result_; }
-    int status() const noexcept { return static_cast<int>(result_); }
-    std::error_code error_code() const noexcept { return make_error_code(status()); }
+    ::uv::result status() const noexcept { return ::uv::result{raw_status()}; }
+    int raw_status() const noexcept { return result_ < 0 ? static_cast<int>(result_) : 0; }
+    std::error_code error_code() const noexcept { return make_error_code(raw_status()); }
 
   private:
     ssize_t result_ = 0;
@@ -1276,7 +1277,9 @@ namespace uv::fs {
     bool ok() const noexcept { return result_ >= 0; }
     explicit operator bool() const noexcept { return ok(); }
     ssize_t raw() const noexcept { return result_; }
-    std::error_code error_code() const noexcept { return make_error_code(static_cast<int>(result_)); }
+    ::uv::result status() const noexcept { return ::uv::result{raw_status()}; }
+    int raw_status() const noexcept { return result_ < 0 ? static_cast<int>(result_) : 0; }
+    std::error_code error_code() const noexcept { return make_error_code(raw_status()); }
 
     file_descriptor file() const noexcept {
       return ok() ? file_descriptor{static_cast<uv_file>(result_)} : file_descriptor{};
@@ -1293,7 +1296,9 @@ namespace uv::fs {
     bool ok() const noexcept { return result_ >= 0; }
     explicit operator bool() const noexcept { return ok(); }
     ssize_t raw() const noexcept { return result_; }
-    std::error_code error_code() const noexcept { return make_error_code(static_cast<int>(result_)); }
+    ::uv::result status() const noexcept { return ::uv::result{raw_status()}; }
+    int raw_status() const noexcept { return result_ < 0 ? static_cast<int>(result_) : 0; }
+    std::error_code error_code() const noexcept { return make_error_code(raw_status()); }
 
     std::size_t count() const noexcept {
       return ok() ? static_cast<std::size_t>(result_) : 0;
@@ -1311,7 +1316,9 @@ namespace uv::fs {
     bool ok() const noexcept { return result_ >= 0; }
     explicit operator bool() const noexcept { return ok(); }
     ssize_t raw() const noexcept { return result_; }
-    std::error_code error_code() const noexcept { return make_error_code(static_cast<int>(result_)); }
+    ::uv::result status() const noexcept { return ::uv::result{raw_status()}; }
+    int raw_status() const noexcept { return result_ < 0 ? static_cast<int>(result_) : 0; }
+    std::error_code error_code() const noexcept { return make_error_code(raw_status()); }
 
     std::size_t count() const noexcept {
       return ok() ? static_cast<std::size_t>(result_) : 0;
@@ -1345,7 +1352,9 @@ namespace uv::fs {
     bool ok() const noexcept { return result_ >= 0; }
     explicit operator bool() const noexcept { return ok(); }
     ssize_t raw() const noexcept { return result_; }
-    std::error_code error_code() const noexcept { return make_error_code(static_cast<int>(result_)); }
+    ::uv::result status() const noexcept { return ::uv::result{raw_status()}; }
+    int raw_status() const noexcept { return result_ < 0 ? static_cast<int>(result_) : 0; }
+    std::error_code error_code() const noexcept { return make_error_code(raw_status()); }
     const uv_stat_t &native() const noexcept { return stat_; }
 
   private:
@@ -1360,7 +1369,9 @@ namespace uv::fs {
     bool ok() const noexcept { return result_ >= 0; }
     explicit operator bool() const noexcept { return ok(); }
     ssize_t raw() const noexcept { return result_; }
-    std::error_code error_code() const noexcept { return make_error_code(static_cast<int>(result_)); }
+    ::uv::result status() const noexcept { return ::uv::result{raw_status()}; }
+    int raw_status() const noexcept { return result_ < 0 ? static_cast<int>(result_) : 0; }
+    std::error_code error_code() const noexcept { return make_error_code(raw_status()); }
     std::string_view path() const noexcept { return path_; }
     std::string take_path() { return std::move(path_); }
 
@@ -1376,7 +1387,9 @@ namespace uv::fs {
     bool ok() const noexcept { return result_ >= 0; }
     explicit operator bool() const noexcept { return ok(); }
     ssize_t raw() const noexcept { return result_; }
-    std::error_code error_code() const noexcept { return make_error_code(static_cast<int>(result_)); }
+    ::uv::result status() const noexcept { return ::uv::result{raw_status()}; }
+    int raw_status() const noexcept { return result_ < 0 ? static_cast<int>(result_) : 0; }
+    std::error_code error_code() const noexcept { return make_error_code(raw_status()); }
 
     file_descriptor file() const noexcept {
       return ok() ? file_descriptor{static_cast<uv_file>(result_)} : file_descriptor{};
@@ -1401,7 +1414,9 @@ namespace uv::fs {
     bool ok() const noexcept { return result_ >= 0; }
     explicit operator bool() const noexcept { return ok(); }
     ssize_t raw() const noexcept { return result_; }
-    std::error_code error_code() const noexcept { return make_error_code(static_cast<int>(result_)); }
+    ::uv::result status() const noexcept { return ::uv::result{raw_status()}; }
+    int raw_status() const noexcept { return result_ < 0 ? static_cast<int>(result_) : 0; }
+    std::error_code error_code() const noexcept { return make_error_code(raw_status()); }
     const uv_statfs_t &native() const noexcept { return statfs_; }
 
   private:
@@ -1422,7 +1437,9 @@ namespace uv::fs {
     bool ok() const noexcept { return result_ >= 0; }
     explicit operator bool() const noexcept { return ok(); }
     ssize_t raw() const noexcept { return result_; }
-    std::error_code error_code() const noexcept { return make_error_code(static_cast<int>(result_)); }
+    ::uv::result status() const noexcept { return ::uv::result{raw_status()}; }
+    int raw_status() const noexcept { return result_ < 0 ? static_cast<int>(result_) : 0; }
+    std::error_code error_code() const noexcept { return make_error_code(raw_status()); }
 
     std::span<const directory_entry> entries() const noexcept {
       return entries_;
