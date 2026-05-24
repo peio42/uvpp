@@ -61,6 +61,8 @@ docs/
     ownership-strategy.md
     request-guide.md
     thread-safety.md
+    threading-primitives.md
+    v3-notes.md
 include/uvpp/
   uv.hpp
   core/

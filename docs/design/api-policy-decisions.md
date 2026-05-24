@@ -21,6 +21,15 @@ std::error_code close_error = loop.try_close();
 Do not use `try_*` just because the underlying libuv function contains `try` in
 its name.
 
+Synchronization primitives are an exception to this naming rule when they use
+standard C++ lock vocabulary. For example, `uv::mutex::try_lock()` should mean
+"attempt to acquire the lock without blocking" and return `bool`, so that
+standard utilities such as `std::unique_lock` can use it. Do not use
+`try_lock()` to mean "non-throwing lock API that returns `std::error_code`".
+
+A future breaking release may revisit the general non-throwing naming
+convention. See [v3 design notes](v3-notes.md).
+
 ## Immediate Non-Blocking Operations
 
 When libuv exposes a synchronous "try now" operation, name the uvpp wrapper
