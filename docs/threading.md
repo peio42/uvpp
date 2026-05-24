@@ -78,6 +78,10 @@ The non-blocking variants are `try_lock_read()` and `try_lock_write()`.
 `wait_for(mutex, duration)`. Timed waits use `std::chrono` durations and return
 `false` on timeout.
 
+The passed `uv::mutex` must be locked when calling `wait()` or `wait_for()`.
+These waits may wake spuriously, so callers should re-check their predicate
+after every wakeup.
+
 `uv::barrier::wait()` returns `uv::barrier_wait_result::passed` or
 `uv::barrier_wait_result::serial_thread`.
 

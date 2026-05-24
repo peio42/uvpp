@@ -5,6 +5,7 @@
 #include <cstdint>
 #include <exception>
 #include <functional>
+#include <limits>
 #include <memory>
 #include <type_traits>
 #include <utility>
@@ -255,8 +256,20 @@ namespace uv {
   private:
     template<class Rep, class Period>
     static uint64_t nanoseconds(std::chrono::duration<Rep, Period> timeout) noexcept {
-      const auto ns = std::chrono::duration_cast<std::chrono::nanoseconds>(timeout).count();
-      return ns >= 0 ? static_cast<uint64_t>(ns) : uint64_t{0};
+      using duration_type = std::chrono::duration<long double, Period>;
+      using nanosecond_type = std::chrono::duration<long double, std::nano>;
+
+      const auto ns = std::chrono::duration_cast<nanosecond_type>(duration_type{timeout}).count();
+      if (ns <= 0) {
+        return 0;
+      }
+
+      constexpr auto max = static_cast<long double>(std::numeric_limits<uint64_t>::max());
+      if (ns >= max) {
+        return std::numeric_limits<uint64_t>::max();
+      }
+
+      return static_cast<uint64_t>(ns);
     }
 
     raw_type raw_{};
@@ -366,7 +379,7 @@ namespace uv {
     raw_type *native() noexcept { return &raw_; }
     const raw_type *native() const noexcept { return &raw_; }
 
-    void run(void (*callback)()) noexcept {
+    void run(void (*callback)() noexcept) noexcept {
       uv_once(&raw_, callback);
     }
 

@@ -1,4 +1,5 @@
 #include <atomic>
+#include <chrono>
 #include <mutex>
 #include <type_traits>
 
@@ -10,7 +11,7 @@ namespace {
 
 std::atomic<int> *once_counter = nullptr;
 
-void increment_once_counter() {
+void increment_once_counter() noexcept {
   once_counter->fetch_add(1);
 }
 
