@@ -37,4 +37,5 @@ Planned scope:
   `uv_get_free_memory`, `uv_available_parallelism`, `uv_resident_set_memory`
 - **Directories and paths**: `uv_os_tmpdir`, `uv_os_homedir`, `uv_cwd`,
   `uv_chdir`, `uv_exepath`
-- **Misc**: `uv_sleep`
+- **Misc**: `uv_sleep` as an explicitly blocking helper, not as an event-loop
+  delay primitive.
