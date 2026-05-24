@@ -83,6 +83,22 @@ auto bytes = result.bytes_written();
 Expose raw status for interop when useful, but avoid forcing callers to decode
 libuv sentinel values for common control flow.
 
+## Blocking Operations
+
+When libuv exposes a synchronous operation that blocks the current thread, make
+that behavior explicit in the uvpp name unless the blocking semantics are
+already obvious from the domain.
+
+`uv_sleep()` is the main naming-sensitive case. A wrapper for it should not be
+named `sleep_for`, because `sleep_for(loop, ...)` is reserved for a future
+event-loop-friendly coroutine/timer helper. Prefer a name such as
+`sleep_blocking_for(duration)` for the `uv_sleep()` wrapper.
+
+Document that blocking helpers stop the current thread from running callbacks.
+Calling them on the same thread that is expected to call `loop.run()` prevents
+that loop from dispatching timers, I/O, and other events until the blocking call
+returns.
+
 ## Borrowed Views
 
 Borrowed views must be produced by named functions, not implicit conversion

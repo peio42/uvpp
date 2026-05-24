@@ -397,6 +397,11 @@ co_await uv::sleep_for(loop, 100ms);
 co_await uv::sleep_until(loop, deadline);
 ```
 
+This coroutine sleep must be event-loop based, normally via `uv_timer_t`. It
+must not be implemented with `uv_sleep()`: `uv_sleep()` blocks the current
+thread, just like `std::this_thread::sleep_for()`, and would prevent
+`loop.run()` from dispatching other events on that thread while sleeping.
+
 The awaitable may own an internal timer handle. Because handles are
 address-stable and close asynchronously, the implementation must keep the timer
 alive until its close callback has run or document a different explicit owner.
@@ -475,4 +480,3 @@ When coroutine support is implemented, user documentation must explain:
 
 Examples should include both filesystem and networking code. Do not publish a
 filesystem-only coroutine story as the final design.
-
