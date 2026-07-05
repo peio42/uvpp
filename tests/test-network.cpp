@@ -1,6 +1,7 @@
 #include <netdb.h>
 #include <string>
 #include <type_traits>
+#include <vector>
 
 #include "gtest/gtest.h"
 #include "uvpp/uv.hpp"
@@ -52,6 +53,69 @@ TEST(Uvpp2Network, resolvesAddressInfo) {
   loop.close();
 }
 
+TEST(Uvpp2Network, getaddrinfoCancelAfterCompletionFails) {
+  uv::loop loop;
+  uv::getaddrinfo_request request;
+
+  uv::getaddrinfo(loop, request, "localhost", "80",
+    [](uv::getaddrinfo_request &, uv::getaddrinfo_result) {});
+
+  loop.run();
+
+  EXPECT_THROW(request.cancel(), uv::error);
+  auto ec = request.try_cancel();
+  ASSERT_TRUE(ec);
+  EXPECT_EQ(ec.value(), UV_EBUSY);
+
+  loop.close();
+}
+
+TEST(Uvpp2Network, getaddrinfoCopiesAddressInfoValues) {
+  uv::loop loop;
+  uv::getaddrinfo_request request;
+
+  addrinfo hints{};
+  hints.ai_family = AF_INET;
+  hints.ai_socktype = SOCK_STREAM;
+
+  std::vector<uv::address_info> copied;
+  bool called = false;
+
+  uv::getaddrinfo(loop, request, "localhost", "80", &hints,
+    [&](uv::getaddrinfo_request &, uv::getaddrinfo_result result) {
+      called = true;
+
+      ASSERT_TRUE(result);
+
+      auto first = result.begin();
+      ASSERT_NE(first, result.end());
+
+      uv::address_info entry = (*first).to_value();
+      EXPECT_EQ(entry.family, AF_INET);
+      EXPECT_EQ(entry.socket_type, SOCK_STREAM);
+      EXPECT_GT(entry.address_length, 0u);
+      EXPECT_TRUE(entry.address.is_v4());
+      EXPECT_EQ(entry.address.port(), 80);
+
+      copied = result.to_vector();
+    });
+
+  loop.run();
+
+  EXPECT_TRUE(called);
+  ASSERT_FALSE(copied.empty());
+
+  for (const auto &entry : copied) {
+    EXPECT_EQ(entry.family, AF_INET);
+    EXPECT_EQ(entry.socket_type, SOCK_STREAM);
+    EXPECT_GT(entry.address_length, 0u);
+    EXPECT_TRUE(entry.address.is_v4());
+    EXPECT_EQ(entry.address.port(), 80);
+  }
+
+  loop.close();
+}
+
 TEST(Uvpp2Network, resolvesNameInfo) {
   uv::loop loop;
   uv::getnameinfo_request request;
@@ -73,6 +137,24 @@ TEST(Uvpp2Network, resolvesNameInfo) {
   loop.run();
 
   EXPECT_TRUE(called);
+  loop.close();
+}
+
+TEST(Uvpp2Network, getnameinfoCancelAfterCompletionFails) {
+  uv::loop loop;
+  uv::getnameinfo_request request;
+  uv::ipv4 address{"127.0.0.1", 443};
+
+  uv::getnameinfo(loop, request, address, NI_NUMERICHOST | NI_NUMERICSERV,
+    [](uv::getnameinfo_request &, uv::getnameinfo_result) {});
+
+  loop.run();
+
+  EXPECT_THROW(request.cancel(), uv::error);
+  auto ec = request.try_cancel();
+  ASSERT_TRUE(ec);
+  EXPECT_EQ(ec.value(), UV_EBUSY);
+
   loop.close();
 }
 

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <algorithm>
 #include <cstddef>
 #include <cstring>
 #include <functional>
@@ -7,15 +8,46 @@
 #include <optional>
 #include <string>
 #include <string_view>
+#include <system_error>
 #include <utility>
+#include <vector>
 
 #include <uv.h>
 
 #include "uvpp/core/callback.hpp"
 #include "uvpp/core/error.hpp"
+#include "uvpp/net/socket_address.hpp"
 #include "uvpp/requests/request.hpp"
 
 namespace uv {
+
+  struct address_info {
+    int flags = 0;
+    int family = 0;
+    int socket_type = 0;
+    int protocol = 0;
+    std::size_t address_length = 0;
+    socket_address address;
+    std::string canonical_name;
+  };
+
+  namespace detail {
+
+    inline socket_address copy_socket_address(const sockaddr *address, std::size_t length) noexcept {
+      socket_address out;
+      *out.native_len() = 0;
+
+      if (!address || length == 0) {
+        return out;
+      }
+
+      const auto bounded = std::min(length, sizeof(sockaddr_storage));
+      std::memcpy(out.native(), address, bounded);
+      *out.native_len() = static_cast<int>(bounded);
+      return out;
+    }
+
+  }
 
   class addrinfo_view {
   public:
@@ -34,6 +66,23 @@ namespace uv {
     const sockaddr *address() const noexcept { return raw_ ? raw_->ai_addr : nullptr; }
     std::string_view canonical_name() const noexcept {
       return raw_ && raw_->ai_canonname ? std::string_view{raw_->ai_canonname} : std::string_view{};
+    }
+
+    address_info to_value() const {
+      address_info out;
+
+      if (!raw_) {
+        return out;
+      }
+
+      out.flags = raw_->ai_flags;
+      out.family = raw_->ai_family;
+      out.socket_type = raw_->ai_socktype;
+      out.protocol = raw_->ai_protocol;
+      out.address_length = address_length();
+      out.address = detail::copy_socket_address(raw_->ai_addr, out.address_length);
+      out.canonical_name = raw_->ai_canonname ? raw_->ai_canonname : "";
+      return out;
     }
 
   private:
@@ -113,6 +162,16 @@ namespace uv {
     addrinfo_iterator begin() const noexcept { return addrinfo_iterator{addresses_}; }
     addrinfo_iterator end() const noexcept { return addrinfo_iterator{}; }
 
+    std::vector<address_info> to_vector() const {
+      std::vector<address_info> out;
+
+      for (addrinfo_view entry : *this) {
+        out.push_back(entry.to_value());
+      }
+
+      return out;
+    }
+
     void reset(addrinfo *addresses = nullptr) noexcept {
       if (addresses_) {
         uv_freeaddrinfo(addresses_);
@@ -154,6 +213,14 @@ namespace uv {
 
     void set_callback(callback cb) {
       callback_ = std::move(cb);
+    }
+
+    void cancel() {
+      throw_if_error(uv_cancel(native_request()));
+    }
+
+    std::error_code try_cancel() noexcept {
+      return make_error_code(uv_cancel(native_request()));
     }
 
     void set_inputs(std::optional<std::string_view> node, std::optional<std::string_view> service,
@@ -204,6 +271,14 @@ namespace uv {
 
     void set_callback(callback cb) {
       callback_ = std::move(cb);
+    }
+
+    void cancel() {
+      throw_if_error(uv_cancel(native_request()));
+    }
+
+    std::error_code try_cancel() noexcept {
+      return make_error_code(uv_cancel(native_request()));
     }
 
     void set_address(const sockaddr *addr) noexcept {

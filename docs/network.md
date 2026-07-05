@@ -39,6 +39,29 @@ loop.close();
 `uv_freeaddrinfo()` when the result is destroyed. Copy any address information
 that must outlive the callback result object.
 
+Use `addrinfo_view::to_value()` to copy one entry, or
+`getaddrinfo_result::to_vector()` to copy the whole result into independent
+`address_info` values.
+
+```cpp
+std::vector<uv::address_info> addresses;
+
+uv::getaddrinfo(loop, request, "localhost", "80",
+  [&](uv::getaddrinfo_request&, uv::getaddrinfo_result result) {
+    if (!result) {
+      return;
+    }
+
+    addresses = result.to_vector();
+  });
+```
+
+`getaddrinfo_request::cancel()` and `getnameinfo_request::cancel()` request
+libuv cancellation and throw `uv::error` if libuv cannot cancel the request.
+The `try_cancel()` variants return `std::error_code` instead. A successfully
+canceled DNS request still completes asynchronously; keep the request alive
+until its callback reports the final status.
+
 Either node or service may be omitted with `nullptr`, matching libuv's native
 contract.
 
