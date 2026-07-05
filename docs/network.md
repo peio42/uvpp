@@ -39,6 +39,12 @@ loop.close();
 `uv_freeaddrinfo()` when the result is destroyed. Copy any address information
 that must outlive the callback result object.
 
+`getaddrinfo_request::cancel()` and `getnameinfo_request::cancel()` request
+libuv cancellation and throw `uv::error` if libuv cannot cancel the request.
+The `try_cancel()` variants return `std::error_code` instead. A successfully
+canceled DNS request still completes asynchronously; keep the request alive
+until its callback reports the final status.
+
 Either node or service may be omitted with `nullptr`, matching libuv's native
 contract.
 

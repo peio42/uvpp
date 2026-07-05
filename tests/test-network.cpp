@@ -52,6 +52,23 @@ TEST(Uvpp2Network, resolvesAddressInfo) {
   loop.close();
 }
 
+TEST(Uvpp2Network, getaddrinfoCancelAfterCompletionFails) {
+  uv::loop loop;
+  uv::getaddrinfo_request request;
+
+  uv::getaddrinfo(loop, request, "localhost", "80",
+    [](uv::getaddrinfo_request &, uv::getaddrinfo_result) {});
+
+  loop.run();
+
+  EXPECT_THROW(request.cancel(), uv::error);
+  auto ec = request.try_cancel();
+  ASSERT_TRUE(ec);
+  EXPECT_EQ(ec.value(), UV_EBUSY);
+
+  loop.close();
+}
+
 TEST(Uvpp2Network, resolvesNameInfo) {
   uv::loop loop;
   uv::getnameinfo_request request;
@@ -73,6 +90,24 @@ TEST(Uvpp2Network, resolvesNameInfo) {
   loop.run();
 
   EXPECT_TRUE(called);
+  loop.close();
+}
+
+TEST(Uvpp2Network, getnameinfoCancelAfterCompletionFails) {
+  uv::loop loop;
+  uv::getnameinfo_request request;
+  uv::ipv4 address{"127.0.0.1", 443};
+
+  uv::getnameinfo(loop, request, address, NI_NUMERICHOST | NI_NUMERICSERV,
+    [](uv::getnameinfo_request &, uv::getnameinfo_result) {});
+
+  loop.run();
+
+  EXPECT_THROW(request.cancel(), uv::error);
+  auto ec = request.try_cancel();
+  ASSERT_TRUE(ec);
+  EXPECT_EQ(ec.value(), UV_EBUSY);
+
   loop.close();
 }
 

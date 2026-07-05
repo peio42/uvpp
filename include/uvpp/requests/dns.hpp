@@ -7,6 +7,7 @@
 #include <optional>
 #include <string>
 #include <string_view>
+#include <system_error>
 #include <utility>
 
 #include <uv.h>
@@ -156,6 +157,14 @@ namespace uv {
       callback_ = std::move(cb);
     }
 
+    void cancel() {
+      throw_if_error(uv_cancel(native_request()));
+    }
+
+    std::error_code try_cancel() noexcept {
+      return make_error_code(uv_cancel(native_request()));
+    }
+
     void set_inputs(std::optional<std::string_view> node, std::optional<std::string_view> service,
                     const addrinfo *hints) {
       node_ = node ? std::optional<std::string>{std::string{*node}} : std::nullopt;
@@ -204,6 +213,14 @@ namespace uv {
 
     void set_callback(callback cb) {
       callback_ = std::move(cb);
+    }
+
+    void cancel() {
+      throw_if_error(uv_cancel(native_request()));
+    }
+
+    std::error_code try_cancel() noexcept {
+      return make_error_code(uv_cancel(native_request()));
     }
 
     void set_address(const sockaddr *addr) noexcept {
