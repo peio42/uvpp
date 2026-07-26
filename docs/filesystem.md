@@ -7,6 +7,26 @@ The filesystem API is split into two layers:
 
 This split keeps the public API aligned with the rest of v2: lifetime rules are encoded by default, while the low-level layer remains available when the caller wants exact libuv control or zero-extra-copy behavior.
 
+## `std::filesystem::path` Interoperability
+
+Use `uv::fs::path_argument()` when an application holds a
+`std::filesystem::path` and needs to submit it to a libuv filesystem
+operation:
+
+```cpp
+std::filesystem::path path = "assets/logo.svg";
+uv::fs::stat(loop, uv::fs::path_argument(path), callback);
+```
+
+The function returns an owned string. On Windows it converts the native wide
+path to UTF-8, which is the path encoding expected by libuv. On POSIX it
+preserves the native byte representation: filesystem names there are not
+necessarily valid UTF-8.
+
+It rejects embedded NUL characters. It performs no filesystem access,
+normalization, canonicalization, or security validation; callers remain
+responsible for those concerns.
+
 ## Choosing a Layer
 
 Use `uv::fs` by default. Switch to `uv::fs::raw` only when you need one of the following:

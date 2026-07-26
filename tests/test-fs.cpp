@@ -91,6 +91,18 @@ std::string read_text_file(const std::filesystem::path &path) {
 
 }
 
+TEST(Uvpp2FsPath, ConvertsFilesystemPathToLibuvArgument) {
+  const std::filesystem::path path{u8"assets/r\u00e9sum\u00e9.txt"};
+
+  EXPECT_EQ(uv::fs::path_argument(path), "assets/r\xc3\xa9sum\xc3\xa9.txt");
+}
+
+TEST(Uvpp2FsPath, RejectsEmbeddedNul) {
+  const std::filesystem::path path{std::string{"prefix\0suffix", 13}};
+
+  EXPECT_THROW((void)uv::fs::path_argument(path), std::invalid_argument);
+}
+
 TEST(Uvpp2Fs, opensWritesReadsClosesAndReusesRequest) {
   auto path = temp_path("read-write.txt");
   std::filesystem::remove(path);
