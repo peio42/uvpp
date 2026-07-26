@@ -242,6 +242,34 @@ TEST(Uvpp2FsSafe, statResultExposesPortableFileStatus) {
   std::filesystem::remove(path);
 }
 
+TEST(Uvpp2FsSafe, failedStatResultLeavesPortableFileStatusEmpty) {
+  auto path = temp_path("safe-missing-status.txt");
+  std::filesystem::remove(path);
+
+  uv::loop loop;
+  bool done = false;
+
+  uv::fs::stat(loop, path.string(), [&](uv::fs::stat_result result) {
+    EXPECT_FALSE(result);
+    EXPECT_EQ(result.error_code(), uv::make_error_code(UV_ENOENT));
+
+    const auto &status = result.file_status();
+    EXPECT_EQ(status.type(), uv::fs::file_type::none);
+    EXPECT_EQ(status.size(), 0u);
+    EXPECT_EQ(status.raw_permissions(), 0u);
+    EXPECT_FALSE(status.is_regular());
+    EXPECT_FALSE(status.is_directory());
+    EXPECT_FALSE(status.is_symlink());
+
+    done = true;
+  });
+
+  loop.run();
+
+  EXPECT_TRUE(done);
+  loop.close();
+}
+
 TEST(Uvpp2Fs, reportsOpenMissingFile) {
   auto path = temp_path("missing.txt");
   std::filesystem::remove(path);

@@ -2,6 +2,7 @@
 
 #include <chrono>
 #include <cstdint>
+#include <sys/stat.h>
 
 #include <uv.h>
 

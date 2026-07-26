@@ -1345,7 +1345,7 @@ namespace uv::fs {
   class stat_result {
   public:
     stat_result(ssize_t result, const uv_stat_t *stat) noexcept : result_{result} {
-      if (stat) {
+      if (result_ >= 0 && stat) {
         stat_ = *stat;
         file_status_ = ::uv::fs::file_status{*stat};
       }
