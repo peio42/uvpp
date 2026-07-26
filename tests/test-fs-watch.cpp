@@ -34,7 +34,11 @@ void on_static_fs_poll(uv::fs_poll &poll, uv::fs_poll_result result) {
   ASSERT_NE(result.previous(), nullptr);
   ASSERT_NE(result.current(), nullptr);
 
-  if (result.current()->st_size != result.previous()->st_size) {
+  const auto previous = result.previous_status();
+  const auto current = result.current_status();
+
+  if (current.size() != previous.size()) {
+    EXPECT_TRUE(current.is_regular());
     current_static_poll->changed = true;
     poll.stop();
     poll.close();
@@ -107,7 +111,12 @@ TEST(Uvpp2FsPoll, reportsFileChanges) {
     ASSERT_NE(result.previous(), nullptr);
     ASSERT_NE(result.current(), nullptr);
 
-    if (result.current()->st_size != result.previous()->st_size) {
+    const auto previous = result.previous_status();
+    const auto current = result.current_status();
+
+    if (current.size() != previous.size()) {
+      EXPECT_TRUE(current.is_regular());
+      EXPECT_GT(current.modification_time().time_since_epoch().count(), 0);
       changed = true;
       self.stop();
       self.close();

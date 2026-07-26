@@ -1,5 +1,6 @@
 #include <array>
 #include <algorithm>
+#include <chrono>
 #include <concepts>
 #include <cstring>
 #include <filesystem>
@@ -183,6 +184,46 @@ TEST(Uvpp2Fs, statsFile) {
   });
 
   loop.run();
+  EXPECT_TRUE(done);
+  loop.close();
+
+  std::filesystem::remove(path);
+}
+
+TEST(Uvpp2FsSafe, statResultExposesPortableFileStatus) {
+  auto path = temp_path("safe-status.txt");
+  std::filesystem::remove(path);
+  {
+    std::ofstream file{path};
+    file << "stat";
+  }
+  ASSERT_EQ(::chmod(path.c_str(), 0640), 0);
+
+  uv::loop loop;
+  bool done = false;
+
+  uv::fs::stat(loop, path.string(), [&](uv::fs::stat_result result) {
+    ASSERT_TRUE(result);
+
+    const auto &status = result.file_status();
+    EXPECT_EQ(status.type(), uv::fs::file_type::regular);
+    EXPECT_TRUE(status.is_regular());
+    EXPECT_FALSE(status.is_directory());
+    EXPECT_FALSE(status.is_symlink());
+    EXPECT_EQ(status.size(), 4u);
+    EXPECT_EQ(status.raw_permissions() & 0777u, 0640u);
+    EXPECT_TRUE(status.has_permission(uv::fs::file_permission::owner_read));
+    EXPECT_TRUE(status.has_permission(uv::fs::file_permission::owner_write));
+    EXPECT_TRUE(status.has_permission(uv::fs::file_permission::group_read));
+    EXPECT_FALSE(status.has_permission(uv::fs::file_permission::others_read));
+    EXPECT_GT(status.modification_time().time_since_epoch().count(), 0);
+
+    EXPECT_EQ(result.native().st_size, 4);
+    done = true;
+  });
+
+  loop.run();
+
   EXPECT_TRUE(done);
   loop.close();
 

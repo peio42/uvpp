@@ -83,7 +83,8 @@ Public result objects are safe to keep after the callback returns.
 - `status_result`: used by operations that only report success or failure.
 - `byte_count_result`: used by `write` and `sendfile`.
 - `read_result`: owns the read buffer and exposes `bytes()`.
-- `stat_result`: contains a copied `uv_stat_t`.
+- `stat_result`: contains a portable `file_status` and a copied `uv_stat_t`
+  for native interop.
 - `path_result`: owns the returned path string.
 - `temp_file_result`: owns the generated path and returns the created file descriptor.
 - `statfs_result`: contains a copied `uv_statfs_t`.
@@ -104,6 +105,27 @@ Operations such as `rename`, `mkdir`, `rmdir`, `access`, `chmod`, `fchmod`,
 `chown`, `fchown`, `lchown`, `utime`, `futime`, `lutime`, `fsync`,
 `fdatasync`, `ftruncate`, `link`, and `symlink` return `status_result`.
 `fstat` and `lstat` return `stat_result`, like `stat`.
+
+`stat_result::file_status()` is the recommended C++ view of file metadata. It
+reports the portable file type, size, permissions, and timestamps as
+`std::chrono` time points. `stat_result::native()` remains available when code
+needs exact `uv_stat_t` interop.
+
+```cpp
+uv::fs::stat(loop, path,
+  [](uv::fs::stat_result result) {
+    if (!result) {
+      return;
+    }
+
+    const uv::fs::file_status& status = result.file_status();
+
+    if (status.is_regular()) {
+      std::uint64_t bytes = status.size();
+      (void)bytes;
+    }
+  });
+```
 
 `mkdtemp` returns a `path_result` with the generated directory path. `mkstemp`
 returns `temp_file_result`; callers are responsible for closing the returned
@@ -361,12 +383,13 @@ watcher.start(path, 100ms, [](uv::fs_poll& watcher, uv::fs_poll_result event) {
     return;
   }
 
-  const uv_stat_t* previous = event.previous();
-  const uv_stat_t* current = event.current();
+  uv::fs::file_status previous = event.previous_status();
+  uv::fs::file_status current = event.current_status();
 });
 ```
 
 `fs_poll_result::previous()` and `fs_poll_result::current()` are borrowed pointers to the stat snapshots passed by libuv. They are valid only during the watcher callback. Copy the `uv_stat_t` values if they must outlive the callback.
+Use `previous_status()` and `current_status()` for portable value snapshots.
 
 Both wrappers follow normal handle lifetime rules: `stop()` stops watching, and `close()` remains asynchronous.
 

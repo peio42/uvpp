@@ -15,6 +15,7 @@
 #include "uvpp/core/version.hpp"
 #include "uvpp/fs/file.hpp"
 #include "uvpp/fs/result.hpp"
+#include "uvpp/fs/status.hpp"
 #include "uvpp/net/buffer.hpp"
 #include "uvpp/requests/fs.hpp"
 
@@ -1346,6 +1347,7 @@ namespace uv::fs {
     stat_result(ssize_t result, const uv_stat_t *stat) noexcept : result_{result} {
       if (stat) {
         stat_ = *stat;
+        file_status_ = ::uv::fs::file_status{*stat};
       }
     }
 
@@ -1356,10 +1358,12 @@ namespace uv::fs {
     int raw_status() const noexcept { return result_ < 0 ? static_cast<int>(result_) : 0; }
     std::error_code error_code() const noexcept { return make_error_code(raw_status()); }
     const uv_stat_t &native() const noexcept { return stat_; }
+    const ::uv::fs::file_status &file_status() const noexcept { return file_status_; }
 
   private:
     ssize_t result_ = 0;
     uv_stat_t stat_{};
+    ::uv::fs::file_status file_status_{};
   };
 
   class path_result {

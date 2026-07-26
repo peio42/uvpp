@@ -7,6 +7,7 @@
 #include "uvpp/handles/handle_view.hpp"
 #include "uvpp/fs/dir.hpp"
 #include "uvpp/fs/file.hpp"
+#include "uvpp/fs/status.hpp"
 #include "uvpp/fs/operations.hpp"
 #include "uvpp/fs/result.hpp"
 #include "uvpp/net/address.hpp"

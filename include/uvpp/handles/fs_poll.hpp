@@ -12,6 +12,7 @@
 #include "uvpp/core/callback.hpp"
 #include "uvpp/core/error.hpp"
 #include "uvpp/core/loop.hpp"
+#include "uvpp/fs/status.hpp"
 #include "uvpp/handles/handle.hpp"
 
 namespace uv {
@@ -27,6 +28,14 @@ namespace uv {
 
     const uv_stat_t *previous() const noexcept { return previous_; }
     const uv_stat_t *current() const noexcept { return current_; }
+
+    fs::file_status previous_status() const noexcept {
+      return previous_ ? fs::file_status{*previous_} : fs::file_status{};
+    }
+
+    fs::file_status current_status() const noexcept {
+      return current_ ? fs::file_status{*current_} : fs::file_status{};
+    }
 
   private:
     int status_ = 0;
