@@ -1,177 +1,67 @@
-# Threading Primitives Strategy
+# Threading Primitives
 
-Status: design direction for the v2 implementation.
+Status: implemented in v2.
 
-This document records the intended shape for wrappers around libuv's threading
-and synchronization primitives. These wrappers should extend uvpp's low-level
-libuv coverage without changing the existing event-loop and handle contracts.
+The wrappers in `include/uvpp/threading/primitives.hpp` expose libuv thread and
+synchronization primitives. They synchronize application state and do not make
+loop, handle, request, callback-slot, or `user_data` access generally thread-safe.
+See the [thread-safety contract](thread-safety.md) and
+[user guide](../user/threading.md).
 
-## Scope
+## Scope and Ownership
 
-The v2 scope is:
+The current types are `thread`, `mutex`, `recursive_mutex`, `rwlock`, `semaphore`,
+`condition_variable`, `barrier`, `thread_key`, and `once`. Native access is explicit
+through `native()`. Copying and moving are disabled to preserve native identity.
 
-- `uv_thread_t`;
-- `uv_mutex_t`;
-- `uv_rwlock_t`;
-- `uv_sem_t`;
-- `uv_cond_t`;
-- `uv_barrier_t`;
-- `uv_key_t`;
-- `uv_once`.
+Synchronization primitives use RAII for native initialization and destruction;
+initialization errors throw `uv::error` where libuv reports them. Application code
+must ensure that no thread still uses a primitive when it is destroyed. There is
+no hidden reference counting or waiting to repair invalid ownership.
 
-These types are useful for callers that want to stay inside the libuv
-cross-platform primitive set, and for future higher-level uvpp facilities such
-as synchronized queues, executor-style APIs, or channels.
+These are direct libuv interop wrappers. Standard C++ synchronization facilities
+remain valid alternatives; using the wrappers does not change the event-loop model.
+Future scheduling facilities are tracked in the
+[loop scheduling proposal](../proposals/007-loop-scheduling.md).
 
-They are not required before coroutine awaitables can exist. Coroutine support
-should primarily resume from libuv completion callbacks on the loop thread.
-Cross-thread coroutine wakeups, when needed, should be explicit and will likely
-use `uv::async` plus application-owned synchronization.
+## Thread Ownership
 
-## Relationship To `std`
+Default construction creates a non-joinable thread wrapper. Callable construction
+or `start(callback)` starts execution. Starting an already-joinable thread reports
+`UV_EBUSY`. `join()` waits for completion and clears joinability; destroying a
+joinable thread calls `std::terminate()`. There is no implicit join or detach.
 
-C++20 already provides `std::thread`, `std::mutex`, condition variables,
-`thread_local`, `std::call_once`, and related facilities. The libuv wrappers
-should therefore be small, direct interop wrappers rather than a replacement
-concurrency framework.
+`detach()` is available under `UVPP_HAS_THREAD_DETACH`; the native operation must
+succeed before joinability is cleared. `self()` and `equal()` provide native thread
+identity operations.
 
-The main reasons to expose them are:
+Starting a thread allocates callable-owned state, retained through successful
+submission and transferred to the thread entry point. Submission failure releases
+that state. The entry point owns it until callback completion. Callback exceptions
+are contained by `detail::invoke_callback` and terminate the process.
 
-- parity with libuv's public surface;
-- applications that choose libuv primitives for portability or ecosystem
-  consistency;
-- future uvpp components that need an explicit libuv-backed synchronization
-  building block.
+## Locks and Waiting
 
-Do not use these wrappers to imply that uvpp loop, handle, or request objects
-become thread-safe.
+`mutex` and `recursive_mutex` expose `lock()`, `try_lock()`, and `unlock()` for use
+with standard lock guards. `rwlock` exposes separate read/write lock operations.
+The `try_*` lock operations return false for ordinary contention and throw for
+unexpected native failures. This is the documented synchronization exception to
+v2's general non-throwing `try_*` convention.
 
-## Ownership And Lifetime
+`semaphore` exposes `post()`, `wait()`, and `try_wait()`. Condition variables expose
+signal, broadcast, wait with a `mutex&`, and a chrono-based timed wait. Callers
+must hold the mutex and check their predicate in a loop to handle spurious wakeups.
+Barrier waiting returns a typed result identifying the serial participant.
 
-Synchronization primitive wrappers should use RAII:
+Blocking waits block the calling thread, including the loop thread if called there.
+They do not suspend a coroutine or dispatch event-loop work.
 
-- initialize the native primitive in the constructor;
-- destroy it in the destructor;
-- throw `uv::error` for immediate initialization failures where libuv reports
-  them;
-- keep raw native access explicit through `native()`.
+## Thread-Local Keys and Once
 
-Destroying a primitive while another thread may still use it is an application
-lifetime error. The wrappers should not add hidden reference counting, waiting,
-or ownership transfer to make that safe.
+`thread_key` owns the native key, not application values stored through it. It
+provides raw and typed getters, pointer setters, and `clear()`; the typed accessors
+are cast conveniences rather than runtime type checking.
 
-Like handles and requests, these wrappers should be non-copyable and
-non-movable in the first v2 implementation. Even though they are not loop
-handles, this keeps address stability and ownership simple. Movability can be
-revisited only with a specific design that preserves native lifetime guarantees.
-
-## Thread Wrapper
-
-`uv::thread` is the most consequential wrapper because it owns an executing
-thread rather than only a passive synchronization object.
-
-The intended model is deliberately close to `std::thread`:
-
-- construction starts the thread;
-- `joinable()` reports whether a thread still needs a terminal ownership
-  action;
-- `join()` waits for completion and clears the joinable state;
-- destruction of a joinable `uv::thread` calls `std::terminate()`;
-- copying and moving are disabled.
-
-Do not join implicitly in the destructor. Blocking in a destructor hides a
-large lifetime decision and can deadlock user code. Do not detach implicitly
-either. Detached execution is exposed only when compiling against libuv 1.50.0
-or newer, where `uv_thread_detach()` is available.
-
-The public callback shape should prevent exceptions from escaping through the
-native libuv thread entry point. If a user callback throws, the trampoline must
-catch it and apply the documented failure policy for this wrapper. A simple
-initial policy may be `std::terminate()`, matching the usual rule that
-uncaught exceptions escaping a thread function terminate the program.
-
-Callable-owning constructors allocate state that is handed to the native thread
-entry point. That is acceptable because the constructor explicitly owns a
-thread operation. If useful, provide a static-callback construction form later
-for callers that want to avoid runtime callable storage.
-
-## Mutexes And Locks
-
-`uv::mutex` should expose the standard mutex vocabulary:
-
-```cpp
-void lock();
-bool try_lock();
-void unlock() noexcept;
-```
-
-This allows `std::lock_guard<uv::mutex>` and `std::unique_lock<uv::mutex>` to
-work with the wrapper.
-
-`try_lock()` is an intentional exception to uvpp's general `try_*` naming rule.
-For synchronization primitives, `try_lock()` has the established C++ meaning:
-attempt to acquire without blocking. It should return `false` only for the
-ordinary busy case. Unexpected libuv failures may still throw `uv::error` in
-the primary API.
-
-If a fully non-throwing lock attempt is needed later, add a differently named
-status-returning function rather than changing `try_lock()` away from the
-standard mutex contract.
-
-## Read-Write Locks
-
-`uv::rwlock` should keep read and write acquisition explicit:
-
-```cpp
-void lock_read();
-bool try_lock_read();
-void unlock_read() noexcept;
-
-void lock_write();
-bool try_lock_write();
-void unlock_write() noexcept;
-```
-
-The names should make the mode visible at every call site. Separate scoped
-reader/writer guard helpers may be added later, but the low-level primitive
-should not require them.
-
-## Condition Variables, Semaphores, And Barriers
-
-`uv::condition_variable`, `uv::semaphore`, and `uv::barrier` should be thin
-RAII wrappers over the corresponding libuv primitives.
-
-Condition-variable waiting must document the mutex requirements and the
-spurious-wakeup behavior of the underlying primitive. If uvpp exposes timed
-wait variants, use `std::chrono` durations or time points in public APIs.
-
-Semaphore operations should use clear blocking vocabulary. If libuv exposes a
-non-blocking semaphore wait, preserve the synchronization meaning of `try_*`
-for that operation instead of using it as a non-throwing marker.
-
-Barrier waiting should expose the libuv result shape clearly, including the
-special serial-thread return if that is part of the native contract.
-
-## Thread-Local Keys And Once
-
-`uv::thread_key` should be an RAII wrapper around `uv_key_t`. It stores and
-returns raw `void*` application values, matching libuv's primitive. Typed helper
-templates can be considered later, but the low-level wrapper should keep the
-native contract visible.
-
-`uv::once` should wrap `uv_once_t` and execute a function exactly once. Its API
-needs special care because libuv's native callback is C-shaped and carries no
-user data. Prefer a simple, explicit static-function surface first. More
-ergonomic callable storage should be added only if its lifetime and exception
-policy are clear.
-
-## Documentation Requirements
-
-User-facing documentation should explain:
-
-- that the primitives synchronize application state, not uvpp handles;
-- that loop, handle, request, callback-slot, and `user_data` thread-safety rules
-  remain unchanged;
-- which APIs are blocking;
-- which operations can be used with standard C++ lock utilities;
-- what happens when a `uv::thread` object is destroyed while still joinable.
+`once` uses the native static initializer and exposes a `noexcept` function-pointer
+form and `run_static<Callback>()`. It does not store arbitrary captured callables.
+The static trampoline retains the callback exception boundary.

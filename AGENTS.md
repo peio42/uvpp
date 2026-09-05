@@ -43,10 +43,12 @@ uv::timer timer(loop);
 
 ## Documentation Layout
 
-- User documentation lives in `docs/`.
-- Design and coding strategy lives in `docs/design/`.
+- User documentation and tutorials live in `docs/user/`.
+- Implemented design and coding rules live in `docs/design/`.
+- Future or partially implemented changes live in `docs/proposals/`, with explicit status.
+- When implementing a proposal, update current design and user documentation and record progress in the proposal.
 - Keep `README.md` focused on project overview, quick start, build, and links.
-- Put user-facing explanations in `docs/*.md`, not in design strategy files.
+- Put user-facing explanations in `docs/user/*.md`, not in design strategy files.
 
 ## Design References
 

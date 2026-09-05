@@ -21,7 +21,7 @@ v2 does not provide a compatibility alias from `uvpp` to `uv`.
 
 uvpp v2 requires C++20.
 
-This is a design baseline, not an implementation accident. The API relies on C++20 vocabulary and language features such as `std::span`, `std::chrono` duration ergonomics, constrained zero-overhead callback APIs based on `template<auto Callback>`, and modern aggregate/value type conventions.
+This is a design baseline, not an implementation accident. The API relies on C++20 vocabulary and language features such as `std::span`, `std::chrono` duration ergonomics, static callback APIs based on `template<auto Callback>` and concepts on selected structural APIs, and modern aggregate/value type conventions.
 
 The project should not add compatibility shims for C++17 or earlier in the v2 core. If an older-standard compatibility layer is ever needed, it should live outside the primary API.
 
@@ -42,31 +42,39 @@ AGENTS.md
 README.md
 docs/
   index.md
-  getting-started.md
-  callbacks.md
-  errors.md
-  ownership-and-lifetime.md
-  buffers.md
-  streams.md
-  filesystem.md
-  network.md
-  process.md
-  threading.md
+  user/
+    index.md
+    getting-started.md
+    callbacks.md
+    errors.md
+    ownership-and-lifetime.md
+    buffers.md
+    streams.md
+    filesystem.md
+    network.md
+    process.md
+    threading.md
+    tutorial/
+      index.md
   design/
+    index.md
     architecture.md
     api-principles.md
     api-policy-decisions.md
     callback-strategy.md
-    coroutine-strategy.md
     error-handling-strategy.md
     ownership-strategy.md
     request-guide.md
     thread-safety.md
     threading-primitives.md
-    v3-notes.md
+  proposals/
+    index.md
+    001-coroutines.md
+    ...
 include/uvpp/
   uv.hpp
   core/
+    types.hpp
     error.hpp
     loop.hpp
     native.hpp
@@ -74,6 +82,7 @@ include/uvpp/
     version.hpp
   handles/
     handle.hpp
+    handle_view.hpp
     stream.hpp
     tcp.hpp
     pipe.hpp
@@ -113,6 +122,8 @@ include/uvpp/
   threadpool/
     work.hpp
   fs/
+    path.hpp
+    status.hpp
     file.hpp
     dir.hpp
     result.hpp
@@ -121,7 +132,10 @@ tests/
 examples/
 ```
 
-User documentation lives directly under `docs/`. Design and coding strategy lives under `docs/design/` and is referenced from `AGENTS.md`.
+User documentation lives under `docs/user/`. Implemented design and coding rules
+live under `docs/design/` and are referenced from `AGENTS.md`. Future changes
+and unfinished designs live under `docs/proposals/`; they do not override the
+current contracts until implemented.
 
 ## Native Storage Model
 
@@ -131,8 +145,6 @@ Every wrapper owns or references a native libuv object through composition.
 template<class Derived, class Raw, class BaseRaw>
 class native_storage {
 public:
-  using raw_type = Raw;
-
   Raw* native() noexcept { return &raw_; }
   const Raw* native() const noexcept { return &raw_; }
 
@@ -140,7 +152,7 @@ public:
     return reinterpret_cast<BaseRaw*>(&raw_);
   }
 
-protected:
+private:
   Raw raw_{};
 };
 
@@ -209,7 +221,8 @@ using the separately allocated storage described above.
 
 ## Native Interop
 
-Every public wrapper should expose:
+Native handle and request wrappers expose the following pointer accessors (value
+wrappers and borrowed views have their own explicitly named native access):
 
 ```cpp
 Raw* native() noexcept;
@@ -223,7 +236,8 @@ uv_handle_t* native_handle() noexcept;
 uv_stream_t* native_stream() noexcept;
 ```
 
-These functions are the only sanctioned locations for raw pointer reinterpretation.
+Native pointer adaptation is localized in storage helpers, view recovery, buffer
+adapters, and trampolines. User code does not need those casts for ordinary calls.
 
 Handles also expose an explicit non-owning view for code that operates on
 generic libuv handles:
@@ -297,7 +311,12 @@ Add wrappers one libuv object family at a time. Each addition should preserve th
 
 ## Loop Run Return Value
 
-`loop::run()` and `loop_view::run()` take `uv::run_mode` and return `bool`. The return value is `true` if there are still active handles or requests pending after the loop exits (i.e., when run in `uv::run_mode::nowait` or `uv::run_mode::once` mode); it is `false` when the loop is empty. In the default `uv::run_mode::until_done` mode the loop runs until there is no more work and always returns `false`.
+`loop::run()` and `loop_view::run()` return whether `uv_run()` returned nonzero.
+`until_done` normally returns `false`, but can return `true` when `stop()` ends the
+run while work remains. `once` and `nowait` can also return `true` when further
+iterations are needed. A false return does not mean every handle has been closed:
+inactive or unreferenced open handles still require explicit close. Do not call
+`run()` recursively from a callback. See the [native run contract](https://docs.libuv.org/en/v1.x/loop.html#c.uv_run).
 
 ## Loop Introspection
 
@@ -310,7 +329,9 @@ Add wrappers one libuv object family at a time. Each addition should preserve th
 - `handles()` collects the current walked handles into a `std::vector<handle_view>` for range-based loops and ranges pipelines.
 
 These APIs intentionally stay close to libuv. They do not take ownership of
-handles and do not add wrapper state.
+handles. `handles()` allocates a vector; `walk()` visits synchronously without
+materializing one. Allocation failure while growing that vector occurs inside
+the callback exception boundary and currently terminates.
 
 `backend_timeout()` returns `std::optional<std::chrono::milliseconds>`:
 `std::nullopt` represents libuv's infinite wait sentinel. `metrics_idle_time()`
@@ -344,8 +365,14 @@ Feature checks live in `include/uvpp/core/version.hpp` as named
 not on repeated numeric `UV_VERSION_HEX` comparisons. This keeps version policy
 centralized and gives users a stable compile-time spelling for portable code.
 
-The capability macros are compile-time API availability checks. If a native
-symbol is absent from the libuv headers, uvpp omits the corresponding wrapper
-API. It does not declare a replacement function that fails at runtime, because
+The current checks are not exhaustive: `core/loop.hpp` calls `uv_metrics_info()`
+and `uv_metrics_idle_time()` unconditionally, and not every older introduction has
+a capability macro. UDP `mmsg_chunk()` and `mmsg_free()` remain present and return
+false when their native flags are absent. Therefore the macros are not a guarantee
+that arbitrary old libuv headers can compile the complete library. Baseline and
+gating validation are tracked in [proposal 010](../proposals/010-validation-and-performance.md).
+
+The capability macros are compile-time API availability checks. For an API guarded by such a macro, uvpp omits the wrapper
+when the macro is false. It does not declare a replacement function that fails at runtime, because
 that would require spelling or emulating a native function that the installed
 headers do not provide.

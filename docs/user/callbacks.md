@@ -3,9 +3,9 @@
 uvpp exposes two callback styles:
 
 - runtime callbacks for ordinary application code;
-- static callbacks for zero-allocation paths.
+- static callbacks without runtime callable storage.
 
-Runtime callbacks accept lambdas and function objects. They can capture state and are stored by the relevant handle or request.
+Runtime callback slots use `std::function` and require copyable lambdas and function objects. They can capture state and are stored by the relevant handle or request.
 
 ```cpp
 using namespace std::chrono_literals;
@@ -40,7 +40,10 @@ loop.run();
 loop.close();
 ```
 
-Use `user_data<T>()` or externally owned protocol state when a static callback needs application state.
+Static dispatch does not allocate callback storage, but the wrapper retains its
+runtime slot members. Operations may still allocate inputs or results, such as DNS
+strings or filesystem paths. Use `user_data<T>()` or externally owned protocol state
+when a static callback needs application state.
 
 ```cpp
 struct timer_state {

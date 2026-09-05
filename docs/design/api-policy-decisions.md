@@ -28,7 +28,7 @@ standard utilities such as `std::unique_lock` can use it. Do not use
 `try_lock()` to mean "non-throwing lock API that returns `std::error_code`".
 
 A future breaking release may revisit the general non-throwing naming
-convention. See [v3 design notes](v3-notes.md).
+convention. See [Errors and results proposal](../proposals/006-errors-and-results.md).
 
 ## Immediate Non-Blocking Operations
 
@@ -98,10 +98,9 @@ When libuv exposes a synchronous operation that blocks the current thread, make
 that behavior explicit in the uvpp name unless the blocking semantics are
 already obvious from the domain.
 
-`uv_sleep()` is the main naming-sensitive case. A wrapper for it should not be
-named `sleep_for`, because `sleep_for(loop, ...)` is reserved for a future
-event-loop-friendly coroutine/timer helper. Prefer a name such as
-`sleep_blocking_for(duration)` for the `uv_sleep()` wrapper.
+The current `sleep_blocking_for(duration)` wraps `uv_sleep()` under
+`UVPP_HAS_SLEEP`. An event-loop timer-based sleep is tracked in
+[proposal 001](../proposals/001-coroutines.md).
 
 Document that blocking helpers stop the current thread from running callbacks.
 Calling them on the same thread that is expected to call `loop.run()` prevents
@@ -136,7 +135,7 @@ Examples:
 ```cpp
 loop.run(uv::run_mode::once);
 
-if (handle.type() == uv::handle_type::tcp) {
+if (tcp.view().type() == uv::handle_type::tcp) {
 }
 ```
 
@@ -219,9 +218,11 @@ template<stream_handle Client>
 void accept(Client& client);
 ```
 
-Good candidates are APIs where the template argument represents a user-visible
-category, such as stream-like handles, callbacks passed to `walk()`, or wrapper
-types passed to `handle_view::as<T>()`.
+Current constrained APIs include stream-like arguments, callbacks passed to
+`walk()`, and wrapper types passed to `handle_view::as<T>()`. Static
+`template<auto Callback>` entry points generally rely on instantiation errors, not
+a public invocability constraint; improving those diagnostics is in
+[proposal 008](../proposals/008-move-only-callbacks.md).
 
 Do not add constraints mechanically to every implementation template. Private
 helpers such as submit lambdas, result factories, and local getter utilities can
@@ -230,7 +231,11 @@ local.
 
 ## Chrono For Durations
 
-Use `std::chrono` for durations in public APIs.
+Use `std::chrono` for new public duration APIs. Existing timer, filesystem poll,
+condition-variable wait, and blocking sleep APIs use it. V2 still exposes TCP
+`keep_alive(bool, unsigned int delay)` with delay in seconds. Filesystem
+`utime`/`futime`/`lutime` take native-style `double` timestamps in seconds.
+Chrono conversion behavior is family-specific, not a shared checked policy.
 
 If libuv represents a timeout with a sentinel value, model the sentinel in the
 type instead of leaking it directly when practical. For example,
@@ -322,7 +327,8 @@ explicit.
 
 Every free function that accepts a loop must provide two overloads: one taking
 `loop_view` and one taking `loop&`. The `loop&` overload forwards to the
-`loop_view` overload via `.view()`.
+`loop_view` overload. Existing code uses either `.view()` or explicit
+`loop_view{loop.native()}` construction; prefer `.view()` for new forwarding code.
 
 ```cpp
 inline void getaddrinfo(loop_view loop, getaddrinfo_request &request, ...);

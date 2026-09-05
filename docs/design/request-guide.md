@@ -1,8 +1,9 @@
 # Adding a New Request Type
 
 This guide lists every step required to add a well-formed request to uvpp.
-Follow it in order; each step is load-bearing for the standard-layout invariant,
-the callback contract, and the public API surface.
+This is a contributor checklist for new code, not a statement that every existing
+request has the exact same methods. Preserve the storage invariant and consult
+the [current result families](error-handling-strategy.md#result-families).
 
 ## 1. Request class and result types — `include/uvpp/requests/<domain>.hpp`
 
@@ -13,7 +14,9 @@ Create a header in `include/uvpp/requests/`. It should contain:
 
 ### Result class contract
 
-Every result object must expose:
+For a new DNS/random-style typed request result, use the following interface.
+Existing stream, watcher, base status, and filesystem types differ as described
+in the error-handling document; this checklist does not retroactively add members:
 
 ```cpp
 bool ok() const noexcept;
@@ -54,9 +57,10 @@ private:
 
 1. Extract and clear the callback slot before calling it:
    `auto cb = std::move(callback_); callback_ = {};`
-2. Free any libuv-owned resources even when no callback is present (e.g.
+2. Release transferred resources or deliver them to an explicit owner even when no callback is present (e.g.
    `uv_freeaddrinfo(addresses)` when `!cb`).
-3. Clear owned submission inputs before returning (`clear_inputs()`).
+3. Clear owned submission inputs before invoking user code (`clear_inputs()`),
+   so destruction or resubmission in terminal completion does not access stale state.
 4. Mark the method `noexcept`. Exceptions from user code are caught by
    `detail::invoke_callback` and forwarded to `std::terminate`.
 
@@ -81,7 +85,7 @@ namespace detail {
 
 ### `loop` / `loop_view` overload pair
 
-Every public free function must have two overloads. The `loop&` overload
+Every public submission free function accepting a loop must have two overloads. The `loop&` overload
 forwards to the `loop_view` overload:
 
 ```cpp
@@ -135,6 +139,10 @@ detail::submit_request(request, std::move(callback),
                               request.hints_arg()); },
   [&] { request.clear_inputs(); });
 ```
+
+The rollback helpers cover the submit callable after slot installation. They do
+not wrap earlier `set_inputs()` or callback construction; do not claim a general
+strong exception guarantee for preparation failures.
 
 For **static callback paths** where no runtime callback is stored, use
 `detail::submit_with_rollback` instead:
@@ -199,5 +207,5 @@ Cover at minimum:
 
 ## 6. Documentation
 
-Add a section to the relevant user-facing doc under `docs/` (or create one).
+Add a section to the relevant user-facing doc under `docs/user/` (or create one).
 Update `docs/design/architecture.md` if the directory layout changes.

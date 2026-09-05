@@ -44,9 +44,11 @@ must not access loop-owned handles or requests except through APIs documented as
 cross-thread safe. Shared application state still needs application-provided
 synchronization.
 
-## Future High-Level Layer
+## Higher-Level Scheduling
 
-A future higher-level layer may provide synchronized queues, executor-style APIs, or thread-safe owners. Those facilities should be explicit types built on top of the low-level wrappers, not hidden behavior inside every handle/request.
+The current wrappers do not provide a posting queue or executor. That extension
+is described in the [loop scheduling proposal](../proposals/007-loop-scheduling.md).
+Synchronization remains explicit and is not added to every handle/request.
 
 ## Threading Primitives
 
@@ -55,7 +57,7 @@ application-owned state. They do not change the baseline rule that `loop`,
 handles, requests, callback slots, and `user_data` are not generally
 thread-safe.
 
-The design direction for those wrappers is recorded in
+Their implemented design is recorded in
 [Threading primitives strategy](threading-primitives.md). The important
 boundary is that adding `uv::mutex`, `uv::thread`, or similar types does not add
 hidden locking to existing uvpp objects.

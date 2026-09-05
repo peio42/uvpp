@@ -43,10 +43,11 @@ Prefer clear names over one-to-one libuv names when the C name is awkward. Keep 
 
 v2 remains header-only and C++20-only. Implementation details should live in headers under `detail/` only when needed.
 
-Suggested conventions:
+Current organization and extension rules:
 
 - Keep public class definitions in focused headers.
-- Keep trampoline and callback machinery in `core/callback.hpp`.
+- Keep exception-boundary invocation helpers in `core/callback.hpp`; native
+  trampolines live beside the handle/request or submission function.
 - Keep native conversion utilities in `core/native.hpp`.
 - Put broadly included, low-level headers in `core/`.
 - Avoid including the aggregate `uv.hpp` from implementation headers.
@@ -71,7 +72,7 @@ types in namespace `uv`:
 ```cpp
 loop.run(uv::run_mode::nowait);
 
-if (handle.type() == uv::handle_type::timer) {
+if (timer.view().type() == uv::handle_type::timer) {
   // timer handle
 }
 ```
@@ -164,18 +165,22 @@ The typed getter is a cast convenience, not a type-safe container. Storing `sess
 
 Do not add the user data type to the primary handle/request templates. A design such as `tcp<session_state>` would make the whole hierarchy contagious, complicate APIs that only need "some tcp", and produce more template instantiations without improving the native storage model.
 
-If stronger ownership or type safety is needed later, provide an opt-in higher-level layer on top of the low-level wrappers. The low-level API should remain a zero-overhead view over libuv's `data` pointer.
+The low-level API stores only the native application pointer. Higher-level
+ownership is tracked in [proposal 002](../proposals/002-async-ownership.md).
 
 ## Value Types
 
-Small value wrappers such as `buffer_view`, `ipv4`, `ipv6`, and `timespec` can use composition while preserving native layout with `static_assert`.
+`buffer_view` uses composition and has size/alignment assertions against
+`uv_buf_t`. Address wrappers also use composition. There is no public
+`uv::timespec` wrapper. Raw stat results expose native timestamps;
+`fs::file_status` converts them to chrono-based `fs::file_time` values.
 
 Example:
 
 ```cpp
 class buffer_view {
 public:
-  std::span<std::byte> bytes() noexcept;
+  std::span<std::byte> bytes() const noexcept;
   uv_buf_t* native() noexcept;
 
 private:
@@ -243,10 +248,8 @@ write_request req;
 tcp.write(req, data, callback);
 ```
 
-Or a higher-level convenience that clearly owns the operation state:
+An owning stream write convenience is tracked in
+[proposal 005](../proposals/005-buffers-and-flow-control.md); `tcp.async_write` is
+not part of v2.
 
-```cpp
-tcp.async_write(data, callback);
-```
-
-Filesystem operations use this second shape by default. `uv::fs` owns the internal request and buffers/results needed for safe callback delivery, while `uv::fs::raw` exposes the manual libuv request protocol for callers that explicitly want it.
+Filesystem operations already own operation state by default. `uv::fs` owns the internal request and buffers/results needed for safe callback delivery, while `uv::fs::raw` exposes the manual libuv request protocol for callers that explicitly want it.

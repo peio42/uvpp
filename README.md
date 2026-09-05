@@ -29,7 +29,7 @@ uvpp is a C++ API over libuv with explicit lifetime rules, typed callbacks, nati
 
 ## Status
 
-uvpp v2 covers the core loop, all main handle families, stream requests, UDP, DNS utilities, filesystem operations (`uv::fs` and `uv::fs::raw`), watchers, process spawning, libuv threading primitives, thread-pool work requests, and random byte generation. Future additions are tracked in [Future features](docs/future.md).
+uvpp v2 covers the core loop, all main handle families, stream requests, UDP, DNS utilities, filesystem operations (`uv::fs` and `uv::fs::raw`), watchers, process spawning, libuv threading primitives, thread-pool work requests, and random byte generation. Future additions are tracked in [Future features](docs/user/future.md).
 
 ## Requirements
 
@@ -43,7 +43,7 @@ Typical compile command:
 g++ -std=c++20 -I/path/to/uvpp/include app.cpp -luv -pthread
 ```
 
-CMake users can consume the `uvpp::uvpp` target directly — see [Getting started](docs/getting-started.md).
+CMake users can consume the `uvpp::uvpp` target directly — see [Getting started](docs/user/getting-started.md).
 
 ## Quick Start
 
@@ -306,21 +306,22 @@ Versions containing a prerelease suffix such as `<version>-rc.1` are published a
 ## Documentation
 
 - [Documentation index](docs/index.md)
-- [Tutorial](docs/tutorial/index.md)
-- [Getting started](docs/getting-started.md)
-- [Callbacks](docs/callbacks.md)
-- [Errors](docs/errors.md)
-- [Ownership and lifetime](docs/ownership-and-lifetime.md)
-- [Buffers](docs/buffers.md)
-- [Streams](docs/streams.md)
-- [UDP](docs/udp.md)
-- [Network utilities](docs/network.md)
-- [Filesystem](docs/filesystem.md)
-- [Process](docs/process.md)
-- [Threading primitives](docs/threading.md)
-- [Future features](docs/future.md)
+- [Tutorial](docs/user/tutorial/index.md)
+- [Getting started](docs/user/getting-started.md)
+- [Callbacks](docs/user/callbacks.md)
+- [Errors](docs/user/errors.md)
+- [Ownership and lifetime](docs/user/ownership-and-lifetime.md)
+- [Buffers](docs/user/buffers.md)
+- [Streams](docs/user/streams.md)
+- [UDP](docs/user/udp.md)
+- [Network utilities](docs/user/network.md)
+- [Filesystem](docs/user/filesystem.md)
+- [Process](docs/user/process.md)
+- [Threading primitives](docs/user/threading.md)
+- [Future features](docs/user/future.md)
 
-Contributor design notes live under [docs/design](docs/design/).
+The [current design](docs/design/index.md) documents implementation contracts.
+[Proposals](docs/proposals/index.md) track future changes and their status.
 
 The repository also ships runnable examples under [`examples/`](examples/), including TCP,
 UDP, timer/watchers, and process stdout capture.

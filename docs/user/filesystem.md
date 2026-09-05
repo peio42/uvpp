@@ -327,7 +327,10 @@ uv::fs::raw::scandir(loop, req, path, 0,
   });
 ```
 
-Raw `scandir_result` is a single-pass range over libuv's iterator. The entry name is request-owned. Copy it before cleanup if it must outlive the callback.
+Raw `scandir_result` is a single-pass range over libuv's iterator. Copy each entry
+name before iterator increment or another `next()` call, which releases the previous
+entry. Request cleanup also invalidates names. See the
+[libuv implementation](https://github.com/libuv/libuv/blob/v1.x/src/uv-common.c).
 
 ## Raw Open Directories
 
@@ -356,6 +359,7 @@ uv::fs::raw::opendir(loop, req, path,
           std::string name = std::string{entry.name()};
         }
 
+        cleanup.cleanup(); // finish readdir before reusing req and closing dir
         uv::fs::raw::closedir(loop, req, std::move(dir),
           [](uv::fs::raw::request& req, uv::fs::raw::status_result) {
             auto cleanup = req.scoped_cleanup();
@@ -364,11 +368,14 @@ uv::fs::raw::opendir(loop, req, path,
   });
 ```
 
-`raw::readdir` borrows `directory&`; `raw::closedir` consumes `directory&&` and invalidates it immediately. `raw::readdir_result::eof()` reports end-of-directory. Multiple `readdir` calls may be needed when the directory contains more entries than the buffer capacity.
+`raw::readdir` borrows `directory&`; `raw::closedir` consumes `directory&&` after successful submission; immediate submission failure leaves the directory owned by the caller. `raw::readdir_result::eof()` reports end-of-directory. Multiple `readdir` calls may be needed when the directory contains more entries than the buffer capacity.
 
 `result.entries(buffer)` ranges over the entries filled in the caller-owned buffer for that `readdir` completion.
 
-`raw::directory_entry::name()` returns a `std::string_view` pointing into the `directory_read_buffer`. It is valid only while that buffer is alive. Copy it before the buffer is destroyed or reused for the next `readdir` call.
+`raw::directory_entry::name()` borrows a libuv-allocated name referenced by the
+caller-owned entry array. Copy it before request cleanup, which frees the name even
+if the array is still alive. Clean the request before the next read or directory
+close. See the [libuv readdir contract](https://docs.libuv.org/en/v1.x/fs.html#c.uv_fs_readdir).
 
 ## Watchers
 

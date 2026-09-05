@@ -1,133 +1,99 @@
 # Error Handling
 
-## Goals
+This document describes the current contracts in
+[core/error.hpp](../../include/uvpp/core/error.hpp) and the domain result classes.
+Uniform future result adaptation is tracked in
+[proposal 006](../proposals/006-errors-and-results.md).
 
-uvpp v2 should make libuv errors explicit and consistent. The library may offer both throwing and non-throwing APIs, but each call site should make the chosen behavior clear.
+## Immediate Failures and Exceptions
 
-The grammar is:
+Primary submission APIs throw `uv::error` on a negative native submission result.
+`uv::error` derives from `std::system_error`; the libuv category formats messages
+with `uv_strerror`, while the exception constructor adds the `uv_err_name` context.
+The category's name is `libuv`. Nonnegative values map to an empty error code.
 
-- immediate libuv submission errors throw `uv::error` in the primary low-level API;
-- optional non-throwing immediate APIs use the `try_` prefix and return `std::error_code`;
-- asynchronous callback statuses are delivered as `uv::result`;
-- `uv::result` exposes `status()` and `error_code()`, not `error()`;
-- v2 does not use `result<void>` in the low-level API.
+`throw_if_error(int)` returns the unchanged integer on success and throws on a
+negative value. Its return value is used, for example, to preserve `uv_run()`'s
+nonzero result. Submission setup can also throw standard exceptions from string,
+vector, or callback storage allocation and explicit argument validation.
 
-See [API policy decisions](api-policy-decisions.md) for the related naming rule:
-libuv "try now" operations should use `*_now()` in uvpp rather than consuming
-the `try_*` prefix.
+Non-throwing variants exist selectively: `loop.try_close()` and supported request
+`try_cancel()` methods return `std::error_code`. There is no `tcp.try_bind()` in
+v2. Synchronization attempts such as `mutex.try_lock()` use standard attempt
+semantics and can throw on unexpected native errors; see
+[API policy](api-policy-decisions.md).
 
-## Error Type
+## Asynchronous Completion
 
-Use a small `uv::error` type for exceptions and expose `std::error_code` for non-throwing APIs.
-
-```cpp
-class error : public std::system_error {
-public:
-  explicit error(int uv_status);
-};
-```
-
-The error category should map libuv status codes to messages through `uv_strerror` and names through `uv_err_name`.
-
-## Throwing API
-
-The default low-level wrapper may throw on immediate libuv failures:
+A native submission failure is reported by the initiating call; a later failure
+is reported by a completion callback. These are distinct channels in v2.
 
 ```cpp
-void throw_if_error(int status) {
-  if (status < 0) {
-    throw error(status);
-  }
-}
-```
-
-Throwing APIs keep immediate failure handling concise, but callback boundaries need special care.
-
-## Non-Throwing API
-
-Expose non-throwing variants only where they materially improve control flow:
-
-```cpp
-std::error_code tcp.try_bind(ipv4 addr) noexcept;
-```
-
-Do not mix throwing and non-throwing behavior in the same function based on runtime state.
-
-## Callback Status
-
-Callback status values should be converted into explicit result objects rather than being thrown through libuv.
-
-Example:
-
-```cpp
-tcp.connect(req, addr, [](connect_request& req, result r) {
-  if (!r) {
-    // handle r.error_code()
+tcp.connect(req, addr, [](uv::connect_request&, uv::result status) {
+  if (!status) {
+    auto ec = status.error_code();
+    (void)ec;
   }
 });
 ```
 
-Throwing from inside the user callback is a separate concern and must be handled by the callback exception policy.
+The base `uv::result` is not a template. It exposes `ok()`, explicit `operator
+bool()`, `canceled()`, integer `status()`, and `error_code()`. It has no
+`raw_status()` or `error()` member.
 
-## EOF
+## Result Families
 
-EOF is not an exceptional error for streams. It should have an explicit branch in `read_result`.
+The current result API is not uniform across all families:
 
-```cpp
-if (result.eof()) {
-  stream.close();
-}
-```
+| Family | Status access | Error access and payload |
+| --- | --- | --- |
+| `uv::result` | `status()` returns `int` | `error_code()`, `canceled()` |
+| DNS and random results | `status()` returns `uv::result`; `raw_status()` returns `int` | Direct `error_code()` plus family payload |
+| Public and raw filesystem results | `status()` returns `uv::result`; `raw_status()` returns zero on success or a negative error | Direct `error_code()`; `raw()` retains native payload/status value |
+| Stream/UDP read results | `status()` returns `uv::result`; `count()` retains native byte count/status | `status().error_code()`; no direct `error_code()` or `raw_status()` |
+| `fs_event_result`, `fs_poll_result` | `status()` returns `uv::result` | `status().error_code()`; no direct `error_code()` or `raw_status()` |
+| `poll_result` | `status()` returns `uv::result` | Direct `error_code()`, no `raw_status()`; `raw_events()` is the event mask |
 
-## Immediate Failure vs Completion Failure
+These families expose `ok()` and explicit boolean conversion. Use the payload
+accessor to obtain file descriptors or counts; filesystem `raw_status()` normalizes
+successful payloads to zero. Do not replace it with an unchecked narrowing of a
+successful native byte count. Process exit uses a separate `process_exit` struct
+with `status` and `signal` fields, not the libuv submission-error grammar.
 
-libuv can fail immediately when submitting an operation, or later in the completion callback.
+An owned value is not necessarily move-only: `getnameinfo_result` owns copyable
+strings, and `owned_buffer` owns a copyable vector. `getaddrinfo_result` uniquely
+owns a native `addrinfo` list and is move-only. Raw `opendir_result` and `directory`
+require explicit ownership consumption/close rather than automatic resource close.
 
-v2 must handle both:
+## EOF and Immediate I/O
 
-- immediate failures are returned or thrown by the initiating function;
-- completion failures are delivered through callback result objects.
+Stream `read_result::eof()` recognizes `UV_EOF`, but `ok()` and boolean conversion
+are false for this negative value. Test EOF separately before treating a false
+result as an I/O failure. `status().error_code()` still maps `UV_EOF` to a code;
+v2 does not throw it automatically. Filesystem read EOF is a successful zero-byte
+read, with a different native result shape.
 
-This distinction should be covered by tests for every request family.
+Immediate `write_now_result` and UDP send result types have their own contracts:
+`would_block()` separates `UV_EAGAIN` from `has_error()`. `error_code()` is empty
+for the would-block case, so inspect `would_block()` explicitly. Counts and raw
+values use the accessors on the specific type. These operations do not submit an
+asynchronous request or call a completion callback.
 
-## Result Object Interface Contract
+## Callback Exception Boundary
 
-Every typed result object that reports asynchronous completion status must expose
-the following interface:
+`detail::invoke_callback` and `invoke_static_callback` catch user exceptions and
+call `std::terminate()`. Native trampolines are `noexcept`; result construction
+that throws before reaching an invocation helper also terminates. There is no
+current loop-level exception handler or deferred error rethrow.
 
-```cpp
-bool ok() const noexcept;
-explicit operator bool() const noexcept { return ok(); }
-result status() const noexcept;
-int raw_status() const noexcept;
-std::error_code error_code() const noexcept;
-```
+Public filesystem operations normally materialize their owned/scalar result,
+clean the native request, and delete operation state before delivering the result
+to user code. This does not promise recovery from allocation failure during result
+materialization. The same exception boundary applies to loop walking; vector growth
+in `loop.handles()` runs inside that boundary.
 
-`ok()` returns `true` when the status value is non-negative (i.e., libuv
-considers the operation successful). `status()` wraps the raw integer in
-`uv::result`. `raw_status()` is available for interop. `error_code()` converts
-to a `std::error_code` via the libuv error category.
-
-Do not expose a direct `error()` accessor that throws or returns `uv::error` on
-the result object. Callers who need to throw should test `ok()` and throw
-themselves, or use `throw_if_error(result.raw_status())`.
-
-Result objects that carry payload beyond status follow the same pattern and add
-payload accessors (`hostname()`, `bytes()`, etc.) alongside the status members.
-
-Owned result types (those that manage a heap-allocated libuv resource, such as
-`getaddrinfo_result`) must be move-only. Borrowed result types (those that hold
-views into caller or libuv storage, such as `read_result`) may use value
-semantics if the borrow rules are documented.
-
-## Default Policy
-
-Initial v2 should use:
-
-- throwing functions for immediate failures;
-- result objects for asynchronous callback status;
-- `std::terminate` if a user callback throws.
-
-This keeps the first implementation simple and explicit.
-
-A future loop-level exception handler may be added later, but it is not part of the initial policy. If introduced, it must be explicit on `loop`/`loop_view` and must not silently change the behavior of existing callback trampolines.
+Tests in [test-core.cpp](../../tests/test-core.cpp),
+[test-network.cpp](../../tests/test-network.cpp), and
+[test-threadpool-random.cpp](../../tests/test-threadpool-random.cpp) cover core
+status mapping, callback termination, one-shot slots, and selected failure paths.
+They are not an exhaustive failure-injection suite for every family.

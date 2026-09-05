@@ -151,7 +151,7 @@ the request in an owner that lives long enough.
 
 ## Reading The Reference Documentation
 
-The tutorial gives the general mental model. The reference pages in `docs/` then
+The tutorial gives the general mental model. The reference pages in `docs/user/` then
 give the details for each API family:
 
 - [Loop](../loop.md)
@@ -164,7 +164,7 @@ give the details for each API family:
 - [Process](../process.md)
 
 To contribute to the public API shape, also read the design documents in
-[docs/design](../design/). They explain why uvpp keeps native conversions
+[docs/design](../../design/). They explain why uvpp keeps native conversions
 explicit, why views are produced through `.view()`, and why low-level handles are
 neither copyable nor movable.
 

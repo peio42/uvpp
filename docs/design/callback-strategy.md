@@ -31,19 +31,22 @@ loop.run();
 
 Properties:
 
-- no allocation;
-- no type erasure;
+- no callback-storage allocation or type erasure for static dispatch;
 - no stored callback object;
 - each callback instantiation may generate code;
 - callback cannot capture runtime state directly.
 
-This mode is appropriate for low-level wrappers and performance-sensitive code.
+This is a dispatch guarantee, not a guarantee that the entire operation allocates
+nothing. Static DNS and path-based filesystem/watcher calls can allocate string
+storage; `getnameinfo_result` owns strings even on the static path. Native libuv
+work and user callbacks may also allocate.
 
 Use static callbacks when the callback can recover all state from explicit objects, globals, `user_data<T>()`, or protocol state already attached to the handle/request.
 
 Most handles expose static callback mode as `start_static<Callback>()`, `listen_static<Callback>()`, or an operation-specific equivalent. A few libuv callbacks are fixed when the native object is initialized or spawned. Those wrappers use an explicit tag constructor instead:
 
-> **Note:** `read_start_static<Callback>()` for streams is **not yet implemented**. Use `read_start(allocator, reader)` with a runtime callable for stream reads.
+Streams and UDP receive expose runtime allocation/read callbacks only. Static
+receive adapters are tracked in [proposal 008](../proposals/008-move-only-callbacks.md).
 
 ```cpp
 uv::async wakeup(loop, uv::async::static_callback<on_wakeup>{});
@@ -79,11 +82,14 @@ timer.start_static<on_counted_tick>(100ms, 100ms);
 loop.run();
 ```
 
-This path stores no C++ callable inside the wrapper. The only stored state in this example is the application-owned pointer in libuv's `data` field.
+This path installs no runtime callable. The wrapper still contains its runtime
+callback slots; static invocation does not remove their object-size cost. The
+application state in this example is reached through libuv's `data` field.
 
 ## Runtime Callable Mode
 
-Runtime callable mode accepts lambdas and function objects.
+Runtime callable mode stores copyable lambdas and function objects in
+`std::function`. Move-only captured state is not supported by these slots.
 
 Example:
 
@@ -169,7 +175,8 @@ Rules:
 - `fs::raw::request` also owns one operation callback slot, but raw FS callbacks must call `req.cleanup()` after consuming the result and before reusing the request.
 - `fs` operations own their internal raw request and cleanup it before invoking the public callback with an owned or scalar result.
 
-Calling a start/listen/read API a second time follows libuv's underlying validity rules. If libuv rejects the operation immediately, the wrapper throws `uv::error`. If libuv accepts it, the stored callback slot has already been replaced.
+Calling a start/listen/read API a second time follows libuv's underlying validity rules. If libuv rejects the operation immediately, the wrapper throws `uv::error`. The stored callback slot has already been replaced even if libuv rejects the
+start; there is no general rollback to the previous persistent callback.
 
 ### Replacing a Callback from Itself
 
@@ -182,26 +189,34 @@ replacement during invocation safe.
 
 After `close()` has been called on a handle, starting new operations on that handle is a logic error. The wrapper does not try to recover from it beyond surfacing immediate libuv failures where libuv reports them.
 
+Stopping a persistent watcher or switching to a static start generally leaves its
+old runtime slot stored. Persistent trampolines invoke that slot in place. V2 does
+not provide a safe deferred-replacement mechanism for replacing the executing
+callable from inside itself. Request one-shot extraction is a different protocol;
+see [proposal 008](../proposals/008-move-only-callbacks.md) for proposed improvements.
+
 ## Request `invoke()` Invariants
 
-Every request class that owns a callback slot must implement an `invoke()` method
-called by the trampoline. That method must:
+Runtime request completions use `invoke()` or family-specific methods such as
+`work_request::invoke_work()` and `invoke_after()`. Their shared rules are:
 
-1. **Extract and clear the callback slot atomically before calling it.** Use
+1. **Extract and clear the callback slot before calling it.** Use
    `std::move` to take the stored callable, then reset the slot to a default
-   state. This ensures the request is in a clean state before the user code runs,
-   so re-submitting the request from inside the callback is safe.
+   state. This is sequencing, not an atomic/thread-safe operation. It permits reuse at
+   terminal completion; the worker callback alone is not terminal completion.
 
 2. **Free any owned libuv resources even when the callback slot is empty.** If
    libuv transfers ownership of a heap object to the callback (for example, the
    `addrinfo*` list in a `getaddrinfo` completion), the invoke method must free
-   that object when no callback is present to consume it.
+   that object when no callback is present to consume it. Raw filesystem requests
+   are an explicit exception: cleanup and directory ownership remain the caller's
+   protocol, even when no runtime callback is installed.
 
 3. **Be marked `noexcept`.** Exceptions must not propagate through the libuv C
    callback boundary. Any exception thrown by the user callback is caught and
    forwarded to `std::terminate` by `detail::invoke_callback`.
 
-4. **Clear any borrowed submission inputs before returning.** Inputs copied at
+4. **Clear owned submission inputs before invoking user code.** Inputs copied at
    submission time (node name, service name, hints, address storage) must be
    cleared so the request does not retain stale data after completion.
 
@@ -230,7 +245,9 @@ rollback rules as reusable helpers.
 
 ## Trampolines
 
-Every libuv callback should go through a named trampoline in `core/callback.hpp` or a local `detail` namespace.
+Native callbacks use static member trampolines, local `detail` functions, or
+non-capturing lambdas on static paths. `core/callback.hpp` supplies the shared
+exception-boundary invocation helpers.
 
 Example:
 
@@ -250,11 +267,14 @@ The trampoline is responsible for:
 
 ## Exception Boundary
 
-C callbacks must not allow exceptions to escape into libuv. Initial v2 has one policy: if a user callback throws, the trampoline calls `std::terminate`.
+C callbacks must not allow exceptions to escape into libuv. V2 has one policy: if a user callback throws, the trampoline calls `std::terminate`.
 
-A future loop-level exception handler can be considered later, but it must be an explicit extension. The first low-level API should not silently store exceptions, stop the loop, or continue after an uncaught callback exception.
+Alternative exception routing is tracked in the
+[errors and results proposal](../proposals/006-errors-and-results.md). The current
+low-level API does not store exceptions, stop the loop, or continue after an
+uncaught callback exception.
 
-## Suggested Callback Signatures
+## Callback Argument Shapes
 
 Prefer references over pointers in the C++ API when null is not valid.
 
@@ -262,7 +282,7 @@ Prefer references over pointers in the C++ API when null is not valid.
 using timer_callback = void(timer&);
 using connection_callback = void(tcp&, result);
 using write_callback = void(write_request&, result);
-using read_callback = void(stream&, read_result);
+using read_callback = void(tcp&, read_result); // concrete stream wrapper
 ```
 
 Use result objects for callbacks that can receive `status`.
@@ -271,17 +291,15 @@ Use result objects for callbacks that can receive `status`.
 
 Read APIs need careful design because libuv has separate allocation and read callbacks.
 
-Suggested low-level form:
+Current low-level form:
 
 ```cpp
 stream.read_start(allocator, reader);
 ```
 
-Suggested higher-level form:
-
-```cpp
-stream.read_start(read_buffer_policy::allocate, reader);
-```
+An owning read adapter is proposed in
+[buffers and flow control](../proposals/005-buffers-and-flow-control.md); it is not
+part of the current stream read API.
 
 EOF should not be encoded as a generic exception. It is a normal stream event.
 
@@ -316,9 +334,14 @@ udp.receive_start(allocator, [](uv::udp&, uv::udp_receive_result received) {
 
   auto payload = std::vector<std::byte>{received.bytes().begin(), received.bytes().end()};
 
-  sockaddr_storage peer{};
   if (auto *addr = received.address()) {
-    std::memcpy(&peer, addr, sizeof(peer));
+    if (addr->sa_family == AF_INET) {
+      uv::ipv4 peer{*reinterpret_cast<const sockaddr_in *>(addr)};
+      (void)peer; // value copy; may be retained with payload
+    } else if (addr->sa_family == AF_INET6) {
+      uv::ipv6 peer{*reinterpret_cast<const sockaddr_in6 *>(addr)};
+      (void)peer;
+    }
   }
 });
 ```

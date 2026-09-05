@@ -4,7 +4,7 @@
 
 libuv handles are address-stable. Once initialized, a handle's native address must not change while libuv may refer to it.
 
-Therefore v2 handles should be:
+V2 handles disable copying and moving:
 
 ```cpp
 handle(const handle&) = delete;
@@ -19,14 +19,16 @@ This is stricter than typical C++ value types, but it reflects libuv's lifecycle
 
 `close()` is asynchronous in libuv. A destructor cannot safely call `uv_close()` and then destroy the object immediately.
 
-v2 should avoid pretending that handle destruction automatically completes close.
+V2 does not auto-close low-level handles.
 
 Valid patterns:
 
 - stack handle closed before `loop.run()` exits;
 - heap handle deletes itself in the close callback;
-- owning wrapper schedules close and keeps state alive until the close callback;
-- higher-level RAII owner type separate from the low-level handle.
+- an application-defined owner schedules close and retains state through completion.
+
+Library-provided asynchronous owners are tracked in
+[proposal 002](../proposals/002-async-ownership.md).
 
 The low-level handle destructor does not call `uv_close()`. Destroying a handle while libuv can still reference it is a user lifetime error.
 
@@ -62,9 +64,14 @@ udp.receive_start(allocator, [](uv::udp&, uv::udp_receive_result received) {
 
   std::vector<std::byte> payload{received.bytes().begin(), received.bytes().end()};
 
-  sockaddr_storage peer{};
   if (auto *addr = received.address()) {
-    std::memcpy(&peer, addr, sizeof(peer));
+    if (addr->sa_family == AF_INET) {
+      uv::ipv4 peer{*reinterpret_cast<const sockaddr_in *>(addr)};
+      (void)peer; // value copy; may be retained with payload
+    } else if (addr->sa_family == AF_INET6) {
+      uv::ipv6 peer{*reinterpret_cast<const sockaddr_in6 *>(addr)};
+      (void)peer;
+    }
   }
 });
 ```
@@ -82,17 +89,26 @@ write_request req;
 tcp.write(req, buffers, callback);
 ```
 
-Higher-level API:
-
-```cpp
-tcp.async_write(buffers, callback);
-```
-
-The higher-level API may allocate operation state internally. That cost must be visible in the API name or documentation.
+Owning stream operations are tracked in
+[proposal 005](../proposals/005-buffers-and-flow-control.md).
 
 `fs::raw::request` is a special case because libuv uses `uv_fs_t` for every filesystem operation and requires `uv_fs_req_cleanup()` after completion. The raw API keeps that cleanup explicit. The callback must call `req.cleanup()` after consuming the result and before reusing or destroying the request. `req.scoped_cleanup()` is an opt-in stack guard for that call.
 
 The public `uv::fs` API owns the raw request internally, cleans it automatically, and returns scalar or owned result values. Use `fs::raw` when the caller needs exact libuv control, request reuse, caller-owned buffers, static callbacks, or request-scoped directory iteration.
+
+## Files and Directory Ownership
+
+`file_descriptor` is a copyable integer wrapper, not a closing RAII owner.
+A successful public `fs::open` still requires an explicit file close; ownership of
+operation state does not imply automatic ownership of the opened file.
+
+Incremental `opendir`/`readdir`/`closedir` are raw-only. Successful
+`raw::opendir_result` must be consumed via `take_directory()`. That result and
+`raw::directory` assert empty state on destruction; neither closes automatically.
+`closedir` takes `directory&&` and releases its pointer after successful submission,
+not before submission failure. Clean the last readdir request before submitting
+close, and keep its entry array alive through cleanup. A higher-level directory
+owner remains in [proposal 002](../proposals/002-async-ownership.md).
 
 ## Raw Filesystem Ranges
 
@@ -113,9 +129,10 @@ uv::fs::raw::scandir(loop, req, path, 0,
   });
 ```
 
-The entry names are borrowed from the `uv_fs_t` request and remain valid only
-until request cleanup. Copy names that must outlive the callback or cleanup
-guard.
+The entry names are borrowed. Copy a name before advancing the iterator or
+calling `next()` again, as libuv frees the previous entry on advance; request
+cleanup also invalidates it. Retaining the request alone does not retain an
+already-consumed entry. See [libuv scandir implementation](https://github.com/libuv/libuv/blob/v1.x/src/uv-common.c).
 
 `fs::raw::readdir_result::entries(buffer)` ranges over the entries libuv filled
 in a caller-owned `directory_read_buffer` for that completion:
@@ -126,10 +143,11 @@ for (auto entry : result.entries(buffer)) {
 }
 ```
 
-Those entry names are borrowed from the read buffer and remain valid only while
-the buffer is alive and before it is reused by another `readdir` call. The range
-must not imply ownership; it is only a safer spelling for the bounded index loop
-over `result.count()`.
+The caller owns the entry array, but libuv allocates the entry names. Names become
+invalid when the readdir request is cleaned, even if the entry array remains alive.
+Copy names before cleanup; clean the completed request before reusing it or closing
+the directory. See [libuv readdir](https://docs.libuv.org/en/v1.x/fs.html#c.uv_fs_readdir).
+The range owns neither the array nor the names.
 
 ## Buffers
 
@@ -206,16 +224,18 @@ client.read_start(allocator, [](tcp& client, read_result read) {
 
 The stored object must outlive every callback that may read it. Clearing the field only removes the pointer; it does not destroy the pointed object.
 
-The typed API does not make libuv's `void*` type-safe. Retrieving a different type than the one stored is undefined user behavior and should be documented as such. A future high-level owner may add stronger typing, but the low-level layer should not add per-object storage for it.
+The typed API does not make libuv's `void*` type-safe. Retrieving a different type than the one stored is undefined user behavior and should be documented as such. The low-level layer does not add per-object type tracking. Proposed higher-level
+ownership is tracked separately in the [ownership proposal](../proposals/002-async-ownership.md).
 
 ## Loop
 
-`loop` can be:
+The two current types separate storage ownership from borrowing:
 
-- owning: contains `uv_loop_t raw_` and initializes/closes it;
-- non-owning view: references an external `uv_loop_t`, such as `uv_default_loop()`.
+- `loop` contains and initializes `uv_loop_t`; closing remains explicit.
+- `loop_view` borrows a native loop and has no `close()` member. `default_loop()`
+  returns a view, not an owning `loop`.
 
-The two concepts should be explicit if the implementation needs both:
+The public types are:
 
 ```cpp
 class loop;
@@ -224,7 +244,7 @@ class loop_view;
 
 An owning `loop` should not be confused with the process-wide default loop.
 
-The initial low-level `loop` destructor does not call `uv_loop_close()`. Users must call `loop.close()` explicitly once all handles and requests associated with the loop are closed and the loop is no longer alive.
+The low-level `loop` destructor does not call `uv_loop_close()`. Users must call `loop.close()` explicitly once all handles and requests associated with the loop are closed and the loop is no longer alive.
 
 `loop.close()` maps directly to `uv_loop_close()`: it succeeds only when libuv considers the loop closable, and throws `uv::error` on immediate failure. The destructor intentionally provides no hidden cleanup fallback because that would obscure leaked active handles.
 
@@ -250,4 +270,6 @@ client.close([](tcp& client) {
 });
 ```
 
-A future high-level layer may provide safer owners, but it should be built on top of the low-level wrappers.
+Higher-level owners and asynchronous cleanup are described in the
+[ownership proposal](../proposals/002-async-ownership.md). They are not part of the
+current low-level handle API.
