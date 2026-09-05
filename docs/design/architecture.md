@@ -168,6 +168,16 @@ Required guard rails:
 - do not add virtual functions or virtual bases to low-level wrappers;
 - review every new wrapper family against this invariant before adding callbacks.
 
+`process` is the exception to inline wrapper storage. `uv_spawn()` can attach a
+process handle to its loop and then fail, at which point a throwing constructor
+must not leave the loop pointing into the object that is being destroyed.
+`process` therefore owns a small separately allocated state object whose
+standard-layout native-storage base begins with `uv_process_t`. On a failed
+spawn, that storage is released only by an internal `uv_close()` callback; on a
+successful spawn it also keeps the pointer back to the address-stable `process`
+wrapper used by public callback trampolines. This does not use the native
+`data` field.
+
 ## C++ Hierarchy
 
 libuv's C hierarchy is mirrored by C++ mixins:

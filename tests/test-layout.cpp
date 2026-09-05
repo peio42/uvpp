@@ -21,7 +21,6 @@ TEST(Uvpp2Layout, reconstructsHandlesFromNativePointers) {
   static_assert(std::is_standard_layout_v<uv::pipe::native_storage>);
   static_assert(std::is_standard_layout_v<uv::poll::native_storage>);
   static_assert(std::is_standard_layout_v<uv::prepare::native_storage>);
-  static_assert(std::is_standard_layout_v<uv::process::native_storage>);
   static_assert(std::is_standard_layout_v<uv::signal::native_storage>);
   static_assert(std::is_standard_layout_v<uv::timer::native_storage>);
   static_assert(std::is_standard_layout_v<uv::tcp::native_storage>);

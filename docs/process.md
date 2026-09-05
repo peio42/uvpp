@@ -59,6 +59,12 @@ available only when the installed libuv headers expose them, for example
 
 `process_options` only needs to outlive the `process` constructor call. `uv_spawn` consumes the native options synchronously. After construction, the wrapper stores only the process handle and the exit callback slot.
 
+If `uv_spawn` fails after libuv has attached its native process handle to the
+loop, the constructor closes that handle and retains its native storage until
+libuv has delivered the close callback. It then throws `uv::error` as usual.
+The failed construction therefore leaves no dangling handle in the loop; run the
+loop before closing it to let this internal close complete.
+
 ## Stdio Policy
 
 The API deliberately does not hide `uv_stdio_container_t`.

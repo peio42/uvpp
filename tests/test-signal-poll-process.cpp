@@ -280,6 +280,7 @@ TEST(Uvpp2Process, reportsExitStatus) {
     EXPECT_GT(self.pid(), 0);
     static_assert(std::is_same_v<decltype(self.pid()), uv_pid_t>);
     EXPECT_EQ(&self, &uv::process::from_native(self.native()));
+    EXPECT_EQ(&self, &uv::process::from_native(self.native_handle()));
     self.close([&](uv::process &) {
       closed = true;
     });
@@ -290,6 +291,30 @@ TEST(Uvpp2Process, reportsExitStatus) {
   EXPECT_TRUE(exited);
   EXPECT_TRUE(closed);
   loop.close();
+}
+
+TEST(Uvpp2Process, closesNativeHandleAfterSpawnFailure) {
+  uv::loop loop;
+  bool failed = false;
+
+  try {
+    uv::process process(
+      loop,
+      uv::process_options::make("/nonexistent/uvpp-spawn-failure"),
+      [](uv::process &, uv::process_exit) {});
+  } catch (const uv::error &) {
+    failed = true;
+  }
+
+  EXPECT_TRUE(failed);
+
+  auto handles = loop.handles();
+  ASSERT_EQ(handles.size(), 1u);
+  EXPECT_EQ(handles.front().type(), uv::handle_type::process);
+
+  loop.run();
+  EXPECT_TRUE(loop.handles().empty());
+  EXPECT_NO_THROW(loop.close());
 }
 
 TEST(Uvpp2Process, exposesGlobalStdioInheritanceHelper) {
