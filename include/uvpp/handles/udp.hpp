@@ -520,8 +520,8 @@ namespace uv {
 #endif
 
     void receive_start(allocate_callback allocator, receive_callback receiver) {
-      allocate_callback_ = std::move(allocator);
-      receive_callback_ = std::move(receiver);
+      allocate_callback_.replace(std::move(allocator));
+      receive_callback_.replace(std::move(receiver));
       throw_if_error(uv_udp_recv_start(native(), &udp::alloc_trampoline, &udp::receive_trampoline));
     }
 
@@ -729,12 +729,10 @@ namespace uv {
     static void alloc_trampoline(uv_handle_t *raw, size_t suggested_size, uv_buf_t *buf) noexcept {
       auto &self = udp::from_native(raw);
 
-      if (self.allocate_callback_) {
-        detail::invoke_callback([&] {
-          auto out = self.allocate_callback_(self, suggested_size);
-          *buf = *out.native();
-        });
-      } else {
+      if (!self.allocate_callback_.invoke([&](allocate_callback &callback) {
+            auto out = callback(self, suggested_size);
+            *buf = *out.native();
+          })) {
         *buf = uv_buf_init(nullptr, 0);
       }
     }
@@ -742,17 +740,17 @@ namespace uv {
     static void receive_trampoline(uv_udp_t *raw, ssize_t nread, const uv_buf_t *buf, const sockaddr *addr,
                                    unsigned flags) noexcept {
       auto &self = udp::from_native(raw);
-      if (self.receive_callback_) {
-        detail::invoke_callback(self.receive_callback_, self, udp_receive_result{nread, buf, addr, flags});
-      }
+      self.receive_callback_.invoke([&](receive_callback &callback) {
+        callback(self, udp_receive_result{nread, buf, addr, flags});
+      });
     }
 
     static void send_trampoline(uv_udp_send_t *raw, int status) noexcept {
       udp_send_request::from_native(raw).invoke(status);
     }
 
-    allocate_callback allocate_callback_{};
-    receive_callback receive_callback_{};
+    detail::persistent_callback_slot<allocate_callback> allocate_callback_{};
+    detail::persistent_callback_slot<receive_callback> receive_callback_{};
   };
 
 }

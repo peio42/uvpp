@@ -57,7 +57,7 @@ namespace uv {
 
     template<class Rep, class Period>
     void start(std::string_view path, std::chrono::duration<Rep, Period> interval, callback cb) {
-      callback_ = std::move(cb);
+      callback_.replace(std::move(cb));
       std::string storage{path};
       throw_if_error(uv_fs_poll_start(native(), &fs_poll::poll_trampoline, storage.c_str(), millis(interval)));
     }
@@ -110,12 +110,12 @@ namespace uv {
 
     static void poll_trampoline(uv_fs_poll_t *raw, int status, const uv_stat_t *previous, const uv_stat_t *current) noexcept {
       auto &self = fs_poll::from_native(raw);
-      if (self.callback_) {
-        detail::invoke_callback(self.callback_, self, fs_poll_result{status, previous, current});
-      }
+      self.callback_.invoke([&](callback &callback) {
+        callback(self, fs_poll_result{status, previous, current});
+      });
     }
 
-    callback callback_{};
+    detail::persistent_callback_slot<callback> callback_{};
   };
 
 }

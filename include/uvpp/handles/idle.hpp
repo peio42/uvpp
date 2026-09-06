@@ -25,7 +25,7 @@ namespace uv {
     }
 
     void start(callback cb) {
-      callback_ = std::move(cb);
+      callback_.replace(std::move(cb));
       throw_if_error(uv_idle_start(native(), &idle::idle_trampoline));
     }
 
@@ -43,12 +43,10 @@ namespace uv {
   private:
     static void idle_trampoline(uv_idle_t *raw) noexcept {
       auto &self = idle::from_native(raw);
-      if (self.callback_) {
-        detail::invoke_callback(self.callback_, self);
-      }
+      self.callback_.invoke([&](callback &callback) { callback(self); });
     }
 
-    callback callback_{};
+    detail::persistent_callback_slot<callback> callback_{};
   };
 
 }

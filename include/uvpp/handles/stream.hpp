@@ -108,7 +108,7 @@ namespace uv {
     }
 
     void listen(int backlog, connection_callback callback) {
-      connection_callback_ = std::move(callback);
+      connection_callback_.replace(std::move(callback));
       throw_if_error(uv_listen(native_stream(), backlog, &stream::connection_trampoline));
     }
 
@@ -124,8 +124,8 @@ namespace uv {
     }
 
     void read_start(allocate_callback allocator, read_callback reader) {
-      allocate_callback_ = std::move(allocator);
-      read_callback_ = std::move(reader);
+      allocate_callback_.replace(std::move(allocator));
+      read_callback_.replace(std::move(reader));
       throw_if_error(uv_read_start(native_stream(), &stream::alloc_trampoline, &stream::read_trampoline));
     }
 
@@ -194,21 +194,19 @@ namespace uv {
       auto &self = Derived::from_native(reinterpret_cast<Raw *>(raw));
       auto &base = static_cast<stream<Derived, Raw>&>(self);
 
-      if (base.connection_callback_) {
-        detail::invoke_callback(base.connection_callback_, self, result{status});
-      }
+      base.connection_callback_.invoke([&](connection_callback &callback) {
+        callback(self, result{status});
+      });
     }
 
     static void alloc_trampoline(uv_handle_t *raw, size_t suggested_size, uv_buf_t *buf) noexcept {
       auto &self = Derived::from_native(raw);
       auto &base = static_cast<stream<Derived, Raw>&>(self);
 
-      if (base.allocate_callback_) {
-        detail::invoke_callback([&] {
-          auto out = base.allocate_callback_(self, suggested_size);
-          *buf = *out.native();
-        });
-      } else {
+      if (!base.allocate_callback_.invoke([&](allocate_callback &callback) {
+            auto out = callback(self, suggested_size);
+            *buf = *out.native();
+          })) {
         *buf = uv_buf_init(nullptr, 0);
       }
     }
@@ -217,18 +215,18 @@ namespace uv {
       auto &self = Derived::from_native(reinterpret_cast<Raw *>(raw));
       auto &base = static_cast<stream<Derived, Raw>&>(self);
 
-      if (base.read_callback_) {
-        detail::invoke_callback(base.read_callback_, self, read_result{nread, buf});
-      }
+      base.read_callback_.invoke([&](read_callback &callback) {
+        callback(self, read_result{nread, buf});
+      });
     }
 
     static void shutdown_trampoline(uv_shutdown_t *raw, int status) noexcept {
       shutdown_request::from_native(raw).invoke(status);
     }
 
-    allocate_callback allocate_callback_{};
-    read_callback read_callback_{};
-    connection_callback connection_callback_{};
+    detail::persistent_callback_slot<allocate_callback> allocate_callback_{};
+    detail::persistent_callback_slot<read_callback> read_callback_{};
+    detail::persistent_callback_slot<connection_callback> connection_callback_{};
   };
 
 }

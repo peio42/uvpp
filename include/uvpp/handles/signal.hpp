@@ -27,7 +27,7 @@ namespace uv {
     }
 
     void start(signal_number signum, callback cb) {
-      callback_ = std::move(cb);
+      callback_.replace(std::move(cb));
       throw_if_error(uv_signal_start(native(), &signal::signal_trampoline, signum));
     }
 
@@ -39,7 +39,7 @@ namespace uv {
     }
 
     void start_oneshot(signal_number signum, callback cb) {
-      callback_ = std::move(cb);
+      callback_.replace(std::move(cb));
       throw_if_error(uv_signal_start_oneshot(native(), &signal::signal_trampoline, signum));
     }
 
@@ -57,12 +57,10 @@ namespace uv {
   private:
     static void signal_trampoline(uv_signal_t *raw, signal_number signum) noexcept {
       auto &self = signal::from_native(raw);
-      if (self.callback_) {
-        detail::invoke_callback(self.callback_, self, signum);
-      }
+      self.callback_.invoke([&](callback &callback) { callback(self, signum); });
     }
 
-    callback callback_{};
+    detail::persistent_callback_slot<callback> callback_{};
   };
 
 }

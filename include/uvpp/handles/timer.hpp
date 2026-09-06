@@ -30,7 +30,7 @@ namespace uv {
     void start(std::chrono::duration<Rep, Period> timeout,
                std::chrono::duration<RepeatRep, RepeatPeriod> repeat,
                callback cb) {
-      callback_ = std::move(cb);
+      callback_.replace(std::move(cb));
       throw_if_error(uv_timer_start(native(), &timer::timer_trampoline, millis(timeout), millis(repeat)));
     }
 
@@ -83,12 +83,10 @@ namespace uv {
 
     static void timer_trampoline(uv_timer_t *raw) noexcept {
       auto &self = timer::from_native(raw);
-      if (self.callback_) {
-        detail::invoke_callback(self.callback_, self);
-      }
+      self.callback_.invoke([&](callback &callback) { callback(self); });
     }
 
-    callback callback_{};
+    detail::persistent_callback_slot<callback> callback_{};
   };
 
 }

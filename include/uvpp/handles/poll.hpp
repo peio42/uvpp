@@ -126,7 +126,7 @@ namespace uv {
     }
 
     void start(poll_events events, callback cb) {
-      callback_ = std::move(cb);
+      callback_.replace(std::move(cb));
       throw_if_error(uv_poll_start(native(), events.raw(), &poll::poll_trampoline));
     }
 
@@ -162,12 +162,12 @@ namespace uv {
   private:
     static void poll_trampoline(uv_poll_t *raw, int status, int events) noexcept {
       auto &self = poll::from_native(raw);
-      if (self.callback_) {
-        detail::invoke_callback(self.callback_, self, poll_result{status, events});
-      }
+      self.callback_.invoke([&](callback &callback) {
+        callback(self, poll_result{status, events});
+      });
     }
 
-    callback callback_{};
+    detail::persistent_callback_slot<callback> callback_{};
   };
 
 }
