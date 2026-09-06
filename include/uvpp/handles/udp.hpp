@@ -228,11 +228,8 @@ namespace uv {
 
     udp_send_batch &operator=(const udp_send_batch &other) {
       if (this != &other) {
-        raw_buffers_ = other.raw_buffers_;
-        buffer_starts_ = other.buffer_starts_;
-        buffer_counts_ = other.buffer_counts_;
-        addresses_ = other.addresses_;
-        rebuild_buffer_pointers();
+        udp_send_batch copy{other};
+        swap(copy);
       }
       return *this;
     }
@@ -246,11 +243,7 @@ namespace uv {
 
     udp_send_batch &operator=(udp_send_batch &&other) noexcept {
       if (this != &other) {
-        raw_buffers_ = std::move(other.raw_buffers_);
-        buffer_starts_ = std::move(other.buffer_starts_);
-        buffer_counts_ = std::move(other.buffer_counts_);
-        addresses_ = std::move(other.addresses_);
-        buffer_arrays_ = std::move(other.buffer_arrays_);
+        swap(other);
       }
       return *this;
     }
@@ -353,6 +346,14 @@ namespace uv {
 
   private:
     friend class udp;
+
+    void swap(udp_send_batch &other) noexcept {
+      raw_buffers_.swap(other.raw_buffers_);
+      buffer_starts_.swap(other.buffer_starts_);
+      buffer_counts_.swap(other.buffer_counts_);
+      addresses_.swap(other.addresses_);
+      buffer_arrays_.swap(other.buffer_arrays_);
+    }
 
     static constexpr std::size_t max_native_count() noexcept {
       return static_cast<std::size_t>(std::numeric_limits<unsigned int>::max());
