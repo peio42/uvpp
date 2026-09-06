@@ -196,10 +196,14 @@ basic_handle<Derived, Raw>
   idle
   signal
   poll
-  process
   fs_event
   fs_poll
+
+process (owns separate native storage)
 ```
+
+`process` does not inherit from `basic_handle`; it implements its handle operations
+using the separately allocated storage described above.
 
 `stream<Derived, Raw>` is a CRTP mixin that provides stream operations and a `native_stream()` helper. It does not create a separate runtime object.
 
