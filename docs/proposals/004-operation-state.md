@@ -2,6 +2,8 @@
 
 Status: draft.
 
+Architecture: [000 — V3 architecture](000-v3-architecture.md).
+
 Target: v3 exploration; independent compatible improvements may land in v2.
 
 This proposal is not an implemented API or a release commitment. Names are provisional.
@@ -14,7 +16,8 @@ implementations could duplicate these subtle contracts and drift from callbacks.
 
 ## Proposed design
 
-Build a small internal operation protocol shared by callback and coroutine
+Build a small internal operation protocol shared by ergonomic `uv`, explicit-result
+`uv::ops`, and callback/coroutine
 frontends: prepare inputs, submit, record completion, clean native resources, and
 deliver the result exactly once. The protocol owns or explicitly borrows every
 input needed after submission. It does not consume libuv `data`.
@@ -22,6 +25,12 @@ input needed after submission. It does not consume libuv `data`.
 Document family-specific state transitions, including submission failure without
 a future callback. Clear request callback slots and obsolete input storage before
 calling user code, so supported resubmission from completion remains safe.
+
+Keep the libuv binding in raw primitives or narrow internal helpers; `uv::co`
+must not reimplement it. Error facade selection must not alter native submission,
+ownership, or cleanup. Define deferred or policy-aware initiation so native
+submission errors cannot escape the explicit-result channel during construction.
+All frontends operate on the same `uv::loop` without a required dispatcher.
 
 Separate result materialization from raw cleanup: owned results survive cleanup;
 borrowed results retain their documented owner and validity interval. Do not apply

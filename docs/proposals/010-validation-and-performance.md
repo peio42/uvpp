@@ -2,6 +2,8 @@
 
 Status: draft.
 
+Architecture: [000 — V3 architecture](000-v3-architecture.md).
+
 Target: v3 exploration; independent compatible improvements may land in v2.
 
 This proposal is not an implemented API or a release commitment. Names are provisional.
@@ -9,15 +11,17 @@ This proposal is not an implemented API or a release commitment. Names are provi
 ## Motivation and current behavior
 
 The repository runs GCC and Clang tests on Ubuntu and includes native-layout tests.
-There is no current cross-platform CI matrix or benchmark suite. The Makefile does
-not generate header dependency files, so an incremental build can reuse stale test
-objects after a header change. This proposal records that issue; it does not fix it.
+There is no current cross-platform CI matrix or benchmark suite. The [Makefile](../../Makefile) now generates and includes transitive header
+dependencies for test objects and examples, including regeneration of missing
+dependency files. This repair is an implemented baseline.
 
 ## Proposed design
 
-First repair incremental dependency tracking for test objects and example binaries,
-including transitive headers. Check the repair by changing a header and observing
-rebuilds, without requiring a clean build.
+Retain incremental dependency tracking checks for test objects and examples by
+changing a header and observing rebuilds without requiring a clean build.
+The isolated [UDP allocation test](../../tests/udp-allocation.cpp) already checks
+copy-assignment rollback at each allocation failure; broaden lifecycle injection
+coverage to the new owner and operation protocols.
 
 Add sanitizer configurations (ASan/UBSan and focused TSan jobs), then supported
 Windows and macOS builds. Adapt platform-specific tests rather than treating Linux
@@ -34,6 +38,12 @@ Compile every public header independently and link multi-translation-unit consum
 Validate CMake consumption from an installed package and the packaged examples.
 These checks matter for a header-only library and should include optional coroutine
 headers once present.
+
+Validate raw, high-level callback, and coroutine workflows together on one
+`uv::loop`, with no required posting component. Compare throwing and `uv::ops`
+submission/completion failures with equivalent ownership. Establish a usable
+baseline before prototype 001; extend it through flow-control validation and API
+freeze rather than waiting for every future benchmark before prototyping.
 
 ## Performance method
 
@@ -57,8 +67,8 @@ speedup or allocation-free coroutine claim is made before those measurements.
 
 ## Implementation progress and validation
 
-Existing GCC/Clang tests remain the baseline. Incremental dependency fixes,
-sanitation configurations, platform jobs, and benchmarks are proposed work, suitable
+Existing GCC/Clang tests and incremental dependency fixes are implemented.
+Sanitizer configurations, platform jobs, and benchmarks remain proposed work, suitable
 for v2 independently of v3. Acceptance requires reproducible commands, verified
 incremental rebuilding, a working platform matrix, and recorded benchmark baselines.
 

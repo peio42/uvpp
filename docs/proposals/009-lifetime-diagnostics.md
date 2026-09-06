@@ -2,6 +2,8 @@
 
 Status: draft.
 
+Architecture: [000 — V3 architecture](000-v3-architecture.md).
+
 Target: v3 exploration; independent compatible improvements may land in v2.
 
 This proposal is not an implemented API or a release commitment. Names are provisional.
@@ -13,6 +15,10 @@ lifetime misuse is a caller contract violation with little context. Coroutines a
 owners introduce additional transitions worth making visible during development.
 
 ## Proposed design
+
+Treat diagnostics as transversal validation of raw lifetimes, high-level ownership,
+and coroutine operation transitions on the common loop. Do not introduce another
+ownership registry required in ordinary builds or a separate execution context.
 
 Add an opt-in diagnostic mode with family-specific lifecycle checks: request
 submitted twice, destruction while pending, handle use after close starts, double

@@ -2,6 +2,8 @@
 
 Status: draft.
 
+Architecture: [000 — V3 architecture](000-v3-architecture.md).
+
 Target: v3 exploration; independent compatible improvements may land in v2.
 
 This proposal is not an implemented API or a release commitment. Names are provisional.
@@ -23,13 +25,17 @@ using a newer standard-library callable wrapper must not be a requirement.
 Define and test one-shot versus persistent invocation rules. One-shot callbacks
 are extracted and cleared before invocation. For persistent callbacks, replacing
 or stopping a callback from inside itself must not destroy the callable currently
-executing or restore an obsolete callback over its replacement. Choose an explicit
-replacement policy before replacing the storage implementation.
+executing or restore an obsolete callback over its replacement. Preserve the current active-callable and generation-based replacement semantics
+when replacing the storage implementation.
 
 Submission failure must leave slots and owned captures in a documented state.
 Switching runtime/static modes must specify when old captures are released. Keep
 all C callback exception boundaries intact; changing storage does not change the
 user exception policy.
+
+This work is transversal to the architecture. It is a prerequisite only where
+a selected operation or posting API requires move-only callback storage. Raw
+static paths must not acquire coroutine or high-level ownership state.
 
 ## Implementation and costs
 
@@ -47,13 +53,16 @@ without evidence that the savings justify API and compilation costs.
 
 - Small custom wrapper versus a dependency or optional newer-library backend.
 - Handling oversized and over-aligned captures in fixed-capacity mode.
-- Deferred callback replacement versus another safe persistent-slot design.
+- Whether another persistent-slot design preserves current replacement semantics
+  with lower measured storage costs.
 - Whether static-only storage deserves a public opt-in type.
 
 ## Implementation progress and validation
 
 Static callbacks and one-shot extraction already exist. Move-only runtime storage
-and a persistent replacement contract require implementation and audit.
+requires implementation. Persistent replacement already uses an active callable
+and generation tracking in [callback slots](../../include/uvpp/core/callback.hpp);
+the new storage must preserve that behavior and its regression coverage.
 
 Test unique ownership captures, small/large/over-aligned targets, replacement during
 invocation, stop/restart, failed submission, callback destruction, and mode switches.

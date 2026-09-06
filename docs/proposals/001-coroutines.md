@@ -2,6 +2,8 @@
 
 Status: draft.
 
+Architecture: [000 — V3 architecture](000-v3-architecture.md).
+
 Target: v3. This supersedes the exploratory coroutine strategy previously kept in
 `docs/design/`. The API names below are sketches, not available functions.
 
@@ -18,7 +20,9 @@ Keep explicit native access, user-owned `data`, and address-stable handles/reque
 
 ## Proposed task model
 
-Start with a lazy, move-only `task<T>` and `task<void>`. Calling a coroutine constructs
+Put coroutine primitives in `uv::co`; high-level I/O objects remain in `uv`.
+Do not introduce coroutine-specific socket or filesystem owner hierarchies.
+Start with a lazy, move-only `uv::co::task<T>` and `uv::co::task<void>`. Calling a coroutine constructs
 a task; awaiting it or explicitly spawning it starts execution. Specify single
 consumption and continuation ownership. The promise stores a value or exception and
 transfers control to its continuation at final suspension.
@@ -31,7 +35,7 @@ the contract for destruction without join before stabilizing this type.
 
 Independent execution requires a named spawn/detach API, a surviving owner, and an
 explicit error destination. Do not silently detach abandoned work. Bind execution
-to a loop context and specify where continuations resume with the
+to the shared `uv::loop` context and specify where continuations resume with the
 [scheduling proposal](007-loop-scheduling.md). Do not drive nested event loops.
 
 ## Operation awaitables
@@ -53,23 +57,23 @@ family-specific point before result delivery can destroy operation state.
 
 ## Error policy
 
-Use one operation vocabulary with an explicit result adapter, as explored in
-[errors and results](006-errors-and-results.md), instead of duplicating a throwing
-and result-returning name for every operation. Illustrative shape:
+Use the structural policy from [006](006-errors-and-results.md): ergonomic
+high-level awaits throw on operational errors, while `uv::ops` awaits return
+explicit results on the same owners. Illustrative shape only:
 
 ```cpp
-// Proposed API; task startup and resource ownership are handled by the caller's scope.
-auto connected = co_await uv::as_result(client.async_connect(address));
+auto connected = co_await uv::ops::connect(client, address);
 if (!connected) {
   report(connected.error_code());
   co_return;
 }
-co_await client.async_write(payload.view()); // explicit borrow until completion
+co_await client.write_borrowed(payload.view());
 ```
 
-The exact result type and default policy remain open. The result form must cover
-both native submission and completion errors. Specify allocation/setup exceptions
-separately and ensure operation construction does not bypass the adapter's contract.
+Exact signatures and result accessors remain provisional. Both native submission
+and completion failures must follow the chosen channel. Allocation/setup failures
+need a separate explicit contract. Share internal result adaptation instead of
+requiring `as_result`, `async_*`, and suffix variants as parallel public choices.
 EOF is normal stream control flow, and partial progress must not disappear on error.
 
 No exception may escape a C trampoline. Store operation delivery exceptions where
@@ -78,7 +82,7 @@ to the explicit handler. Callback users retain their documented exception bounda
 
 ## Streams and repeated events
 
-One-shot `async_read_some`, accept, and receive adapters are useful but must claim
+One-shot `read_some`, accept, and receive adapters are useful but must claim
 the relevant native callback slots and reject incompatible simultaneous consumers.
 Specify whether a subscription remains active between awaits or starts/stops each
 time. Preserve the low-level allocator/reader callback pair.
@@ -113,7 +117,7 @@ unsupported cases and their lifetime behavior are explicit.
 - Lazy versus eager tasks: lazy is preferred to make startup explicit.
 - Loop binding at task creation versus scope startup; behavior of cross-loop awaits.
 - Frame allocation customization and optional operation pools after measurement.
-- Result-adapter vocabulary and default error behavior.
+- Explicit-operation initiation and facade spellings under proposal 006.
 - Inline resumption versus queued continuations and fairness budget.
 - Async sequences versus channels after one-shot adapters are validated.
 - External task/executor interoperability without replacing the libuv-oriented core.
@@ -122,6 +126,11 @@ unsupported cases and their lifetime behavior are explicit.
 
 The existing callbacks, request wrappers, filesystem owners, and coroutine strategy
 are foundations. No public `task<T>` or operation-awaitable layer is implemented.
+
+Set the minimum buffer lifetime contracts from 005 before prototyping. Use the
+prototype to revise the initial 002/003/004/006/007 contracts, rather than waiting
+for their full implementation. Ordinary loop-thread coroutine use must not require
+a separate dispatcher; validate coexistence with raw and high-level callbacks.
 
 Prototype a timer, filesystem read, DNS lookup, connect/write, worker operation,
 and close before committing public names. Test immediate and delayed failures,

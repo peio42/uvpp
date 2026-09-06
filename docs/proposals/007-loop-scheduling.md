@@ -2,6 +2,8 @@
 
 Status: draft.
 
+Architecture: [000 — V3 architecture](000-v3-architecture.md).
+
 Target: v3 exploration; independent compatible improvements may land in v2.
 
 This proposal is not an implemented API or a release commitment. Names are provisional.
@@ -9,12 +11,18 @@ This proposal is not an implemented API or a release commitment. Names are provi
 ## Motivation and current behavior
 
 `uv::async` can wake the loop from another thread, but applications supply their
-own queue and synchronization. A reusable posting facility would also give
-coroutines a defined place to resume.
+own queue and synchronization. A reusable posting facility can support explicit cross-thread publication.
+Coroutine continuation rules also need definition on the existing loop.
 
 ## Proposed design
 
-Add an explicit scheduler or dispatcher object bound to a borrowed loop. It owns
+Use the canonical `uv::loop` for raw callbacks, high-level operations, and
+coroutines. Define ordinary loop-thread continuation behavior without requiring
+an executor, dispatcher, or hidden runtime. Any fairness queue or wakeup state
+needed by this policy must have documented ownership, cost, and shutdown behavior.
+
+Separately, add an optional explicit posting component bound to a borrowed
+`uv::loop`. Cross-thread posting users opt into this component. It owns
 a work queue and an async wakeup handle. Posting transfers a callable into the
 queue; accepted work executes on the loop thread. Specify per-producer ordering
 and a linearization point for acceptance. Do not claim meaningful wall-clock
@@ -44,7 +52,8 @@ and whether the scheduler's handle keeps the loop alive.
 
 ## Alternatives and open questions
 
-- Compare a separate scheduler with adding posting state directly to `loop`.
+- Choose the posting component API and its ownership; avoid mandatory posting
+  state for raw handles or ordinary loop-thread coroutines.
 - Define callable exception routing together with the errors proposal.
 - Choose shutdown behavior for accepted work and scheduler-owned continuations.
 - Keep an adaptation boundary for external executors without requiring a general
@@ -52,7 +61,9 @@ and whether the scheduler's handle keeps the loop alive.
 
 ## Implementation progress and validation
 
-The async handle exists; the queue, scheduler, and shutdown protocol are proposed.
+The async handle exists; continuation policy, optional posting queue, and shutdown
+protocol are proposed. Validate all three layers on one loop without a separately
+constructed posting component before freezing the coroutine API.
 Validate many producers, coalesced wakeups, posts racing with shutdown, rejection,
 loop-thread identity, exception routing, bounded queue behavior, and I/O fairness.
 Run thread sanitizer on the queue and endpoint lifetime tests where supported.

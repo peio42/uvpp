@@ -2,6 +2,8 @@
 
 Status: draft.
 
+Architecture: [000 — V3 architecture](000-v3-architecture.md).
+
 Target: v3 exploration; independent compatible improvements may land in v2.
 
 This proposal is not an implemented API or a release commitment. Names are provisional.
@@ -15,7 +17,11 @@ and memory limits themselves.
 
 ## Proposed design
 
-Keep the two-callback native read API. Add optional `read_some` into borrowed
+Before prototype 001, define the minimum borrowing, copying, transfer, and
+completion-lifetime rules below. Full read adapters, recycling, and bounded flow
+control are validated after the prototype and before API freeze.
+
+Keep the two-callback native read API in `uv::raw`. Add optional `read_some` into borrowed
 mutable storage and an owning read form, plus `read_exactly` with explicit partial
 data on EOF or error. These names are sketches, not available API. Distinguish
 normal EOF, empty native notifications, bytes transferred, and actual errors.
@@ -43,6 +49,11 @@ Do not silently create unbounded channels.
 
 ## Implementation and costs
 
+Expose owning adapters on high-level `uv` objects, with explicit-result operations
+in `uv::ops`. Error-policy selection must not change buffer ownership or require
+caller-owned requests. Keep semantic ownership names; do not add `async_*` just
+to distinguish error policies.
+
 Build callback and coroutine forms over the same buffer owner and subscription
 protocol. Pool allocation and metadata are opt-in and reusable. Preserve direct
 scatter/gather APIs without hidden per-call metadata allocation. A read limit or
@@ -67,7 +78,7 @@ within documented bounds, including in-flight operations.
 
 ## Owning Callback Operations
 
-The earlier design sketch `tcp.async_write(buffers, callback)` is not implemented.
+Owning callback stream writes are not implemented.
 Explore a callback frontend owning its request state alongside the coroutine form.
 Ownership of payloads must still distinguish borrowing, copying, and transfer; the
 short signature alone cannot claim to retain borrowed bytes.

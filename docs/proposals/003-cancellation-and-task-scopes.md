@@ -2,6 +2,8 @@
 
 Status: draft.
 
+Architecture: [000 — V3 architecture](000-v3-architecture.md).
+
 Target: v3 exploration; independent compatible improvements may land in v2.
 
 This proposal is not an implemented API or a release commitment. Names are provisional.
@@ -14,14 +16,17 @@ destruction alone cannot establish that native work has stopped.
 
 ## Proposed design
 
-Provide explicit task scopes with spawn, stop request, and asynchronous join.
+Provide explicit task scopes in `uv::co` with spawn, stop request, and asynchronous
+join on the common `uv::loop`. Callback and coroutine operations share cancellation
+state and native completion rules; an explicit result API does not change ownership.
 A scope owns started children until their native operations and cleanup complete.
 A child error requests sibling stop under a documented scope policy; join still
 waits for all children. Unobserved detached failures require an explicit handler.
 
 Separate cancellation request, native cancellation attempt, operation completion,
 and storage reclamation. Support cooperative stop tokens; bridge stop requests
-from other threads through [loop scheduling](007-loop-scheduling.md). Token
+from other threads through [loop scheduling](007-loop-scheduling.md). A cross-thread posting endpoint is an explicit optional capability, not a second
+scheduler required by loop-thread scopes. Token
 callbacks must not directly mutate loop-owned state from an arbitrary thread.
 
 Define cancellation per operation family and supported libuv version. Requests

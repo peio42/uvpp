@@ -2,6 +2,8 @@
 
 Status: draft.
 
+Architecture: [000 — V3 architecture](000-v3-architecture.md).
+
 Target: v3 exploration; independent compatible improvements may land in v2.
 
 This proposal is not an implemented API or a release commitment. Names are provisional.
@@ -16,13 +18,20 @@ path does not protect earlier exits.
 
 ## Proposed design
 
-Add an optional unique owner for stable handle storage, plus asynchronous close
+Place caller-controlled wrappers in `uv::raw` and recommended owners in `uv`.
+Add a unique owner for stable handle storage, plus asynchronous close
 and a resource scope. A movable owner may transfer its pointer; the native handle
 and low-level wrapper remain non-copyable and non-movable. Ownership transfer
 must be named or represented by an owning type, never by an implicit borrowed view.
 
+Adoption must transfer an owning resource whose stable storage can actually be
+retained. An arbitrary raw reference, particularly a stack wrapper, cannot transfer
+that guarantee. Borrowing is separate and never authorizes independent close.
+Explicit raw/native access must document permitted mutations and callback-slot
+conflicts; a callback-scoped accessor does not enforce these rules by itself.
+
 The scope retains registered resources until close completion, including when a
-child task fails. Handle owners borrow their loop; the loop must remain alive and
+child task fails. Handle owners borrow the common `uv::loop`; the loop must remain alive and
 be driven until cleanup finishes. Explicit asynchronous scope exit is the normal
 path. The destructor cannot await, run a nested event loop, or immediately free a
 closing handle. Before stabilizing this API, choose a documented fallback for an
@@ -46,7 +55,8 @@ Cleanup failure must be observable without discarding the original task failure.
 
 ## Alternatives and open questions
 
-- Caller-owned handles remain the allocation-free option.
+- Caller-owned raw storage preserves the direct path without owner allocations.
+  Existing wrapper-specific storage costs must still be documented.
 - Decide owner construction, release, adoption, and borrowing vocabulary.
 - Decide how multiple close waiters and cleanup errors are represented.
 - Decide whether a resource scope and task scope are one public type or composed types.
