@@ -171,8 +171,8 @@ namespace uv {
       : count_{count}, buffers_{buffers}, buffer_counts_{buffer_counts}, addresses_{addresses} {}
 
     udp_send_many_view(std::span<uv_buf_t *> buffers, std::span<unsigned int> buffer_counts,
-                       std::span<sockaddr *> addresses) noexcept
-      : udp_send_many_view{static_cast<unsigned int>(buffers.size()), buffers.data(), buffer_counts.data(),
+                       std::span<sockaddr *> addresses)
+      : udp_send_many_view{detail::checked_buffer_count(buffers.size()), buffers.data(), buffer_counts.data(),
                            addresses.data()} {
       assert(buffers.size() == buffer_counts.size());
       assert(buffers.size() == addresses.size());
@@ -324,9 +324,8 @@ namespace uv {
     udp_send_batch &add(const buffer_view &, ipv6 &&) = delete;
 
     udp_send_batch &add(std::span<const std::byte> bytes, const sockaddr *addr) {
-      check_count(bytes.size());
-      auto raw = uv_buf_init(const_cast<char *>(reinterpret_cast<const char *>(bytes.data())),
-                             static_cast<unsigned int>(bytes.size()));
+      auto raw = detail::make_native_buffer(const_cast<char *>(reinterpret_cast<const char *>(bytes.data())),
+                                            bytes.size());
       append(std::span<const uv_buf_t>{&raw, 1}, addr);
       return *this;
     }
@@ -347,7 +346,7 @@ namespace uv {
     udp_send_batch &add(std::span<const std::byte>, ipv6 &&) = delete;
 
     udp_send_batch_view view() const noexcept {
-      return udp_send_batch_view{static_cast<unsigned int>(buffer_arrays_.size()),
+      return udp_send_batch_view{detail::narrow_buffer_count_unchecked(buffer_arrays_.size()),
                                  buffer_arrays_.data(), buffer_counts_.data(),
                                  addresses_.data()};
     }
@@ -403,7 +402,7 @@ namespace uv {
     void append_datagram(std::size_t first, std::size_t count, const sockaddr *addr,
                          bool buffer_storage_reallocated) {
       buffer_starts_.push_back(first);
-      buffer_counts_.push_back(static_cast<unsigned int>(count));
+      buffer_counts_.push_back(detail::narrow_buffer_count_unchecked(count));
       addresses_.push_back(const_cast<sockaddr *>(addr));
 
       if (buffer_storage_reallocated) {
@@ -421,7 +420,7 @@ namespace uv {
     }
 
     udp_send_many_view native_view() noexcept {
-      return udp_send_many_view{static_cast<unsigned int>(buffer_arrays_.size()),
+      return udp_send_many_view{detail::narrow_buffer_count_unchecked(buffer_arrays_.size()),
                                 buffer_arrays_.data(), buffer_counts_.data(),
                                 addresses_.data()};
     }
@@ -533,7 +532,7 @@ namespace uv {
               udp_send_request::callback callback) {
       detail::submit_request(request, std::move(callback), [&] {
         return uv_udp_send(request.native(), native(), reinterpret_cast<const uv_buf_t *>(buffers.data()),
-                           static_cast<unsigned int>(buffers.size()), addr, &udp::send_trampoline);
+                           detail::checked_buffer_count(buffers.size()), addr, &udp::send_trampoline);
       });
     }
 
@@ -564,8 +563,8 @@ namespace uv {
 
     void send(udp_send_request &request, std::span<const std::byte> bytes, const sockaddr *addr,
               udp_send_request::callback callback) {
-      auto raw = uv_buf_init(const_cast<char *>(reinterpret_cast<const char *>(bytes.data())),
-                             static_cast<unsigned int>(bytes.size()));
+      auto raw = detail::make_native_buffer(const_cast<char *>(reinterpret_cast<const char *>(bytes.data())),
+                                            bytes.size());
       detail::submit_request(request, std::move(callback), [&] {
         return uv_udp_send(request.native(), native(), &raw, 1, addr, &udp::send_trampoline);
       });
@@ -584,7 +583,7 @@ namespace uv {
     template<auto Callback>
     void send_static(udp_send_request &request, std::span<const buffer_view> buffers, const sockaddr *addr) {
       throw_if_error(uv_udp_send(request.native(), native(), reinterpret_cast<const uv_buf_t *>(buffers.data()),
-                                 static_cast<unsigned int>(buffers.size()), addr, [](uv_udp_send_t *raw, int status) noexcept {
+                                 detail::checked_buffer_count(buffers.size()), addr, [](uv_udp_send_t *raw, int status) noexcept {
         detail::invoke_static_callback<Callback>(udp_send_request::from_native(raw), result{status});
       }));
     }
@@ -600,8 +599,11 @@ namespace uv {
     }
 
     send_now_result send_now(std::span<const buffer_view> buffers, const sockaddr *addr) noexcept {
+      if (!detail::buffer_count_fits(buffers.size())) {
+        return send_now_result{UV_EINVAL};
+      }
       return send_now_result{uv_udp_try_send(native(), reinterpret_cast<const uv_buf_t *>(buffers.data()),
-                                             static_cast<unsigned int>(buffers.size()), addr)};
+                                             detail::narrow_buffer_count_unchecked(buffers.size()), addr)};
     }
 
     send_now_result send_now(const buffer_view &buf, const ipv4 &addr) noexcept {
@@ -613,8 +615,11 @@ namespace uv {
     }
 
     send_now_result send_now(std::span<const buffer_view> buffers) noexcept {
+      if (!detail::buffer_count_fits(buffers.size())) {
+        return send_now_result{UV_EINVAL};
+      }
       return send_now_result{uv_udp_try_send(native(), reinterpret_cast<const uv_buf_t *>(buffers.data()),
-                                             static_cast<unsigned int>(buffers.size()), nullptr)};
+                                             detail::narrow_buffer_count_unchecked(buffers.size()), nullptr)};
     }
 
     send_now_result send_now(const buffer_view &buf) noexcept {
@@ -622,8 +627,11 @@ namespace uv {
     }
 
     send_now_result send_now(std::span<const std::byte> bytes, const sockaddr *addr) noexcept {
-      auto raw = uv_buf_init(const_cast<char *>(reinterpret_cast<const char *>(bytes.data())),
-                             static_cast<unsigned int>(bytes.size()));
+      if (!detail::buffer_length_fits(bytes.size())) {
+        return send_now_result{UV_EINVAL};
+      }
+      auto raw = detail::make_native_buffer_unchecked(const_cast<char *>(reinterpret_cast<const char *>(bytes.data())),
+                                                      bytes.size());
       return send_now_result{uv_udp_try_send(native(), &raw, 1, addr)};
     }
 
@@ -733,7 +741,7 @@ namespace uv {
             auto out = callback(self, suggested_size);
             *buf = *out.native();
           })) {
-        *buf = uv_buf_init(nullptr, 0);
+        *buf = detail::make_native_buffer_unchecked(nullptr, 0);
       }
     }
 

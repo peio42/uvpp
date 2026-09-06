@@ -149,7 +149,7 @@ namespace uv {
     void write(write_request &request, std::span<const buffer_view> buffers, write_request::callback callback) {
       detail::submit_request(request, std::move(callback), [&] {
         return uv_write(request.native(), native_stream(), reinterpret_cast<const uv_buf_t *>(buffers.data()),
-                        static_cast<unsigned int>(buffers.size()), write_request::trampoline);
+                        detail::checked_buffer_count(buffers.size()), write_request::trampoline);
       });
     }
 
@@ -158,8 +158,8 @@ namespace uv {
     }
 
     void write(write_request &request, std::span<const std::byte> bytes, write_request::callback callback) {
-      auto raw = uv_buf_init(const_cast<char *>(reinterpret_cast<const char *>(bytes.data())),
-                             static_cast<unsigned int>(bytes.size()));
+      auto raw = detail::make_native_buffer(const_cast<char *>(reinterpret_cast<const char *>(bytes.data())),
+                                            bytes.size());
       detail::submit_request(request, std::move(callback), [&] {
         return uv_write(request.native(), native_stream(), &raw, 1, write_request::trampoline);
       });
@@ -168,15 +168,18 @@ namespace uv {
     template<auto Callback>
     void write_static(write_request &request, std::span<const buffer_view> buffers) {
       throw_if_error(uv_write(request.native(), native_stream(), reinterpret_cast<const uv_buf_t *>(buffers.data()),
-                     static_cast<unsigned int>(buffers.size()), [](uv_write_t *raw, int status) noexcept {
+                     detail::checked_buffer_count(buffers.size()), [](uv_write_t *raw, int status) noexcept {
         detail::invoke_static_callback<Callback>(write_request::from_native(raw), result{status});
       }));
     }
 
     write_now_result write_now(std::span<const buffer_view> buffers) noexcept {
+      if (!detail::buffer_count_fits(buffers.size())) {
+        return write_now_result{UV_EINVAL};
+      }
       return write_now_result{uv_try_write(native_stream(),
         reinterpret_cast<const uv_buf_t *>(buffers.data()),
-        static_cast<unsigned int>(buffers.size()))};
+        detail::narrow_buffer_count_unchecked(buffers.size()))};
     }
 
     write_now_result write_now(const buffer_view &buf) noexcept {
@@ -184,8 +187,11 @@ namespace uv {
     }
 
     write_now_result write_now(std::span<const std::byte> bytes) noexcept {
-      auto raw = uv_buf_init(const_cast<char *>(reinterpret_cast<const char *>(bytes.data())),
-                             static_cast<unsigned int>(bytes.size()));
+      if (!detail::buffer_length_fits(bytes.size())) {
+        return write_now_result{UV_EINVAL};
+      }
+      auto raw = detail::make_native_buffer_unchecked(const_cast<char *>(reinterpret_cast<const char *>(bytes.data())),
+                                                      bytes.size());
       return write_now_result{uv_try_write(native_stream(), &raw, 1)};
     }
 
@@ -207,7 +213,7 @@ namespace uv {
             auto out = callback(self, suggested_size);
             *buf = *out.native();
           })) {
-        *buf = uv_buf_init(nullptr, 0);
+        *buf = detail::make_native_buffer_unchecked(nullptr, 0);
       }
     }
 

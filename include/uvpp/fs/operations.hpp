@@ -234,10 +234,11 @@ namespace uv::fs::raw {
 
   inline void read(loop_view loop, request &request, file_descriptor file, std::span<const buffer_view> buffers,
                    int64_t offset, byte_count_callback callback) {
+    const auto buffer_count = uv::detail::checked_buffer_count(buffers.size());
     detail::set_callback(request, std::move(callback), detail::make_byte_count_result);
     detail::submit(request, uv_fs_read(loop.native(), request.native(), file.native(),
                                        reinterpret_cast<const uv_buf_t *>(buffers.data()),
-                                       static_cast<unsigned int>(buffers.size()), offset, detail::trampoline));
+                                       buffer_count, offset, detail::trampoline));
   }
 
   inline void read(loop &loop, request &request, file_descriptor file, std::span<const buffer_view> buffers,
@@ -257,7 +258,7 @@ namespace uv::fs::raw {
 
   inline void read(loop_view loop, request &request, file_descriptor file, std::span<std::byte> buffer,
                    int64_t offset, byte_count_callback callback) {
-    auto raw = uv_buf_init(reinterpret_cast<char *>(buffer.data()), static_cast<unsigned int>(buffer.size()));
+    auto raw = uv::detail::make_native_buffer(reinterpret_cast<char *>(buffer.data()), buffer.size());
     detail::set_callback(request, std::move(callback), detail::make_byte_count_result);
     detail::submit(request, uv_fs_read(loop.native(), request.native(), file.native(), &raw, 1, offset,
                                        detail::trampoline));
@@ -271,9 +272,10 @@ namespace uv::fs::raw {
   template<auto Callback>
   void read_static(loop_view loop, request &request, file_descriptor file, std::span<const buffer_view> buffers,
                    int64_t offset) {
+    const auto buffer_count = uv::detail::checked_buffer_count(buffers.size());
     detail::submit(request, uv_fs_read(loop.native(), request.native(), file.native(),
                                        reinterpret_cast<const uv_buf_t *>(buffers.data()),
-                                       static_cast<unsigned int>(buffers.size()), offset,
+                                       buffer_count, offset,
       [](uv_fs_t *raw) noexcept {
         auto &req = request::from_native(raw);
         auto result = detail::make_byte_count_result(req);
@@ -301,10 +303,11 @@ namespace uv::fs::raw {
 
   inline void write(loop_view loop, request &request, file_descriptor file, std::span<const buffer_view> buffers,
                     int64_t offset, byte_count_callback callback) {
+    const auto buffer_count = uv::detail::checked_buffer_count(buffers.size());
     detail::set_callback(request, std::move(callback), detail::make_byte_count_result);
     detail::submit(request, uv_fs_write(loop.native(), request.native(), file.native(),
                                         reinterpret_cast<const uv_buf_t *>(buffers.data()),
-                                        static_cast<unsigned int>(buffers.size()), offset, detail::trampoline));
+                                        buffer_count, offset, detail::trampoline));
   }
 
   inline void write(loop &loop, request &request, file_descriptor file, std::span<const buffer_view> buffers,
@@ -324,8 +327,8 @@ namespace uv::fs::raw {
 
   inline void write(loop_view loop, request &request, file_descriptor file, std::span<const std::byte> buffer,
                     int64_t offset, byte_count_callback callback) {
-    auto raw = uv_buf_init(const_cast<char *>(reinterpret_cast<const char *>(buffer.data())),
-                           static_cast<unsigned int>(buffer.size()));
+    auto raw = uv::detail::make_native_buffer(const_cast<char *>(reinterpret_cast<const char *>(buffer.data())),
+                                               buffer.size());
     detail::set_callback(request, std::move(callback), detail::make_byte_count_result);
     detail::submit(request, uv_fs_write(loop.native(), request.native(), file.native(), &raw, 1, offset,
                                         detail::trampoline));
@@ -339,9 +342,10 @@ namespace uv::fs::raw {
   template<auto Callback>
   void write_static(loop_view loop, request &request, file_descriptor file, std::span<const buffer_view> buffers,
                     int64_t offset) {
+    const auto buffer_count = uv::detail::checked_buffer_count(buffers.size());
     detail::submit(request, uv_fs_write(loop.native(), request.native(), file.native(),
                                         reinterpret_cast<const uv_buf_t *>(buffers.data()),
-                                        static_cast<unsigned int>(buffers.size()), offset,
+                                        buffer_count, offset,
       [](uv_fs_t *raw) noexcept {
         auto &req = request::from_native(raw);
         auto result = detail::make_byte_count_result(req);
