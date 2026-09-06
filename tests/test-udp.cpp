@@ -322,6 +322,39 @@ TEST(Uvpp2Udp, sendBatchMovePreservesValidPointers) {
   EXPECT_NE(v.buffers()[1], nullptr);
 }
 
+TEST(Uvpp2Udp, sendBatchCopyAssignmentRebuildsPointersForNewStorage) {
+  uv::ipv4 destination{"127.0.0.1", 1234};
+  std::array first{'o', 'n', 'e', '!'};
+  std::array second{'t', 'w', 'o', '!'};
+  std::array first_buffers{
+    uv::buffer_view{first.data(), 2},
+    uv::buffer_view{first.data() + 2, 2}
+  };
+
+  uv::udp_send_batch source;
+  source.add(first_buffers, destination)
+        .add(std::as_bytes(std::span{second}), destination);
+
+  uv::udp_send_batch destination_batch;
+  destination_batch.add(std::as_bytes(std::span{second}), destination);
+  destination_batch = source;
+
+  const auto source_view = source.view();
+  const auto view = destination_batch.view();
+  ASSERT_EQ(view.count(), 2u);
+  ASSERT_NE(view.buffers(), nullptr);
+  ASSERT_NE(view.buffers()[0], nullptr);
+  ASSERT_NE(view.buffers()[1], nullptr);
+  EXPECT_NE(view.buffers()[0], source_view.buffers()[0]);
+  EXPECT_EQ(view.buffers()[0][0].base, first.data());
+  EXPECT_EQ(view.buffers()[0][1].base, first.data() + 2);
+  EXPECT_EQ(view.buffers()[1][0].base, second.data());
+
+  const auto *first_buffer = view.buffers()[0];
+  destination_batch = destination_batch;
+  EXPECT_EQ(destination_batch.view().buffers()[0], first_buffer);
+}
+
 TEST(Uvpp2Udp, sendBatchClearAllowsReuse) {
   uv::ipv4 destination{"127.0.0.1", 1234};
   std::array payload{'d', 'a', 't', 'a'};

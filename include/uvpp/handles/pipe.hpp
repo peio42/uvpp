@@ -169,7 +169,7 @@ namespace uv {
       detail::submit_request(request, std::move(callback), [&] {
         return uv_write2(request.native(), native_stream(),
                          reinterpret_cast<const uv_buf_t *>(buffers.data()),
-                         static_cast<unsigned int>(buffers.size()),
+                         detail::checked_buffer_count(buffers.size()),
                          send_handle.native_stream(),
                          write_request::trampoline);
       });
@@ -178,9 +178,12 @@ namespace uv {
     template<stream_handle SendHandle>
     write_now_result write_with_handle_now(std::span<const buffer_view> buffers,
                                            SendHandle &send_handle) noexcept {
+      if (!detail::buffer_count_fits(buffers.size())) {
+        return write_now_result{UV_EINVAL};
+      }
       return write_now_result{uv_try_write2(native_stream(),
         reinterpret_cast<const uv_buf_t *>(buffers.data()),
-        static_cast<unsigned int>(buffers.size()),
+        detail::narrow_buffer_count_unchecked(buffers.size()),
         send_handle.native_stream())};
     }
 

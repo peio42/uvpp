@@ -1,18 +1,65 @@
 #pragma once
 
 #include <cstddef>
+#include <limits>
 #include <span>
+#include <stdexcept>
 #include <vector>
 
 #include <uv.h>
 
 namespace uv {
 
+  namespace detail {
+
+    using native_buffer_length = decltype(uv_buf_t::len);
+
+    static_assert(std::numeric_limits<native_buffer_length>::digits <= std::numeric_limits<std::size_t>::digits);
+
+    constexpr bool buffer_length_fits(std::size_t length) noexcept {
+      return length <= static_cast<std::size_t>(std::numeric_limits<native_buffer_length>::max());
+    }
+
+    inline void check_buffer_length(std::size_t length) {
+      if (!buffer_length_fits(length)) {
+        throw std::length_error{"uv::buffer_view length exceeds the native buffer limit"};
+      }
+    }
+
+    constexpr uv_buf_t make_native_buffer_unchecked(char *base, std::size_t length) noexcept {
+      uv_buf_t raw{};
+      raw.base = base;
+      raw.len = static_cast<native_buffer_length>(length);
+      return raw;
+    }
+
+    inline uv_buf_t make_native_buffer(char *base, std::size_t length) {
+      check_buffer_length(length);
+      return make_native_buffer_unchecked(base, length);
+    }
+
+    constexpr bool buffer_count_fits(std::size_t count) noexcept {
+      return count <= static_cast<std::size_t>(std::numeric_limits<unsigned int>::max());
+    }
+
+    constexpr unsigned int narrow_buffer_count_unchecked(std::size_t count) noexcept {
+      return static_cast<unsigned int>(count);
+    }
+
+    inline unsigned int checked_buffer_count(std::size_t count) {
+      if (!buffer_count_fits(count)) {
+        throw std::length_error{"number of buffers exceeds the libuv limit"};
+      }
+      return narrow_buffer_count_unchecked(count);
+    }
+
+  }
+
   class buffer_view {
   public:
     buffer_view() = default;
-    buffer_view(char *base, std::size_t size) noexcept
-      : raw_{uv_buf_init(base, static_cast<unsigned int>(size))} {}
+    buffer_view(char *base, std::size_t size)
+      : raw_{detail::make_native_buffer(base, size)} {}
 
     uv_buf_t *native() noexcept { return &raw_; }
     const uv_buf_t *native() const noexcept { return &raw_; }
@@ -29,7 +76,9 @@ namespace uv {
     }
 
     static buffer_view from_native(const uv_buf_t &raw) noexcept {
-      return buffer_view{raw.base, raw.len};
+      buffer_view view;
+      view.raw_ = raw;
+      return view;
     }
 
   private:
@@ -69,7 +118,7 @@ namespace uv {
       return {reinterpret_cast<char *>(storage_.data()), storage_.size()};
     }
 
-    buffer_view view() noexcept {
+    buffer_view view() {
       return {reinterpret_cast<char *>(storage_.data()), storage_.size()};
     }
 

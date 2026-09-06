@@ -27,13 +27,13 @@ namespace uv {
       init(l.native(), &async::async_trampoline);
     }
 
-    async(loop &l, callback cb)
-      : callback_{std::move(cb)} {
+    async(loop &l, callback cb) {
+      callback_.replace(std::move(cb));
       init(l.native(), &async::async_trampoline);
     }
 
-    async(loop_view l, callback cb)
-      : callback_{std::move(cb)} {
+    async(loop_view l, callback cb) {
+      callback_.replace(std::move(cb));
       init(l.native(), &async::async_trampoline);
     }
 
@@ -52,7 +52,7 @@ namespace uv {
     }
 
     void set_callback(callback cb) {
-      callback_ = std::move(cb);
+      callback_.replace(std::move(cb));
     }
 
     void send() {
@@ -66,12 +66,10 @@ namespace uv {
 
     static void async_trampoline(uv_async_t *raw) noexcept {
       auto &self = async::from_native(raw);
-      if (self.callback_) {
-        detail::invoke_callback(self.callback_, self);
-      }
+      self.callback_.invoke([&](callback &callback) { callback(self); });
     }
 
-    callback callback_{};
+    detail::persistent_callback_slot<callback> callback_{};
   };
 
 }

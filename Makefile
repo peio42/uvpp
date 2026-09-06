@@ -6,33 +6,51 @@ BUILD_DIR ?= build/$(CXX_ID)
 DIST_DIR ?= dist
 
 CXXFLAGS ?= -Wall -std=c++20 -Iinclude -I..
+DEPFLAGS ?= -MMD -MP
 LDLIBS ?= -luv -pthread -lgtest
 EXAMPLE_LDLIBS ?= -luv -pthread
 
 TEST_SRCS = tests/main.cpp $(wildcard tests/test-*.cpp)
 TEST_OBJS = $(patsubst %.cpp,$(BUILD_DIR)/%.o,$(TEST_SRCS))
+ALLOCATION_TEST_OBJS = $(BUILD_DIR)/tests/main.o $(BUILD_DIR)/tests/udp-allocation.o
+TEST_DEPS = $(sort $(TEST_OBJS:.o=.d) $(ALLOCATION_TEST_OBJS:.o=.d))
 TEST_BIN = $(BUILD_DIR)/tests/main
+ALLOCATION_TEST_BIN = $(BUILD_DIR)/tests/udp-allocation
 EXAMPLE_SRCS = $(wildcard examples/*.cpp)
 EXAMPLE_BINS = $(patsubst examples/%.cpp,$(BUILD_DIR)/examples/%,$(EXAMPLE_SRCS))
+EXAMPLE_DEPS = $(addsuffix .d,$(EXAMPLE_BINS))
 
-build: $(TEST_BIN) examples
+build: $(TEST_BIN) $(ALLOCATION_TEST_BIN) examples
 
 $(BUILD_DIR)/%.o: %.cpp
 	mkdir -p $(dir $@)
-	$(CXX) $(CXXFLAGS) -c $< -o $@
+	$(CXX) $(CXXFLAGS) $(DEPFLAGS) -MF $(@:.o=.d) -c $< -o $@
+
+$(sort $(TEST_OBJS) $(ALLOCATION_TEST_OBJS)): %.o: %.d
 
 $(TEST_BIN): $(TEST_OBJS)
 	mkdir -p $(dir $@)
 	$(CXX) $(TEST_OBJS) $(LDLIBS) -o $@
 
+$(ALLOCATION_TEST_BIN): $(ALLOCATION_TEST_OBJS)
+	mkdir -p $(dir $@)
+	$(CXX) $(ALLOCATION_TEST_OBJS) $(LDLIBS) -o $@
+
 examples: $(EXAMPLE_BINS)
 
 $(BUILD_DIR)/examples/%: examples/%.cpp
 	mkdir -p $(dir $@)
-	$(CXX) $(CXXFLAGS) $< $(EXAMPLE_LDLIBS) -o $@
+	$(CXX) $(CXXFLAGS) $(DEPFLAGS) -MF $@.d $< $(EXAMPLE_LDLIBS) -o $@
+
+$(EXAMPLE_BINS): %: %.d
+
+$(TEST_DEPS) $(EXAMPLE_DEPS): ;
+
+-include $(TEST_DEPS) $(EXAMPLE_DEPS)
 
 test: build
 	$(TEST_BIN)
+	$(ALLOCATION_TEST_BIN)
 
 build-gcc:
 	$(MAKE) build CXX=g++ CXX_ID=gcc

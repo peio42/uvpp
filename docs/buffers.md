@@ -13,6 +13,8 @@ uv::buffer_view view = storage.view();
 
 Creating a `buffer_view` does not transfer ownership. The referenced memory must remain alive while libuv may use it.
 
+The view preserves every length representable by the native `uv_buf_t::len` field. On a platform where that field is narrower than `std::size_t`, constructing a larger view throws `std::length_error`; uvpp never silently truncates the length. Likewise, operations reject an oversized number of buffers before submission. The non-throwing `*_now()` operations report that condition as `UV_EINVAL`.
+
 ## Writes
 
 Low-level async writes and UDP sends do not copy submitted buffers.

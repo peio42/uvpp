@@ -1,4 +1,5 @@
 #include <chrono>
+#include <memory>
 
 #include "gtest/gtest.h"
 #include "uvpp/uv.hpp"
@@ -47,6 +48,49 @@ TEST(Uvpp2Timer, startReplacesRuntimeCallbackSlot) {
   loop.run();
   EXPECT_EQ(replaced, 0);
   EXPECT_EQ(called, 1);
+  loop.close();
+}
+
+TEST(Uvpp2Timer, startCanReplaceCallbackDuringItsInvocation) {
+  uv::loop loop;
+  uv::timer timer(loop);
+
+  auto token = std::make_shared<int>(42);
+  int original_called = 0;
+  int replacement_called = 0;
+
+  timer.start(0ms, [token, &original_called, &replacement_called](uv::timer &self) {
+    ++original_called;
+    self.start(0ms, [&replacement_called](uv::timer &replacement) {
+      ++replacement_called;
+      replacement.close();
+    });
+    EXPECT_EQ(*token, 42);
+  });
+  token.reset();
+
+  loop.run();
+
+  EXPECT_EQ(original_called, 1);
+  EXPECT_EQ(replacement_called, 1);
+  loop.close();
+}
+
+TEST(Uvpp2Timer, preservesMutableCallbackWhenItIsNotReplaced) {
+  uv::loop loop;
+  uv::timer timer(loop);
+
+  int observed_count = 0;
+  timer.start(0ms, 1ms, [count = 0, &observed_count](uv::timer &self) mutable {
+    observed_count = ++count;
+    if (count == 2) {
+      self.close();
+    }
+  });
+
+  loop.run();
+
+  EXPECT_EQ(observed_count, 2);
   loop.close();
 }
 

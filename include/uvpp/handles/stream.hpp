@@ -108,7 +108,7 @@ namespace uv {
     }
 
     void listen(int backlog, connection_callback callback) {
-      connection_callback_ = std::move(callback);
+      connection_callback_.replace(std::move(callback));
       throw_if_error(uv_listen(native_stream(), backlog, &stream::connection_trampoline));
     }
 
@@ -124,8 +124,8 @@ namespace uv {
     }
 
     void read_start(allocate_callback allocator, read_callback reader) {
-      allocate_callback_ = std::move(allocator);
-      read_callback_ = std::move(reader);
+      allocate_callback_.replace(std::move(allocator));
+      read_callback_.replace(std::move(reader));
       throw_if_error(uv_read_start(native_stream(), &stream::alloc_trampoline, &stream::read_trampoline));
     }
 
@@ -149,7 +149,7 @@ namespace uv {
     void write(write_request &request, std::span<const buffer_view> buffers, write_request::callback callback) {
       detail::submit_request(request, std::move(callback), [&] {
         return uv_write(request.native(), native_stream(), reinterpret_cast<const uv_buf_t *>(buffers.data()),
-                        static_cast<unsigned int>(buffers.size()), write_request::trampoline);
+                        detail::checked_buffer_count(buffers.size()), write_request::trampoline);
       });
     }
 
@@ -158,8 +158,8 @@ namespace uv {
     }
 
     void write(write_request &request, std::span<const std::byte> bytes, write_request::callback callback) {
-      auto raw = uv_buf_init(const_cast<char *>(reinterpret_cast<const char *>(bytes.data())),
-                             static_cast<unsigned int>(bytes.size()));
+      auto raw = detail::make_native_buffer(const_cast<char *>(reinterpret_cast<const char *>(bytes.data())),
+                                            bytes.size());
       detail::submit_request(request, std::move(callback), [&] {
         return uv_write(request.native(), native_stream(), &raw, 1, write_request::trampoline);
       });
@@ -168,15 +168,18 @@ namespace uv {
     template<auto Callback>
     void write_static(write_request &request, std::span<const buffer_view> buffers) {
       throw_if_error(uv_write(request.native(), native_stream(), reinterpret_cast<const uv_buf_t *>(buffers.data()),
-                     static_cast<unsigned int>(buffers.size()), [](uv_write_t *raw, int status) noexcept {
+                     detail::checked_buffer_count(buffers.size()), [](uv_write_t *raw, int status) noexcept {
         detail::invoke_static_callback<Callback>(write_request::from_native(raw), result{status});
       }));
     }
 
     write_now_result write_now(std::span<const buffer_view> buffers) noexcept {
+      if (!detail::buffer_count_fits(buffers.size())) {
+        return write_now_result{UV_EINVAL};
+      }
       return write_now_result{uv_try_write(native_stream(),
         reinterpret_cast<const uv_buf_t *>(buffers.data()),
-        static_cast<unsigned int>(buffers.size()))};
+        detail::narrow_buffer_count_unchecked(buffers.size()))};
     }
 
     write_now_result write_now(const buffer_view &buf) noexcept {
@@ -184,8 +187,11 @@ namespace uv {
     }
 
     write_now_result write_now(std::span<const std::byte> bytes) noexcept {
-      auto raw = uv_buf_init(const_cast<char *>(reinterpret_cast<const char *>(bytes.data())),
-                             static_cast<unsigned int>(bytes.size()));
+      if (!detail::buffer_length_fits(bytes.size())) {
+        return write_now_result{UV_EINVAL};
+      }
+      auto raw = detail::make_native_buffer_unchecked(const_cast<char *>(reinterpret_cast<const char *>(bytes.data())),
+                                                      bytes.size());
       return write_now_result{uv_try_write(native_stream(), &raw, 1)};
     }
 
@@ -194,22 +200,20 @@ namespace uv {
       auto &self = Derived::from_native(reinterpret_cast<Raw *>(raw));
       auto &base = static_cast<stream<Derived, Raw>&>(self);
 
-      if (base.connection_callback_) {
-        detail::invoke_callback(base.connection_callback_, self, result{status});
-      }
+      base.connection_callback_.invoke([&](connection_callback &callback) {
+        callback(self, result{status});
+      });
     }
 
     static void alloc_trampoline(uv_handle_t *raw, size_t suggested_size, uv_buf_t *buf) noexcept {
       auto &self = Derived::from_native(raw);
       auto &base = static_cast<stream<Derived, Raw>&>(self);
 
-      if (base.allocate_callback_) {
-        detail::invoke_callback([&] {
-          auto out = base.allocate_callback_(self, suggested_size);
-          *buf = *out.native();
-        });
-      } else {
-        *buf = uv_buf_init(nullptr, 0);
+      if (!base.allocate_callback_.invoke([&](allocate_callback &callback) {
+            auto out = callback(self, suggested_size);
+            *buf = *out.native();
+          })) {
+        *buf = detail::make_native_buffer_unchecked(nullptr, 0);
       }
     }
 
@@ -217,18 +221,18 @@ namespace uv {
       auto &self = Derived::from_native(reinterpret_cast<Raw *>(raw));
       auto &base = static_cast<stream<Derived, Raw>&>(self);
 
-      if (base.read_callback_) {
-        detail::invoke_callback(base.read_callback_, self, read_result{nread, buf});
-      }
+      base.read_callback_.invoke([&](read_callback &callback) {
+        callback(self, read_result{nread, buf});
+      });
     }
 
     static void shutdown_trampoline(uv_shutdown_t *raw, int status) noexcept {
       shutdown_request::from_native(raw).invoke(status);
     }
 
-    allocate_callback allocate_callback_{};
-    read_callback read_callback_{};
-    connection_callback connection_callback_{};
+    detail::persistent_callback_slot<allocate_callback> allocate_callback_{};
+    detail::persistent_callback_slot<read_callback> read_callback_{};
+    detail::persistent_callback_slot<connection_callback> connection_callback_{};
   };
 
 }

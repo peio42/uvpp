@@ -82,7 +82,7 @@ namespace uv {
     }
 
     void start(std::string_view path, unsigned int flags, callback cb) {
-      callback_ = std::move(cb);
+      callback_.replace(std::move(cb));
       std::string storage{path};
       throw_if_error(uv_fs_event_start(native(), &fs_event::event_trampoline, storage.c_str(), flags));
     }
@@ -143,12 +143,12 @@ namespace uv {
 
     static void event_trampoline(uv_fs_event_t *raw, const char *filename, int events, int status) noexcept {
       auto &self = fs_event::from_native(raw);
-      if (self.callback_) {
-        detail::invoke_callback(self.callback_, self, fs_event_result{filename, events, status});
-      }
+      self.callback_.invoke([&](callback &callback) {
+        callback(self, fs_event_result{filename, events, status});
+      });
     }
 
-    callback callback_{};
+    detail::persistent_callback_slot<callback> callback_{};
   };
 
 }

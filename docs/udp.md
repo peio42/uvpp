@@ -180,6 +180,10 @@ values may be invalidated by successful reallocations before the failure.
 Operations that successfully pre-reserve will not throw during element
 insertion.
 
+Copy assignment has the strong exception guarantee: if allocation of the copied
+metadata fails, the destination batch and the views obtained from it remain
+unchanged.
+
 ## Multicast
 
 Use `set_membership()` for multicast group membership and

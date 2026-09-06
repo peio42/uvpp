@@ -171,6 +171,15 @@ Rules:
 
 Calling a start/listen/read API a second time follows libuv's underlying validity rules. If libuv rejects the operation immediately, the wrapper throws `uv::error`. If libuv accepts it, the stored callback slot has already been replaced.
 
+### Replacing a Callback from Itself
+
+A runtime callback may replace its own persistent slot, for example by calling
+`timer.start(...)` from a timer callback. The active callable stays alive until
+that invocation returns. If the slot was not replaced, the same callable remains
+installed for the next event; if it was replaced, the new callable remains
+installed instead. This avoids copying mutable captures while making callback
+replacement during invocation safe.
+
 After `close()` has been called on a handle, starting new operations on that handle is a logic error. The wrapper does not try to recover from it beyond surfacing immediate libuv failures where libuv reports them.
 
 ## Request `invoke()` Invariants
