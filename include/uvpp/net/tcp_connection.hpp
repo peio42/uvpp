@@ -5,6 +5,7 @@
 #include <cstddef>
 #include <cstring>
 #include <memory>
+#include <string_view>
 #include <stdexcept>
 #include <type_traits>
 #include <utility>
@@ -14,6 +15,7 @@
 #include "uvpp/co/task.hpp"
 #include "uvpp/core/error.hpp"
 #include "uvpp/net/address.hpp"
+#include "uvpp/net/buffer.hpp"
 
 namespace uv {
 
@@ -27,6 +29,7 @@ struct tcp_connection_state {
   int connect_status = 0;
   bool initialized = false;
   bool close_started = false;
+  bool write_active = false;
   bool destroy_on_close = false;
 
   static tcp_connection_state &from_connect(uv_connect_t *raw) noexcept {
@@ -102,6 +105,66 @@ public:
   const uv_tcp_t *native_handle() const noexcept { return state_ ? &state_->tcp : nullptr; }
   bool closing() const noexcept { return state_ && state_->close_started; }
 
+  class write_awaiter {
+  public:
+    write_awaiter(detail::tcp_connection_state *state, std::string_view data) noexcept
+      : state_{state}, buffer_{detail::make_native_buffer_unchecked(
+          const_cast<char *>(data.data()), data.size())} {}
+
+    bool await_ready() const noexcept { return false; }
+
+    template<class Promise>
+      requires std::derived_from<Promise, co::detail::task_promise_base>
+    bool await_suspend(std::coroutine_handle<Promise> continuation) noexcept {
+      if (state_ == nullptr || state_->close_started) {
+        status_ = UV_EBADF;
+        return false;
+      }
+      if (state_->write_active) {
+        status_ = UV_EBUSY;
+        return false;
+      }
+      state_->write_active = true;
+      continuation_ = continuation;
+      status_ = uv_write(&request_, reinterpret_cast<uv_stream_t *>(&state_->tcp),
+          &buffer_, 1, &write_awaiter::on_write);
+      if (status_ < 0) {
+        state_->write_active = false;
+        continuation_ = {};
+        return false;
+      }
+      return true;
+    }
+
+    void await_resume() { throw_if_error(status_); }
+
+  private:
+    static write_awaiter &from_native(uv_write_t *raw) noexcept {
+      return *reinterpret_cast<write_awaiter *>(raw);
+    }
+
+    static void on_write(uv_write_t *raw, int status) noexcept {
+      auto &self = from_native(raw);
+      self.status_ = status;
+      self.state_->write_active = false;
+      auto continuation = std::exchange(self.continuation_, {});
+      continuation.resume();
+    }
+
+    uv_write_t request_{};
+    detail::tcp_connection_state *state_ = nullptr;
+    uv_buf_t buffer_{};
+    std::coroutine_handle<> continuation_{};
+    int status_ = 0;
+  };
+
+  // Borrows data until the native write completion invokes the awaiting task.
+  // The caller must keep it alive, address-stable, and unmodified until then.
+  [[nodiscard]] write_awaiter write(std::string_view data) {
+    detail::check_buffer_length(data.size());
+    return write_awaiter{state_.get(), data};
+  }
+
   class connect_awaiter {
   public:
     explicit connect_awaiter(const ipv4 &address) noexcept {
@@ -166,5 +229,7 @@ private:
 
   std::unique_ptr<detail::tcp_connection_state> state_{};
 };
+
+static_assert(std::is_standard_layout_v<tcp_connection::write_awaiter>);
 
 } // namespace uv

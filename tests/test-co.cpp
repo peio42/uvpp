@@ -162,17 +162,28 @@ TEST(UvppV3Coroutine, tcpConnectionConnectsMovesAndCloses) {
     throw;
   }
   const auto address = uv::ipv4{"127.0.0.1", listener.sockname().port()};
-  listener.listen([&](uv::tcp &server, uv::result status) {
+  listener.listen([&](uv::tcp &, uv::result status) {
     EXPECT_TRUE(status);
-    server.close();
   });
 
   bool connected = false;
+  bool write_completed = false;
+  bool submission_failure_delivered = false;
   auto client = [&]() -> uv::co::task<void> {
     auto socket = co_await uv::tcp_connection::connect(address);
     auto *before_move = socket.native_handle();
     auto moved = std::move(socket);
     EXPECT_EQ(moved.native_handle(), before_move);
+    try {
+      co_await socket.write("submission failure");
+    } catch (const uv::error &error) {
+      submission_failure_delivered = error.code().value() == UV_EBADF;
+    }
+    std::string data{"borrowed request"};
+    co_await moved.write(data);
+    data[0] = 'B'; // The await has completed; the borrowed bytes are reusable.
+    write_completed = true;
+    listener.close();
     connected = true;
   };
 
@@ -180,6 +191,8 @@ TEST(UvppV3Coroutine, tcpConnectionConnectsMovesAndCloses) {
   loop.run();
 
   EXPECT_TRUE(connected);
+  EXPECT_TRUE(submission_failure_delivered);
+  EXPECT_TRUE(write_completed);
   EXPECT_NO_THROW(execution.rethrow_if_failed());
   EXPECT_NO_THROW(loop.close());
 }

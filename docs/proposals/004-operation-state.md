@@ -85,6 +85,11 @@ mechanism. The experimental TCP connect awaiter owns stable `uv_connect_t` and
 before delivering a failed connection. It is a family-specific prototype, not yet
 a common coroutine frontend.
 
+The same TCP slice now has one borrowed `uv_write_t` awaiter per connection. A
+submission failure clears its writer claim without a callback; terminal completion
+clears the claim before resuming the task. It stores only the native buffer view,
+not the bytes it borrows.
+
 Validate failure at each setup stage, native submission failure, absent callbacks,
 resubmission from completion, destruction from completion, owned-result extraction,
 and exactly-once cleanup. Exercise DNS, filesystem, write, and close before calling

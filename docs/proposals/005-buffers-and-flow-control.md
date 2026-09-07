@@ -98,6 +98,13 @@ cancellation retains buffer storage until the native operation is finished.
 Existing views, owned buffers, and queue-size introspection are foundations. The
 proposed read adapters, pools, and bounded flow-control layer are not implemented.
 
+The experimental `uv::tcp_connection::write(std::string_view)` is the first
+coroutine write primitive. It borrows the passed characters until actual
+`uv_write` completion, including an error completion; `write_copy()` is not
+implemented. One pending writer is supported per experimental connection.
+Task cancellation is not yet exposed, so cancellation-request tests remain part
+of proposal 003 rather than a claim about this write primitive.
+
 Validate EOF after partial input, zero-length datagrams, truncated datagrams,
 consumer cancellation, callback conflicts, buffer reuse only after completion,
 copy timing, terminal subscription replacement, ordinary-event slot retention,
