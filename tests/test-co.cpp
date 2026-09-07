@@ -1,4 +1,5 @@
 #include <chrono>
+#include <memory>
 #include <stdexcept>
 
 #include "gtest/gtest.h"
@@ -53,6 +54,93 @@ TEST(UvppV3Coroutine, sleepForDeliversTaskFailureToTheSpawnHandle) {
   loop.run();
 
   EXPECT_TRUE(execution.done());
+  EXPECT_THROW(execution.rethrow_if_failed(), std::runtime_error);
+  loop.close();
+}
+
+TEST(UvppV3Coroutine, childTaskInheritsItsParentsLoopAndReturnsItsValue) {
+  uv::loop loop;
+  int result = 0;
+
+  auto child = []() -> uv::co::task<int> {
+    co_await uv::co::sleep_for(1ms);
+    co_return 42;
+  };
+  auto parent = [&]() -> uv::co::task<void> {
+    result = co_await child();
+  };
+
+  auto execution = uv::co::spawn(loop, parent());
+  loop.run();
+
+  EXPECT_TRUE(execution.done());
+  EXPECT_NO_THROW(execution.rethrow_if_failed());
+  EXPECT_EQ(result, 42);
+  loop.close();
+}
+
+TEST(UvppV3Coroutine, voidChildTaskResumesItsParent) {
+  uv::loop loop;
+  bool child_completed = false;
+  bool parent_resumed = false;
+
+  auto child = [&]() -> uv::co::task<void> {
+    co_await uv::co::sleep_for(0ms);
+    child_completed = true;
+  };
+  auto parent = [&]() -> uv::co::task<void> {
+    co_await child();
+    parent_resumed = true;
+  };
+
+  auto execution = uv::co::spawn(loop, parent());
+  loop.run();
+
+  EXPECT_NO_THROW(execution.rethrow_if_failed());
+  EXPECT_TRUE(child_completed);
+  EXPECT_TRUE(parent_resumed);
+  loop.close();
+}
+
+TEST(UvppV3Coroutine, childTaskMovesItsValueToTheParent) {
+  uv::loop loop;
+  std::unique_ptr<int> result;
+
+  auto child = []() -> uv::co::task<std::unique_ptr<int>> {
+    co_await uv::co::sleep_for(0ms);
+    co_return std::make_unique<int>(42);
+  };
+  auto parent = [&]() -> uv::co::task<void> {
+    result = co_await child();
+  };
+
+  auto execution = uv::co::spawn(loop, parent());
+  loop.run();
+
+  EXPECT_NO_THROW(execution.rethrow_if_failed());
+  ASSERT_NE(result, nullptr);
+  EXPECT_EQ(*result, 42);
+  loop.close();
+}
+
+TEST(UvppV3Coroutine, childTaskFailurePropagatesToItsParent) {
+  uv::loop loop;
+  bool parent_resumed = false;
+
+  auto child = []() -> uv::co::task<int> {
+    co_await uv::co::sleep_for(0ms);
+    throw std::runtime_error{"expected child failure"};
+  };
+  auto parent = [&]() -> uv::co::task<void> {
+    (void)co_await child();
+    parent_resumed = true;
+  };
+
+  auto execution = uv::co::spawn(loop, parent());
+  loop.run();
+
+  EXPECT_TRUE(execution.done());
+  EXPECT_FALSE(parent_resumed);
   EXPECT_THROW(execution.rethrow_if_failed(), std::runtime_error);
   loop.close();
 }
