@@ -21,6 +21,7 @@ uvpp is a header-only C++20 wrapper around libuv. Include `uvpp/uv.hpp`, use nam
 - [Threading primitives](threading.md): libuv threads, mutexes, condition variables, semaphores, barriers, thread-local keys, and once guards.
 - [Thread pool work](threadpool.md): `queue_work` requests and worker-thread completion.
 - [Random bytes](random.md): synchronous and asynchronous random byte generation.
+- [Experimental coroutines](coroutines.md): the initial v3 task and timer-sleep slice.
 - [Future features](future.md): entry point to future proposals and their status.
 
 See the [documentation index](../index.md) for implementation design and future proposals.

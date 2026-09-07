@@ -2,14 +2,15 @@
 
 These documents describe future or incomplete changes. They do not override the
 [current design](../design/index.md) or document currently supported user APIs.
-All proposals below are drafts for v3 exploration, not an agreed release scope.
-Compatible work, especially validation improvements, may land independently in v2.
+Except where marked accepted, proposals below are drafts for v3 exploration, not
+an agreed release scope. Compatible work, especially validation improvements, may
+land independently in v2.
 
 ## Catalogue
 
 | Proposal | Status | Scope |
 | --- | --- | --- |
-| [000 — V3 architecture](000-v3-architecture.md) | Draft | Layers, namespaces, common loop, ownership boundaries, and error surfaces |
+| [000 — V3 architecture](000-v3-architecture.md) | Accepted | Layers, namespaces, common loop, ownership boundaries, and error surfaces |
 | [001 — Coroutines](001-coroutines.md) | Draft | Tasks, awaitables, repeated events, startup and continuation contracts |
 | [002 — Asynchronous ownership](002-async-ownership.md) | Draft | Stable resource owners, close, and exceptional cleanup |
 | [003 — Cancellation and task scopes](003-cancellation-and-task-scopes.md) | Draft | Stop, deadlines, joining, and structured composition |

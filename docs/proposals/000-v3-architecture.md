@@ -1,6 +1,6 @@
 # V3 Architecture
 
-Status: draft.
+Status: accepted.
 
 Target: v3. This umbrella proposal defines the direction for the other v3
 proposals. It does not describe the implemented v2 API or authorize changing v2
@@ -191,7 +191,7 @@ Move-only callbacks (008) and diagnostics (009) are transversal work. They becom
 gates where a selected public contract depends on them; otherwise they can advance
 independently. Proposal numbers are stable identifiers, not implementation order.
 
-## Open decisions and acceptance evidence
+## Open decisions and validation before API freeze
 
 Detailed proposals must settle operation initiation, result shapes, callback and
 awaitable spellings, allocation-failure channels, owner factories/adoption,
@@ -199,7 +199,9 @@ scope-exit behavior, continuation fairness, and supported platform/libuv baselin
 These questions must not reopen the common loop or create duplicate I/O bindings
 without revising this proposal explicitly.
 
-Before accepting the architecture as validated, demonstrate raw callbacks,
+Acceptance fixes the architectural direction; it does not claim that its APIs are
+available or that every lifecycle and performance gate has passed. Before freezing
+the public v3 API, demonstrate raw callbacks,
 high-level callbacks, and coroutine I/O on the same loop; paired throwing and
 explicit-result failures; owner moves with stable native addresses; exceptional
 close and cancellation; and explicit buffer lifetimes. Record allocation costs
@@ -208,8 +210,12 @@ aliases are not required and must not dictate the new model.
 
 ## Implementation and documentation lifecycle
 
-The three-layer v3 API is not implemented. Current v2 behavior remains authoritative
-in `docs/design/` and `docs/user/` until corresponding changes land.
+The architectural direction is accepted, but the three-layer v3 API is largely not
+implemented. The experimental `uv::co::task<void>`, root `spawn`, and timer
+`sleep_for` slice is the first implementation; it intentionally does not settle
+task scopes, cancellation, asynchronous join, error-policy pairs, or owner APIs.
+Current v2 behavior remains authoritative in `docs/design/` and `docs/user/`
+except where explicitly marked experimental.
 
 As work lands, update those documents and retain only remaining work and necessary
 dependencies here. Remove this proposal when its architecture is implemented and

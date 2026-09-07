@@ -178,7 +178,13 @@ unsupported cases and their lifetime behavior are explicit.
 ## Implementation progress and validation
 
 The existing callbacks, request wrappers, filesystem owners, and coroutine strategy
-are foundations. No public `task<T>` or operation-awaitable layer is implemented.
+are foundations. An experimental focused-header slice now provides
+`task<void>`, root `spawn(loop, task)`, `spawn_handle::rethrow_if_failed()`, and
+`sleep_for(duration)`; see [the coroutine guide](../user/coroutines.md) and
+[`tests/test-co.cpp`](../../tests/test-co.cpp). It validates cold root startup,
+loop binding, timer completion/close before resumption, and task failure delivery.
+It deliberately has no child-task await, cancellation, task scope, or asynchronous
+join, so it does not settle the public task contract.
 
 Set the minimum buffer lifetime contracts from 005 before prototyping. Use the
 prototype to revise the initial 002/003/004/006/007 contracts, rather than waiting

@@ -97,5 +97,7 @@ uv::sleep_blocking_for(10ms);
 
 Do not use it as an event-loop delay. If it runs on the thread expected to call
 `loop.run()`, that loop cannot dispatch timers, I/O, or callbacks until the
-sleep returns. A future coroutine-friendly `uv::sleep_for(loop, duration)` must
-be implemented with a timer handle instead.
+sleep returns. The experimental coroutine counterpart is
+`uv::co::sleep_for(duration)`: it inherits its spawned task's loop and uses a
+timer handle. See [Experimental coroutines](coroutines.md); its final v3 API is
+not yet settled.
