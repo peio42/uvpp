@@ -90,6 +90,11 @@ submission failure clears its writer claim without a callback; terminal completi
 clears the claim before resuming the task. It stores only the native buffer view,
 not the bytes it borrows.
 
+Its experimental `read_some` claims both native read slots. Data, EOF, and errors
+call `uv_read_stop()`, clear the alloc/read claim, and only then resume the task;
+zero-byte notifications remain armed. The next `read_some` may therefore be
+started by resumed code without an old callback clearing its claim.
+
 Validate failure at each setup stage, native submission failure, absent callbacks,
 resubmission from completion, destruction from completion, owned-result extraction,
 and exactly-once cleanup. Exercise DNS, filesystem, write, and close before calling

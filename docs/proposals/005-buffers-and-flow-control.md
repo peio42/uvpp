@@ -105,6 +105,11 @@ implemented. One pending writer is supported per experimental connection.
 Task cancellation is not yet exposed, so cancellation-request tests remain part
 of proposal 003 rather than a claim about this write primitive.
 
+The experimental `uv::tcp_connection::read_some(std::span<std::byte>)` borrows
+caller storage until a terminal data, EOF, or error notification. It returns a
+count plus EOF flag; errors throw at the await. It is one-shot rather than a
+persistent subscription and supports one active reader per connection.
+
 Validate EOF after partial input, zero-length datagrams, truncated datagrams,
 consumer cancellation, callback conflicts, buffer reuse only after completion,
 copy timing, terminal subscription replacement, ordinary-event slot retention,

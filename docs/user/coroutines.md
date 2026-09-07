@@ -68,3 +68,8 @@ reallocate, or modify the characters until the await resumes, even if a future
 cancellation request has been made. Once it resumes, the bytes are reusable.
 `write_copy()` is intentionally not implemented. The experimental owner permits
 one pending write; submission and completion failures throw at the await.
+
+`co_await socket.read_some(std::span<std::byte>)` borrows mutable caller storage
+until it returns. Its result exposes `count()` and `eof()`; an operational error
+throws at the await. Each call is one-shot: it stops the native reader and releases
+both read slots before resuming, so another `read_some` may immediately follow.

@@ -1,6 +1,9 @@
+#include <array>
 #include <chrono>
 #include <memory>
+#include <span>
 #include <stdexcept>
+#include <string>
 
 #include "gtest/gtest.h"
 #include "uvpp/co/sleep.hpp"
@@ -268,4 +271,56 @@ TEST(UvppV3Coroutine, tcpConnectionClosesDuringExceptionalTaskExit) {
 
 TEST(UvppV3Coroutine, tcpConnectionRejectsInvalidAddressDuringSetup) {
   EXPECT_THROW((uv::ipv4{"not-an-address", 80}), uv::error);
+}
+
+TEST(UvppV3Coroutine, tcpConnectionReadSomeStopsAndReleasesSlotsBeforeResumption) {
+  uv::loop loop;
+  uv::tcp listener(loop);
+  try {
+    listener.bind(uv::ipv4{"127.0.0.1", 0});
+  } catch (const uv::error &error) {
+    if (error.code().value() == UV_EPERM) {
+      listener.close();
+      loop.run();
+      loop.close();
+      GTEST_SKIP() << "loopback TCP is not permitted in this environment";
+    }
+    throw;
+  }
+  const auto address = uv::ipv4{"127.0.0.1", listener.sockname().port()};
+  std::unique_ptr<uv::tcp> peer;
+  std::unique_ptr<uv::write_request> reply_request;
+  std::string reply{"reply"};
+  listener.listen([&](uv::tcp &server, uv::result status) {
+    ASSERT_TRUE(status);
+    peer = std::make_unique<uv::tcp>(loop);
+    ASSERT_NO_THROW(server.accept(*peer));
+    reply_request = std::make_unique<uv::write_request>();
+    peer->write(*reply_request, std::as_bytes(std::span{reply.data(), reply.size()}),
+      [&](uv::write_request &, uv::result write_status) {
+        EXPECT_TRUE(write_status);
+        peer->close();
+        server.close();
+      });
+  });
+
+  std::string received;
+  bool saw_eof = false;
+  auto client = [&]() -> uv::co::task<void> {
+    auto socket = co_await uv::tcp_connection::connect(address);
+    std::array<std::byte, 64> buffer{};
+    auto first = co_await socket.read_some(buffer);
+    EXPECT_FALSE(first.eof());
+    received.assign(reinterpret_cast<const char *>(buffer.data()), first.count());
+    auto second = co_await socket.read_some(buffer);
+    saw_eof = second.eof();
+  };
+
+  auto execution = uv::co::spawn(loop, client());
+  loop.run();
+
+  EXPECT_NO_THROW(execution.rethrow_if_failed());
+  EXPECT_EQ(received, reply);
+  EXPECT_TRUE(saw_eof);
+  EXPECT_NO_THROW(loop.close());
 }
