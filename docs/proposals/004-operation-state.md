@@ -105,6 +105,12 @@ transfers it to the resumed task as `tcp_connection`. Listener destruction while
 accept is active is an explicit experimental contract violation until scopes and
 cancellation can complete the operation safely.
 
+The first `uv_accept()` following a successful libuv connection notification is
+guaranteed to succeed, so a deterministic native accept-failure integration test
+requires a fault-injection seam not present in this prototype. The current suite
+instead verifies an accepted peer that closes immediately, while the error path
+remains specified and isolated for future fault injection.
+
 TCP owner operations also verify that the awaiting task inherited the exact loop
 recorded by the owner. This is a high-level affinity check; raw APIs remain
 caller-controlled.

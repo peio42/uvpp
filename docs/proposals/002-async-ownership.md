@@ -92,6 +92,11 @@ concurrent `serve(handler)` is intentionally deferred. The scope design must als
 own any accepted-connection queue and define its overload policy; the listener does
 not silently allocate or buffer connections between one-shot accept awaiters.
 
+The experimental tests use death tests to verify that active connection read/write
+and active listener accept destruction terminate deterministically rather than
+releasing storage early. They exercise both explicit listener `close()` and lexical
+destruction while accept is active.
+
 The slice rejects destruction while its experimental read or write operation is
 active: this is an explicit contract violation, diagnosed by an assertion and
 termination in release builds. It must not be relaxed until a resource scope and

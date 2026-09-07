@@ -191,6 +191,12 @@ support implicit concurrent handler spawning. Because `uv_listen` is persistent
 but one `accept()` consumes one notification, it also deliberately has no queue or
 long-running handler policy before scopes define backpressure and shutdown.
 
+The coroutine TCP tests now cover cross-loop rejection for connections and
+listeners, read/write/accept exclusivity (`UV_EBUSY`), accepted-peer EOF, and the
+stable address of both connected and accepted owners. They also exercise the
+current termination diagnostic for destroying a connection with active read/write
+or a listener with active accept.
+
 Set the minimum buffer lifetime contracts from 005 before prototyping. Use the
 prototype to revise the initial 002/003/004/006/007 contracts, rather than waiting
 for their full implementation. Ordinary loop-thread coroutine use must not require
