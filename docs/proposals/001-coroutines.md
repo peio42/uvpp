@@ -180,11 +180,16 @@ unsupported cases and their lifetime behavior are explicit.
 The existing callbacks, request wrappers, filesystem owners, and coroutine strategy
 are foundations. An experimental focused-header slice now provides `task<T>`, root
 `spawn(loop, task<void>)`, move-only child-task await, `spawn_handle::rethrow_if_failed()`,
-and `sleep_for(duration)`; see [the coroutine guide](../user/coroutines.md) and
+`sleep_for(duration)`, and one-shot `uv::tcp_listener::accept()`; see [the coroutine guide](../user/coroutines.md) and
 [`tests/test-co.cpp`](../../tests/test-co.cpp). It validates cold root startup,
 inherited child loop binding, timer completion/close before resumption, move-only
-result delivery, and task failure propagation. It deliberately has no cancellation,
-task scope, or asynchronous join, so it does not settle the public task contract.
+result delivery, task failure propagation, and accepted TCP ownership. The listener
+has one exclusive accept waiter and transfers each accepted connection into its own
+movable owner before resuming the task. It deliberately has no cancellation, task
+scope, or asynchronous join, so it does not settle the public task contract or
+support implicit concurrent handler spawning. Because `uv_listen` is persistent
+but one `accept()` consumes one notification, it also deliberately has no queue or
+long-running handler policy before scopes define backpressure and shutdown.
 
 Set the minimum buffer lifetime contracts from 005 before prototyping. Use the
 prototype to revise the initial 002/003/004/006/007 contracts, rather than waiting

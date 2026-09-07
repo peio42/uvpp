@@ -97,6 +97,14 @@ prevents later read callbacks; its non-zero TTY/Windows return is not a failure,
 so it does not alter this TCP-only terminal protocol. The next `read_some` may
 therefore be started by resumed code without an old callback clearing its claim.
 
+The TCP listener slice treats `uv_listen` as a persistent native source with one
+exclusive high-level accept waiter. On a connection notification it first releases
+that waiter claim, then calls `uv_accept` into separately stable connection storage.
+An accept error closes that initialized storage before task delivery; success
+transfers it to the resumed task as `tcp_connection`. Listener destruction while an
+accept is active is an explicit experimental contract violation until scopes and
+cancellation can complete the operation safely.
+
 TCP owner operations also verify that the awaiting task inherited the exact loop
 recorded by the owner. This is a high-level affinity check; raw APIs remain
 caller-controlled.

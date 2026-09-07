@@ -10,6 +10,7 @@
 #include "uvpp/handles/timer.hpp"
 #include "uvpp/handles/tcp.hpp"
 #include "uvpp/net/tcp_connection.hpp"
+#include "uvpp/net/tcp_listener.hpp"
 
 using namespace std::chrono_literals;
 
@@ -322,5 +323,48 @@ TEST(UvppV3Coroutine, tcpConnectionReadSomeStopsAndReleasesSlotsBeforeResumption
   EXPECT_NO_THROW(execution.rethrow_if_failed());
   EXPECT_EQ(received, reply);
   EXPECT_TRUE(saw_eof);
+  EXPECT_NO_THROW(loop.close());
+}
+
+TEST(UvppV3Coroutine, tcpListenerAcceptsIntoAnIndependentMovableConnectionOwner) {
+  uv::loop loop;
+  std::unique_ptr<uv::tcp_listener> listener;
+  try {
+    listener = std::make_unique<uv::tcp_listener>(loop, uv::ipv4{"127.0.0.1", 0});
+  } catch (const uv::error &error) {
+    if (error.code().value() == UV_EPERM) {
+      loop.run(); // Drain the constructor's asynchronous setup cleanup.
+      loop.close();
+      GTEST_SKIP() << "loopback TCP is not permitted in this environment";
+    }
+    throw;
+  }
+  const auto address = listener->sockname().to_v4();
+  bool accepted = false;
+  bool accepted_owner_was_stable = false;
+  bool client_connected = false;
+
+  auto server = [&]() -> uv::co::task<void> {
+    auto connection = co_await listener->accept();
+    auto *before_move = connection.native_handle();
+    auto moved = std::move(connection);
+    accepted_owner_was_stable = moved.native_handle() == before_move;
+    accepted = true;
+    listener->close();
+  };
+  auto client = [&]() -> uv::co::task<void> {
+    auto connection = co_await uv::tcp_connection::connect(address);
+    client_connected = connection.native_handle() != nullptr;
+  };
+
+  auto server_execution = uv::co::spawn(loop, server());
+  auto client_execution = uv::co::spawn(loop, client());
+  loop.run();
+
+  EXPECT_NO_THROW(server_execution.rethrow_if_failed());
+  EXPECT_NO_THROW(client_execution.rethrow_if_failed());
+  EXPECT_TRUE(accepted);
+  EXPECT_TRUE(accepted_owner_was_stable);
+  EXPECT_TRUE(client_connected);
   EXPECT_NO_THROW(loop.close());
 }

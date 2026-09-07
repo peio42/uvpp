@@ -8,6 +8,7 @@ header; it is not included by `uvpp/uv.hpp` and is not a stable v2 API.
 
 #include <uvpp/co/sleep.hpp>
 #include <uvpp/net/tcp_connection.hpp>
+#include <uvpp/net/tcp_listener.hpp>
 
 using namespace std::chrono_literals;
 
@@ -79,3 +80,55 @@ reject a task bound to another loop. Until resource scopes and cancellation exis
 destroying a connection with a pending read or write is an unsupported contract
 violation: the experimental implementation asserts and terminates rather than
 risking a use-after-free.
+
+## Experimental TCP listener
+
+`uv::tcp_listener` is the server-side counterpart. Construct it on its loop with
+an address; it begins listening immediately. `accept()` is a one-shot await that
+returns a distinct movable `tcp_connection` owner. The listener and the accepted
+connection have separate stable native storage and separate close completion.
+
+```cpp
+uv::co::task<void> handle(uv::tcp_connection connection) {
+  std::array<std::byte, 4096> buffer;
+  auto read = co_await connection.read_some(buffer);
+  // connection begins asynchronous close when this task exits.
+}
+
+uv::co::task<void> serve_one(uv::tcp_listener &listener) {
+  auto connection = co_await listener.accept();
+  co_await handle(std::move(connection));
+  listener.close(); // Close before the root task completes.
+}
+
+int main() {
+  uv::loop loop;
+  uv::tcp_listener listener(loop, uv::ipv4{"127.0.0.1", 8080});
+  auto execution = uv::co::spawn(loop, serve_one(listener));
+  loop.run();
+  execution.rethrow_if_failed();
+  loop.close();
+}
+```
+
+`accept()` is exclusive and affine to the listener's loop; a second pending
+`accept()` throws `UV_EBUSY`. Destroying or calling `close()` on a listener with
+an active accept is, like pending connection I/O, an unsupported contract
+violation. `close()` only initiates native close, so the loop must continue to be
+driven through close completion.
+
+There is deliberately no `serve(handler)` or implicit handler spawning in this
+slice. `uv_listen` is a persistent native notification source, while an accept
+awaiter consumes exactly one notification (libuv requires `uv_accept()` during
+that notification). Consequently a long-running server must keep an accept waiter
+armed; this slice has no hidden accepted-connection queue or overflow policy. The
+example above is deliberately `serve_one`, not a general sequential server loop.
+
+The accepted owner belongs to the receiving task. Passing it by value to a child
+task and `co_await`ing that child makes the handler frame own it until completion,
+but leaves no accept waiter while the handler is running. Independently spawning a
+handler has no safe automatic owner/join relationship today. A real concurrent
+server therefore waits for a future `task_scope` to own and join handler tasks and
+a `resource_scope` to retain and close their connections on cancellation or
+failure. Those scopes must also choose the accepted-connection queue and overload
+policy; until then, neither pattern is a supported long-running server lifecycle.

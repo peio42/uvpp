@@ -83,6 +83,15 @@ point that reclaims state released by an owner; failed connects retain their sta
 until close before the awaiting task receives the error. Resource scopes and a
 public close awaitable remain unimplemented.
 
+The experimental `uv::tcp_listener` adds separate stable listener storage and a
+one-shot accept owner transfer. An accepted `tcp_connection` is not owned by the
+listener and remains valid while the listener closes. Its receiving task owns it;
+an awaited handler can take that owner by value. No resource/task scope currently
+relates independently spawned handlers to their accepted connections, so automatic
+concurrent `serve(handler)` is intentionally deferred. The scope design must also
+own any accepted-connection queue and define its overload policy; the listener does
+not silently allocate or buffer connections between one-shot accept awaiters.
+
 The slice rejects destruction while its experimental read or write operation is
 active: this is an explicit contract violation, diagnosed by an assertion and
 termination in release builds. It must not be relaxed until a resource scope and

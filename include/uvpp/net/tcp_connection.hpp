@@ -21,6 +21,8 @@
 
 namespace uv {
 
+class tcp_listener;
+
 namespace detail {
 
 struct tcp_connection_state {
@@ -136,7 +138,7 @@ public:
         return false;
       }
       if (&continuation.promise().execution_loop() != state_->loop) {
-        throw std::logic_error{"uv::tcp_connection write used from a different loop"};
+        throw std::logic_error{"uv::tcp_connection read used from a different loop"};
       }
       if (state_->active_read != nullptr) {
         status_ = UV_EBUSY;
@@ -223,7 +225,7 @@ public:
         return false;
       }
       if (&continuation.promise().execution_loop() != state_->loop) {
-        throw std::logic_error{"uv::tcp_connection read used from a different loop"};
+        throw std::logic_error{"uv::tcp_connection write used from a different loop"};
       }
       if (state_->write_active) {
         status_ = UV_EBUSY;
@@ -339,6 +341,8 @@ private:
   }
 
   std::unique_ptr<detail::tcp_connection_state> state_{};
+
+  friend class tcp_listener;
 };
 
 static_assert(std::is_standard_layout_v<tcp_connection::write_awaiter>);
