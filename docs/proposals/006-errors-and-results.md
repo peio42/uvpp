@@ -27,9 +27,10 @@ failures through explicit status/results; construction and storage failures need
 separate contracts.
 
 Do not multiply `_status`, `_ec`, `try_`, or `async_` spellings solely to select
-error policy. Keep semantic distinctions such as `write_borrowed`, `write_copy`,
-and immediate `*_now` operations. In v3, reserve `try_*` for actual attempt-style
-operations such as `try_lock()`.
+error policy. Borrowing is the default write/send payload policy: use `write` and
+`send`, with explicit semantic names such as `write_copy` or owning types for
+copying and transfer. Keep immediate `*_now` operations. In v3, reserve `try_*`
+for actual attempt-style operations such as `try_lock()`.
 
 Throwing immediate conveniences unwrap explicit operational results. For awaited
 operations, the ergonomic facade raises operational failures at the await, while
@@ -61,13 +62,26 @@ can still throw. Truly non-throwing variants must cover all failure paths, inclu
 callback and input-storage setup. C++20 remains the baseline; `std::expected` must
 not become a mandatory dependency on a newer standard.
 
+Copying-helper timing (construction versus startup) must be specified together
+with setup-failure routing and the input lifetime before copying; see
+[005](005-buffers-and-flow-control.md). Choosing an error surface must not change
+that timing or the payload ownership policy.
+
 ## Exception Boundaries
 
 Keep the existing low-level callback termination policy documented until an explicit
 replacement is accepted. No exception escapes a libuv C callback. Coroutine promises
-and operation state deliver observed failures through awaits. Independently spawned
-tasks require an explicit error destination; the optional posting component may also accept an error
-handler for posted callables. Define behavior if that handler throws. A loop-level
+and operation state deliver observed failures through awaits. A spawn handle
+provides asynchronous join and result/exception observation. Destroying an active
+handle requests cancellation while execution state survives through actual
+completion and cleanup; it must not silently discard subsequent failures. Specify
+an explicit destination for failures that can no longer be observed through join,
+including failures left unobserved when a completed handle is destroyed. This
+requirement applies even though public detach is deferred; see
+[003](003-cancellation-and-task-scopes.md).
+
+The optional posting component may also accept an error handler for posted
+callables. Define behavior if an error handler throws. A loop-level
 handler must not consume native `data` or silently change all callback semantics.
 
 ## Alternatives and Open Questions

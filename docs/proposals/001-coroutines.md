@@ -22,9 +22,24 @@ Keep explicit native access, user-owned `data`, and address-stable handles/reque
 
 Put coroutine primitives in `uv::co`; high-level I/O objects remain in `uv`.
 Do not introduce coroutine-specific socket or filesystem owner hierarchies.
-Start with a lazy, move-only `uv::co::task<T>` and `uv::co::task<void>`. Calling a coroutine constructs
-a task; awaiting it or explicitly spawning it starts execution. Specify single
-consumption and continuation ownership. The promise stores a value or exception and
+Use cold, move-only `uv::co::task<T>` and `uv::co::task<void>`. A task has no
+execution context at construction. Starting a root through `spawn(loop, task)`
+consumes the task and binds its execution context to that loop. Awaiting a cold
+child consumes it and propagates the parent's execution context before it starts.
+A task may be started only once; awaiting an already-started task is invalid even
+on the same loop. Join a spawned execution through its spawn handle instead.
+Cross-loop joining is unsupported initially.
+
+```cpp
+uv::co::task<int> foo(); // cold; no loop parameter required
+
+// In application startup code:
+auto h = uv::co::spawn(loop, foo());
+```
+
+Capturing a loop-bound resource does not bind the task at construction or change
+the resource's affinity: its use must agree with the task's execution loop.
+Specify continuation ownership. The promise stores a value or exception and
 transfers control to its continuation at final suspension.
 
 A never-started task may destroy its frame. A running task must remain owned until
@@ -33,22 +48,45 @@ Task destruction must not imply successful native cancellation. Prefer explicit
 [task scopes](003-cancellation-and-task-scopes.md) for started work; define and test
 the contract for destruction without join before stabilizing this type.
 
-Independent execution requires a named spawn/detach API, a surviving owner, and an
-explicit error destination. Do not silently detach abandoned work. Bind execution
-to the shared `uv::loop` context and specify where continuations resume with the
-[scheduling proposal](007-loop-scheduling.md). Do not drive nested event loops.
+The proposed root-starting shape is:
+
+```cpp
+namespace uv::co {
+template<class T>
+[[nodiscard]] spawn_handle<T> spawn(uv::loop&, task<T>);
+} // Exact join/stop member names remain provisional.
+```
+
+A move-only spawn handle owns the root execution and supports asynchronous join
+and observation of its result or exception. Destroying an active handle requests
+cancellation without blocking. It does not immediately destroy a frame still
+referenced by native work: execution state survives through actual completion and
+required cleanup. Before implementation, specify who retains and reclaims that
+state after handle destruction and where unobserved failures go; see
+[003](003-cancellation-and-task-scopes.md) and [006](006-errors-and-results.md).
+Retaining a frame does not extend the lifetime of external objects it borrows.
+
+Start with task, spawn handle, and task scope. Defer public detach until frame and
+operation ownership, cleanup, and error routing have explicit contracts. The
+cancellation-and-retention contract for handle destruction is not a public detach
+operation. Specify continuation placement with the
+[scheduling proposal](007-loop-scheduling.md); do not drive nested event loops.
 
 ## Operation awaitables
 
 Adapt one-shot operations using the [shared operation protocol](004-operation-state.md):
 filesystem operations, DNS, random, work queue, TCP/pipe connect, stream write and
-shutdown, UDP send, timer sleep, and handle close.
+shutdown, UDP send, and timer sleep. Ownership and scope cleanup additionally
+require an awaitable internal close-completion primitive; a generic public close
+await is a separate API decision.
 
 The awaitable owns request and completion state or borrows it explicitly. Stable
 coroutine-frame storage may avoid a separate request allocation, but the frame
 itself can allocate and must outlive native completion. Copy necessary path inputs;
-represent payload borrowing, copying, and ownership transfer explicitly. A borrowed
-handle still requires its owner to survive the operation.
+use borrowing by default for write/send payloads, with explicit semantic names or
+types for copying and ownership transfer as specified in
+[005](005-buffers-and-flow-control.md). A borrowed handle still requires its owner
+to survive the operation.
 
 Build and validate more than filesystem adapters before freezing the API. DNS
 owned results, work-thread completion, borrowed writes, and asynchronous handle
@@ -67,7 +105,7 @@ if (!connected) {
   report(connected.error_code());
   co_return;
 }
-co_await client.write_borrowed(payload.view());
+co_await client.write(payload.view()); // borrow bytes until actual completion
 ```
 
 Exact signatures and result accessors remain provisional. Both native submission
@@ -87,6 +125,13 @@ the relevant native callback slots and reject incompatible simultaneous consumer
 Specify whether a subscription remains active between awaits or starts/stops each
 time. Preserve the low-level allocator/reader callback pair.
 
+At terminal completion, quiesce the native event source and release all claimed
+callback slots before resuming user code. This includes EOF, terminal error,
+completed cancellation, and explicit stop, not a stop request alone. An ordinary
+`next()` result does not terminate a persistent subscription or release its slots.
+Retain state required by in-flight callbacks and never clear a replacement
+subscription's slots after user resumption; see [004](004-operation-state.md).
+
 For repeated reads, signals, timers, and filesystem events, consider an asynchronous
 sequence with `next()` and owned or explicitly borrowed values. A channel adds queue
 capacity, overflow, producer suspension, close, and error semantics; introduce it
@@ -95,14 +140,21 @@ provide an asynchronous event sequence. See [buffers and flow control](005-buffe
 
 ## Timers, close, and cleanup
 
-`sleep_for(loop, duration)` and `sleep_until(loop, deadline)` use event-loop timers
-and `std::chrono`; never implement them with blocking `uv_sleep()`. Owned timer
+Within a task, `sleep_for(duration)` and `sleep_until(deadline)` use the inherited
+execution context, event-loop timers, and `std::chrono`; these names remain
+provisional. Never implement them with blocking `uv_sleep()`. Owned timer
 storage survives its native close callback. Repeating timers use subscriptions.
 
-Awaitable close cannot release the handle before close completion or replace an
-unrelated close callback silently. Cancellation cannot undo close. Resource cleanup
-must also work when an exception bypasses the final explicit close expression;
-[asynchronous owners](002-async-ownership.md) define that boundary.
+Implement an awaitable internal close-completion primitive required by ownership
+and scope cleanup: start close, call `uv_close()`, receive the native callback,
+then permit storage reclamation once no remaining references require it. It must
+not replace unrelated close ownership. Cancellation cannot undo close.
+
+Decide separately whether a generic explicit `co_await socket.close()` is public.
+Cleanup must cover exceptional exits without relying on a final explicit close.
+A normal C++ destructor cannot await: lexical exit may initiate cleanup under a
+surviving resource scope, while joining it requires an asynchronous scope boundary.
+[Asynchronous owners](002-async-ownership.md) define that boundary; its syntax is open.
 
 ## Cancellation and composition
 
@@ -114,8 +166,9 @@ unsupported cases and their lifetime behavior are explicit.
 
 ## Alternatives and open questions
 
-- Lazy versus eager tasks: lazy is preferred to make startup explicit.
-- Loop binding at task creation versus scope startup; behavior of cross-loop awaits.
+- Exact spawn-handle join/stop vocabulary and result-consumption rules.
+- State retention and unobserved-error routing after spawn-handle destruction.
+- Public generic close exposure and asynchronous resource-scope syntax.
 - Frame allocation customization and optional operation pools after measurement.
 - Explicit-operation initiation and facade spellings under proposal 006.
 - Inline resumption versus queued continuations and fairness budget.
@@ -133,8 +186,11 @@ for their full implementation. Ordinary loop-thread coroutine use must not requi
 a separate dispatcher; validate coexistence with raw and high-level callbacks.
 
 Prototype a timer, filesystem read, DNS lookup, connect/write, worker operation,
-and close before committing public names. Test immediate and delayed failures,
-never-started tasks, nested awaits, result moves, exceptional cleanup, stop races,
+and internal close completion before committing public names. Test immediate and
+delayed failures,
+never-started tasks, inherited loop context, single consumption, rejected cross-loop
+joins and resource-affinity mismatches, active spawn-handle destruction, result moves,
+exceptional cleanup, terminal subscription replacement, stop races,
 late callbacks, and exactly-once resumption. Check stack growth for long chains.
 
 Publish runnable filesystem and networking examples covering startup, loop driving,

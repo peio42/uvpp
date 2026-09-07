@@ -21,6 +21,19 @@ coroutines. Define ordinary loop-thread continuation behavior without requiring
 an executor, dispatcher, or hidden runtime. Any fairness queue or wakeup state
 needed by this policy must have documented ownership, cost, and shutdown behavior.
 
+Follow the task model in [001](001-coroutines.md): a cold task has no execution
+context at construction. Root `spawn(loop, task)` binds it before execution;
+nested awaited cold tasks inherit the parent's context. Tasks start only once and
+spawned executions are joined through their handles. Cross-loop joining is
+unsupported initially, and operations on captured resources must respect the
+resources' loop affinity. Context-dependent operations such as coroutine sleep
+use the inherited loop without requiring it at each call.
+
+Ordinary spawn, join, and spawn-handle destruction occur on the loop thread.
+Binding context does not imply cross-thread publication; any cross-thread control
+entry point is a separate explicit capability. Specify whether root startup runs
+inline or is scheduled, and define ownership rollback if startup fails.
+
 Separately, add an optional explicit posting component bound to a borrowed
 `uv::loop`. Cross-thread posting users opt into this component. It owns
 a work queue and an async wakeup handle. Posting transfers a callable into the
@@ -66,4 +79,7 @@ protocol are proposed. Validate all three layers on one loop without a separatel
 constructed posting component before freezing the coroutine API.
 Validate many producers, coalesced wakeups, posts racing with shutdown, rejection,
 loop-thread identity, exception routing, bounded queue behavior, and I/O fairness.
+Also validate context inheritance before first child execution, rejected cross-loop
+joins and resource-affinity mismatches, and continued loop driving through cleanup
+after active spawn-handle destruction.
 Run thread sanitizer on the queue and endpoint lifetime tests where supported.

@@ -26,16 +26,42 @@ mutable storage and an owning read form, plus `read_exactly` with explicit parti
 data on EOF or error. These names are sketches, not available API. Distinguish
 normal EOF, empty native notifications, bytes transferred, and actual errors.
 
-Represent write input policy through explicit borrowing, transfer of an owning
-buffer, or a named copying helper. Avoid a single buffer type whose ownership
-changes implicitly. For owned UDP results, copy the peer address as well as
-retaining the payload. A buffer pool returns an owning lease; a view does not
+Borrowing is the default payload policy for asynchronous write/send operations.
+Copying or ownership transfer uses an explicit semantic name or type. Illustrative
+coroutine spellings (not implemented signatures):
+
+```cpp
+co_await stream.write(data);      // borrow until actual completion
+co_await stream.write_copy(data); // explicitly request a copy
+```
+
+Use `write` and `send` for the normal borrowing forms; no `_borrowed` suffix is
+needed. Document that borrowed bytes must remain alive, address-stable, and
+unmodified until actual completion, even after a cancellation request. Owning
+operation state or retaining a coroutine frame does not retain external borrowed
+bytes. Deferred operation construction must also document the input lifetime
+required before submission. For copying helpers, specify whether the copy happens
+at construction or startup and when the caller may release or modify its input;
+this timing remains an open decision coordinated with [006](006-errors-and-results.md).
+
+Avoid a single buffer type whose ownership changes implicitly. For owned UDP
+results, copy the peer address as well as retaining the payload. A buffer pool
+returns an owning lease; a view does not
 extend the lease lifetime.
 
 A high-level read subscription owns the read callback slots. Reject competing
 readers or callback/coroutine subscriptions on the same stream. Start with a clear
 single-consumer contract. Decide whether repeated reads keep the native watcher
 running or stop it between awaits based on lifecycle tests and measurements.
+
+On EOF, terminal error, completed cancellation, or explicit stop, quiesce the
+native source and release both allocation and read/receive slot ownership before
+delivering terminal completion to user code. An ordinary `next()` completion does
+not terminate a persistent subscription: it retains its slots between events,
+including when paused between awaits. A stop request alone does not free slots.
+Keep state needed by in-flight callbacks alive, and never let an old completion
+clear a replacement subscription installed by resumed user code. Apply the
+family-specific terminal protocol in [004](004-operation-state.md).
 
 Provide bounded queues with documented byte and item limits, and writer suspension
 at configured thresholds. Account for in-flight storage as well as queued storage.
@@ -65,6 +91,7 @@ cancellation retains buffer storage until the native operation is finished.
 - Specify `read_exactly` partial-result shape and concurrent writer ordering.
 - Decide whether async sequences or channels are needed beyond one-shot reads.
 - Specify how pending producers and consumers wake on close or failure.
+- Choose copying-helper copy timing and pre-submission input lifetime explicitly.
 
 ## Implementation progress and validation
 
@@ -73,6 +100,7 @@ proposed read adapters, pools, and bounded flow-control layer are not implemente
 
 Validate EOF after partial input, zero-length datagrams, truncated datagrams,
 consumer cancellation, callback conflicts, buffer reuse only after completion,
+copy timing, terminal subscription replacement, ordinary-event slot retention,
 and slow consumers. Measure peak memory under sustained load and confirm it stays
 within documented bounds, including in-flight operations.
 
@@ -80,5 +108,5 @@ within documented bounds, including in-flight operations.
 
 Owning callback stream writes are not implemented.
 Explore a callback frontend owning its request state alongside the coroutine form.
-Ownership of payloads must still distinguish borrowing, copying, and transfer; the
-short signature alone cannot claim to retain borrowed bytes.
+The same default borrowing and explicitly named copying/typed transfer policy
+applies to callback writes. Owning the request state does not retain borrowed bytes.

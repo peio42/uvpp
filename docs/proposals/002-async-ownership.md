@@ -19,8 +19,9 @@ path does not protect earlier exits.
 ## Proposed design
 
 Place caller-controlled wrappers in `uv::raw` and recommended owners in `uv`.
-Add a unique owner for stable handle storage, plus asynchronous close
-and a resource scope. A movable owner may transfer its pointer; the native handle
+Add a unique owner for stable handle storage, an awaitable internal
+close-completion primitive, and a resource scope. Generic public coroutine close
+is a separate decision. A movable owner may transfer its pointer; the native handle
 and low-level wrapper remain non-copyable and non-movable. Ownership transfer
 must be named or represented by an owning type, never by an implicit borrowed view.
 
@@ -38,10 +39,19 @@ closing handle. Before stabilizing this API, choose a documented fallback for an
 owner destroyed without an explicit exit: transfer to an already-live cleanup
 scope or diagnose the contract violation. Do not silently leak or detach cleanup.
 
-A close operation claims the close callback slot and completes exactly once after
-the native close callback. Reject incompatible existing close ownership. Repeated
-close on the high-level owner may join the existing completion; it must not submit
-another native close. Cancellation cannot undo close or release its storage early.
+Lexical destruction may initiate cleanup and hand it to a surviving resource
+scope under that contract. It cannot guarantee cleanup has finished before the
+next statement. Joining cleanup requires an asynchronous scope boundary, including
+on exceptional exits; its public syntax remains open. Retaining owner or task
+storage does not extend the lifetime of external borrowed buffers.
+
+The internal primitive claims the close callback slot: start close, call
+`uv_close()`, receive its callback, then make storage reclaimable once no remaining
+references require it. Deliver close completion exactly once, releasing internal
+slot ownership before user code can resume. Reject incompatible existing close
+ownership. Repeated cleanup requests on an owner may join the existing completion;
+they must not submit another native close. Cancellation cannot undo close or
+release its storage early.
 
 ## Implementation and costs
 
@@ -59,6 +69,9 @@ Cleanup failure must be observable without discarding the original task failure.
   Existing wrapper-specific storage costs must still be documented.
 - Decide owner construction, release, adoption, and borrowing vocabulary.
 - Decide how multiple close waiters and cleanup errors are represented.
+- Decide separately whether generic explicit close is a public coroutine operation
+  (for example, `co_await socket.close()`); the internal primitive is required either way.
+- Choose asynchronous scope-exit syntax and the destruction fallback above.
 - Decide whether a resource scope and task scope are one public type or composed types.
 
 ## Implementation progress and validation

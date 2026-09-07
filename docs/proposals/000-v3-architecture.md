@@ -59,6 +59,15 @@ expresses borrowing of the same execution context, not a separate runtime. Do
 not introduce another owning `uv::raw::loop`. Raw callbacks, high-level operations,
 and coroutine tasks can coexist on one loop with no implicit thread hop.
 
+Tasks are cold and have no execution context at construction. `spawn(loop, task)`
+consumes a root task and binds that context; nested awaited cold tasks are consumed
+and inherit the parent's context. Tasks start only once. Spawn handles own root executions and provide
+asynchronous join; cross-loop joining is unsupported initially. Active-handle
+destruction requests cancellation and retains execution state through actual
+completion and cleanup. Start with task, spawn handle, and task scope; public
+detach is deferred. [001](001-coroutines.md) and [003](003-cancellation-and-task-scopes.md)
+refine these contracts.
+
 The application controls loop driving and shutdown. Owners and tasks borrow the
 loop, which must survive and be driven through all pending native cleanup.
 Destructors must not run a nested loop to emulate synchronous cleanup.
@@ -79,8 +88,11 @@ cleanup remain supported and documented.
 
 High-level owners may move by transferring ownership of stable storage. Moving
 an owner must never relocate the native handle or invalidate pending callbacks.
-Operation-state ownership does not imply payload ownership: borrowing, copying,
-and transfer must be visible through types or semantic operation names.
+Operation-state ownership does not imply payload ownership. Borrowing is the
+default payload policy for asynchronous write/send operations; copying and
+ownership transfer use explicit semantic names or types. Borrowed bytes must stay
+alive, address-stable, and unmodified until actual completion, including after a
+cancellation request. Retaining a task frame does not retain external borrowed data.
 
 Adoption transfers a genuinely transferable owner, not an arbitrary reference to
 an initialized wrapper. A raw handle on the stack cannot be adopted into an owner
@@ -97,6 +109,13 @@ completion. [002](002-async-ownership.md) defines explicit asynchronous exit and
 the fallback contract for destruction without it. No layer may equate requested
 cancellation with completed work or permission to release buffers.
 
+Ownership and resource scopes require an awaitable internal close-completion
+primitive. Generic public coroutine close is a separate decision. A lexical C++
+destructor cannot join asynchronous cleanup; an asynchronous scope boundary must
+provide that guarantee. Terminal operations and subscriptions release callback-slot
+ownership before delivering completion to user code, after quiescing their native
+source; state still needed by in-flight callbacks remains alive. See [004](004-operation-state.md).
+
 ## Error and API layering
 
 Use a structural distinction rather than a family of error-policy suffixes:
@@ -109,7 +128,8 @@ uv::ops::foo(...);  // explicit operation / status-oriented surface
 
 Equivalent domain or member forms may be used without adding `_status`, `_ec`,
 `try_`, or `async_` solely to select error handling. Semantic distinctions such
-as borrowed versus copied bytes and immediate `*_now` operations remain useful.
+as default-borrowing `write`, explicit `write_copy`, and immediate `*_now`
+operations remain useful.
 Reserve `try_*` for actual attempt-style semantics such as `try_lock` in v3.
 
 Raw native operations use explicit status/results for operational failures.

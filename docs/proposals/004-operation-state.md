@@ -26,6 +26,22 @@ Document family-specific state transitions, including submission failure without
 a future callback. Clear request callback slots and obsolete input storage before
 calling user code, so supported resubmission from completion remains safe.
 
+Extend terminal slot-release ordering to subscriptions and event sources, using
+their own repeated-event protocol. Once an operation or subscription is terminal,
+quiesce its native source and release all callback-slot ownership before invoking
+user callbacks or resuming user coroutines. For read/receive subscriptions this
+includes the allocation and read/receive slots. Terminal causes include EOF,
+terminal error, completed cancellation, and explicit stop. A cancellation request
+alone is not terminal completion, and an ordinary `next()` result does not release
+the slots of a persistent subscription.
+
+Slot release and storage reclamation are distinct: retain the state and buffers
+still required by in-flight native callbacks or a currently executing trampoline.
+The old completion path must never clear or modify slots acquired by a replacement
+subscription after user delivery. Complete slot cleanup before delivery and make
+any remaining callback unwinding independent of the replacement's state. Each
+family must define the quiescence point that makes slot reuse safe.
+
 Keep the libuv binding in raw primitives or narrow internal helpers; `uv::co`
 must not reimplement it. Error facade selection must not alter native submission,
 ownership, or cleanup. Define deferred or policy-aware initiation so native
@@ -70,3 +86,7 @@ Validate failure at each setup stage, native submission failure, absent callback
 resubmission from completion, destruction from completion, owned-result extraction,
 and exactly-once cleanup. Exercise DNS, filesystem, write, and close before calling
 the internal protocol stable. Compare allocation counts with the existing paths.
+For subscriptions, validate immediate replacement from terminal user delivery on
+EOF, error, cancellation, and stop; ordinary-event slot retention; setup rollback;
+and late callbacks that neither resume twice nor clear replacement slots. Test both
+callback and coroutine frontends, including destruction during terminal delivery.

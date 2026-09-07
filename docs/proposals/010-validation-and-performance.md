@@ -45,6 +45,22 @@ submission/completion failures with equivalent ownership. Establish a usable
 baseline before prototype 001; extend it through flow-control validation and API
 freeze rather than waiting for every future benchmark before prototyping.
 
+For the initial task/ownership prototype, verify cold construction, root context
+binding, inherited child context, single consumption, and rejection of cross-loop
+joins and resource-affinity mismatches. Destroy active spawn handles while native
+work cannot be cancelled, then verify retained state, actual completion, cleanup,
+and unobserved-failure routing. Scope joins must precede destruction of external
+borrowed data. Exercise the internal close-completion primitive and exceptional
+scope exit without requiring a generic public coroutine close API.
+
+For each subscription family, test slot release before terminal user delivery on
+EOF where applicable, terminal error, completed cancellation, and explicit stop.
+Install a replacement subscription from that delivery and verify that the old
+callback path cannot clear its slots. Ordinary event delivery and temporary pauses
+must retain a persistent subscription's claim. Verify buffer lifetime through actual
+completion and the selected copying-helper timing in both callback and coroutine
+frontends. These are future acceptance checks, not claims of implemented coverage.
+
 ## Performance method
 
 Keep repeatable libuv-direct, uvpp-static, uvpp-runtime, and coroutine workloads
