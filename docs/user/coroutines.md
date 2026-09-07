@@ -73,3 +73,9 @@ one pending write; submission and completion failures throw at the await.
 until it returns. Its result exposes `count()` and `eof()`; an operational error
 throws at the await. Each call is one-shot: it stops the native reader and releases
 both read slots before resuming, so another `read_some` may immediately follow.
+
+Connections are affine to the loop that created them. `write` and `read_some`
+reject a task bound to another loop. Until resource scopes and cancellation exist,
+destroying a connection with a pending read or write is an unsupported contract
+violation: the experimental implementation asserts and terminates rather than
+risking a use-after-free.

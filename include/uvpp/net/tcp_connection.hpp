@@ -2,6 +2,7 @@
 
 #include <concepts>
 #include <coroutine>
+#include <cassert>
 #include <cstddef>
 #include <cstring>
 #include <memory>
@@ -25,6 +26,7 @@ namespace detail {
 struct tcp_connection_state {
   uv_connect_t connect{};
   uv_tcp_t tcp{};
+  uv::loop *loop = nullptr;
   std::coroutine_handle<> connect_continuation{};
   std::coroutine_handle<> close_continuation{};
   int connect_status = 0;
@@ -128,10 +130,13 @@ public:
 
     template<class Promise>
       requires std::derived_from<Promise, co::detail::task_promise_base>
-    bool await_suspend(std::coroutine_handle<Promise> continuation) noexcept {
+    bool await_suspend(std::coroutine_handle<Promise> continuation) {
       if (state_ == nullptr || state_->close_started) {
         status_ = UV_EBADF;
         return false;
+      }
+      if (&continuation.promise().execution_loop() != state_->loop) {
+        throw std::logic_error{"uv::tcp_connection write used from a different loop"};
       }
       if (state_->active_read != nullptr) {
         status_ = UV_EBUSY;
@@ -181,10 +186,10 @@ public:
         return;
       }
       self.status_ = nread;
-      const int stop_status = uv_read_stop(raw);
-      if (stop_status < 0 && nread >= 0) {
-        self.status_ = stop_status;
-      }
+      // libuv guarantees that uv_read_stop() prevents future read callbacks.
+      // Its non-zero TTY/Windows return does not indicate a stop failure, and
+      // tcp_connection is a TCP-only owner in any case.
+      (void)uv_read_stop(raw);
       auto &state = *self.state_;
       state.active_read = nullptr; // Release alloc/read slots before user resumption.
       auto continuation = std::exchange(self.continuation_, {});
@@ -212,10 +217,13 @@ public:
 
     template<class Promise>
       requires std::derived_from<Promise, co::detail::task_promise_base>
-    bool await_suspend(std::coroutine_handle<Promise> continuation) noexcept {
+    bool await_suspend(std::coroutine_handle<Promise> continuation) {
       if (state_ == nullptr || state_->close_started) {
         status_ = UV_EBADF;
         return false;
+      }
+      if (&continuation.promise().execution_loop() != state_->loop) {
+        throw std::logic_error{"uv::tcp_connection read used from a different loop"};
       }
       if (state_->write_active) {
         status_ = UV_EBUSY;
@@ -279,8 +287,9 @@ public:
     bool await_suspend(std::coroutine_handle<Promise> continuation) {
       state_ = std::make_unique<detail::tcp_connection_state>();
       auto &state = *state_;
+      state.loop = &continuation.promise().execution_loop();
       state.connect_continuation = continuation;
-      state.connect_status = uv_tcp_init(continuation.promise().execution_loop().native(), &state.tcp);
+      state.connect_status = uv_tcp_init(state.loop->native(), &state.tcp);
       if (state.connect_status < 0) {
         return false;
       }
@@ -321,6 +330,11 @@ private:
       return;
     }
     auto *state = state_.release();
+    assert(!state->write_active);
+    assert(state->active_read == nullptr);
+    if (state->write_active || state->active_read != nullptr) {
+      std::terminate();
+    }
     state->close({}, true);
   }
 

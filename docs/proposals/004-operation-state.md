@@ -92,8 +92,14 @@ not the bytes it borrows.
 
 Its experimental `read_some` claims both native read slots. Data, EOF, and errors
 call `uv_read_stop()`, clear the alloc/read claim, and only then resume the task;
-zero-byte notifications remain armed. The next `read_some` may therefore be
-started by resumed code without an old callback clearing its claim.
+zero-byte notifications remain armed. libuv guarantees that `uv_read_stop()`
+prevents later read callbacks; its non-zero TTY/Windows return is not a failure,
+so it does not alter this TCP-only terminal protocol. The next `read_some` may
+therefore be started by resumed code without an old callback clearing its claim.
+
+TCP owner operations also verify that the awaiting task inherited the exact loop
+recorded by the owner. This is a high-level affinity check; raw APIs remain
+caller-controlled.
 
 Validate failure at each setup stage, native submission failure, absent callbacks,
 resubmission from completion, destruction from completion, owned-result extraction,
