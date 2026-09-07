@@ -7,6 +7,7 @@ header; it is not included by `uvpp/uv.hpp` and is not a stable v2 API.
 #include <chrono>
 
 #include <uvpp/co/sleep.hpp>
+#include <uvpp/net/tcp_connection.hpp>
 
 using namespace std::chrono_literals;
 
@@ -49,3 +50,15 @@ until it completes, then call `rethrow_if_failed()` to observe a task exception.
 This first slice deliberately has no task scopes, cancellation, or asynchronous
 join. Destroying an active `spawn_handle` terminates the process
 instead of releasing a coroutine frame that libuv may still reference.
+
+## Experimental TCP connect
+
+`uv::tcp_connection::connect(ipv4_or_ipv6)` creates a movable owner in the
+awaiting task's loop. It is a focused experimental header, not yet an umbrella
+`uvpp/uv.hpp` API. A connect submission error and an asynchronous connection error
+are both thrown at the `co_await`; a failed connection is closed before delivery.
+The native `uv_tcp_t` stays address-stable when the owner moves.
+
+Destroying the owner starts an internal asynchronous close. Keep driving its loop
+until it becomes idle, including after an exception unwinds a connected owner.
+There is not yet a public `co_await socket.close()`, write, or read API.

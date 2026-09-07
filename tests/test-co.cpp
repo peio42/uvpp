@@ -5,6 +5,8 @@
 #include "gtest/gtest.h"
 #include "uvpp/co/sleep.hpp"
 #include "uvpp/handles/timer.hpp"
+#include "uvpp/handles/tcp.hpp"
+#include "uvpp/net/tcp_connection.hpp"
 
 using namespace std::chrono_literals;
 
@@ -143,4 +145,114 @@ TEST(UvppV3Coroutine, childTaskFailurePropagatesToItsParent) {
   EXPECT_FALSE(parent_resumed);
   EXPECT_THROW(execution.rethrow_if_failed(), std::runtime_error);
   loop.close();
+}
+
+TEST(UvppV3Coroutine, tcpConnectionConnectsMovesAndCloses) {
+  uv::loop loop;
+  uv::tcp listener(loop);
+  try {
+    listener.bind(uv::ipv4{"127.0.0.1", 0});
+  } catch (const uv::error &error) {
+    if (error.code().value() == UV_EPERM) {
+      listener.close();
+      loop.run();
+      loop.close();
+      GTEST_SKIP() << "loopback TCP is not permitted in this environment";
+    }
+    throw;
+  }
+  const auto address = uv::ipv4{"127.0.0.1", listener.sockname().port()};
+  listener.listen([&](uv::tcp &server, uv::result status) {
+    EXPECT_TRUE(status);
+    server.close();
+  });
+
+  bool connected = false;
+  auto client = [&]() -> uv::co::task<void> {
+    auto socket = co_await uv::tcp_connection::connect(address);
+    auto *before_move = socket.native_handle();
+    auto moved = std::move(socket);
+    EXPECT_EQ(moved.native_handle(), before_move);
+    connected = true;
+  };
+
+  auto execution = uv::co::spawn(loop, client());
+  loop.run();
+
+  EXPECT_TRUE(connected);
+  EXPECT_NO_THROW(execution.rethrow_if_failed());
+  EXPECT_NO_THROW(loop.close());
+}
+
+TEST(UvppV3Coroutine, tcpConnectionRefusalClosesBeforeDeliveringTheError) {
+  uv::loop loop;
+  uv::tcp listener(loop);
+  try {
+    listener.bind(uv::ipv4{"127.0.0.1", 0});
+  } catch (const uv::error &error) {
+    if (error.code().value() == UV_EPERM) {
+      listener.close();
+      loop.run();
+      loop.close();
+      GTEST_SKIP() << "loopback TCP is not permitted in this environment";
+    }
+    throw;
+  }
+  const auto address = uv::ipv4{"127.0.0.1", listener.sockname().port()};
+  listener.close();
+  loop.run();
+
+  int status = 0;
+  auto client = [&]() -> uv::co::task<void> {
+    try {
+      auto socket = co_await uv::tcp_connection::connect(address);
+      (void)socket;
+    } catch (const uv::error &error) {
+      status = error.code().value();
+    }
+  };
+
+  auto execution = uv::co::spawn(loop, client());
+  loop.run();
+
+  if (status == UV_EPERM) {
+    loop.close();
+    GTEST_SKIP() << "loopback TCP is not permitted in this environment";
+  }
+  EXPECT_EQ(status, UV_ECONNREFUSED);
+  EXPECT_NO_THROW(execution.rethrow_if_failed());
+  EXPECT_NO_THROW(loop.close());
+}
+
+TEST(UvppV3Coroutine, tcpConnectionClosesDuringExceptionalTaskExit) {
+  uv::loop loop;
+  uv::tcp listener(loop);
+  try {
+    listener.bind(uv::ipv4{"127.0.0.1", 0});
+  } catch (const uv::error &error) {
+    if (error.code().value() == UV_EPERM) {
+      listener.close();
+      loop.run();
+      loop.close();
+      GTEST_SKIP() << "loopback TCP is not permitted in this environment";
+    }
+    throw;
+  }
+  const auto address = uv::ipv4{"127.0.0.1", listener.sockname().port()};
+  listener.listen([&](uv::tcp &server, uv::result) { server.close(); });
+
+  auto client = [&]() -> uv::co::task<void> {
+    auto socket = co_await uv::tcp_connection::connect(address);
+    throw std::runtime_error{"after connect"};
+  };
+
+  auto execution = uv::co::spawn(loop, client());
+  loop.run();
+
+  EXPECT_THROW(execution.rethrow_if_failed(), std::runtime_error);
+  EXPECT_NO_THROW(loop.close());
+}
+
+TEST(UvppV3Coroutine, tcpConnectionRejectsInvalidAddressDuringSetup) {
+  EXPECT_THROW((uv::ipv4{"not-an-address", 80}), uv::error);
 }

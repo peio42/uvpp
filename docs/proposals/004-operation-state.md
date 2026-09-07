@@ -80,7 +80,10 @@ machine. Frontend-specific delivery should not introduce an intermediate
 ## Implementation progress and validation
 
 Current request helpers and filesystem operation owners implement parts of the
-mechanism. No common coroutine frontend is implemented.
+mechanism. The experimental TCP connect awaiter owns stable `uv_connect_t` and
+`uv_tcp_t` storage, distinguishes submission from completion errors, and closes
+before delivering a failed connection. It is a family-specific prototype, not yet
+a common coroutine frontend.
 
 Validate failure at each setup stage, native submission failure, absent callbacks,
 resubmission from completion, destruction from completion, owned-result extraction,

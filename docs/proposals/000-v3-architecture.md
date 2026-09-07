@@ -211,9 +211,10 @@ aliases are not required and must not dictate the new model.
 ## Implementation and documentation lifecycle
 
 The architectural direction is accepted, but the three-layer v3 API is largely not
-implemented. The experimental `uv::co::task<T>`, root `spawn`, child-task await, and timer
-`sleep_for` slice is the first implementation; it intentionally does not settle
-task scopes, cancellation, asynchronous join, error-policy pairs, or owner APIs.
+implemented. The experimental `uv::co::task<T>`, root `spawn`, child-task await,
+timer `sleep_for`, and `uv::tcp_connection` connect/close slices are the first
+implementations; they intentionally do not settle task scopes, cancellation,
+asynchronous join, error-policy pairs, or owner APIs.
 Current v2 behavior remains authoritative in `docs/design/` and `docs/user/`
 except where explicitly marked experimental.
 

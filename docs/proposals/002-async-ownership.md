@@ -76,8 +76,12 @@ Cleanup failure must be observable without discarding the original task failure.
 
 ## Implementation progress and validation
 
-No v3 owner or resource scope is implemented. Existing close callbacks and filesystem
-owners are foundations, not implementation of this proposal.
+The experimental `uv::tcp_connection` is the first v3 owner slice. It owns one
+stable TCP/connect state allocation, moves only that ownership pointer, and starts
+an internal close-completion path on destruction. The close callback is the only
+point that reclaims state released by an owner; failed connects retain their state
+until close before the awaiting task receives the error. Resource scopes and a
+public close awaitable remain unimplemented.
 
 Validate normal exit, exception before the final close, failed initialization,
 failed close submission for request-based resources, cancellation during cleanup,
