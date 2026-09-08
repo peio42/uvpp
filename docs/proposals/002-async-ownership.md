@@ -64,7 +64,9 @@ Coordinate exceptional scope exit with [structured tasks](003-cancellation-and-t
 Cleanup failure must be observable without discarding the original task failure.
 `resource_scope` and `task_scope` are deliberately separate and composable:
 the former owns asynchronous resource cleanup, while the latter owns child task
-execution. Their server-level composition is specified in
+execution. A task receives only a borrowed resource view/reference from the
+resource scope; it never takes over an adopted owner. Their server-level
+composition is specified in
 [011 — Resource scopes](011-resource-scopes.md).
 
 ## Alternatives and open questions
