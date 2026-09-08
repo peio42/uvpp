@@ -2,97 +2,17 @@
 
 #include <concepts>
 #include <coroutine>
-#include <cassert>
 #include <exception>
-#include <memory>
 #include <optional>
 #include <stdexcept>
 #include <utility>
-#include <vector>
 
+#include "uvpp/co/cancellation.hpp"
 #include "uvpp/core/loop.hpp"
 
 namespace uv::co {
 
 namespace detail {
-
-class cancellation_state;
-
-class cancellation_registration {
-public:
-  cancellation_registration() = default;
-  cancellation_registration(const cancellation_registration &) = delete;
-  cancellation_registration &operator=(const cancellation_registration &) = delete;
-
-private:
-  using callback = void (*)(void *) noexcept;
-
-  cancellation_state *state_ = nullptr;
-  cancellation_registration *next_ = nullptr;
-  callback callback_ = nullptr;
-  void *context_ = nullptr;
-
-  friend class cancellation_state;
-};
-
-// Loop-thread-only cooperative cancellation. Registrations are removed before
-// their callback runs, so an operation may resume and destroy its frame safely.
-class cancellation_state {
-public:
-  bool stop_requested() const noexcept { return stop_requested_; }
-
-  bool register_callback(cancellation_registration &registration,
-      cancellation_registration::callback callback, void *context) noexcept {
-    assert(registration.state_ == nullptr);
-    if (stop_requested_) {
-      return false;
-    }
-    registration.state_ = this;
-    registration.callback_ = callback;
-    registration.context_ = context;
-    registration.next_ = head_;
-    head_ = &registration;
-    return true;
-  }
-
-  void unregister(cancellation_registration &registration) noexcept {
-    if (registration.state_ == nullptr) {
-      return;
-    }
-    assert(registration.state_ == this);
-    auto **current = &head_;
-    while (*current != &registration) {
-      current = &(*current)->next_;
-    }
-    *current = registration.next_;
-    clear(registration);
-  }
-
-  void request_stop() noexcept {
-    if (std::exchange(stop_requested_, true)) {
-      return;
-    }
-    while (head_ != nullptr) {
-      auto &registration = *head_;
-      head_ = registration.next_;
-      auto callback = registration.callback_;
-      auto *context = registration.context_;
-      clear(registration);
-      callback(context);
-    }
-  }
-
-private:
-  static void clear(cancellation_registration &registration) noexcept {
-    registration.state_ = nullptr;
-    registration.next_ = nullptr;
-    registration.callback_ = nullptr;
-    registration.context_ = nullptr;
-  }
-
-  cancellation_registration *head_ = nullptr;
-  bool stop_requested_ = false;
-};
 
 class task_promise_base {
 public:
@@ -415,142 +335,6 @@ private:
   friend class spawn_handle;
   friend class task_scope;
   friend spawn_handle spawn(uv::loop &, task &&);
-};
-
-// Experimental structured owner for same-loop task<void> children. It starts
-// children immediately, retains their frames through completion, and requires
-// co_await join() before destruction. Cancellation and resource cleanup are
-// deliberately deferred to the following scope slice.
-class [[nodiscard]] task_scope {
-public:
-  explicit task_scope(uv::loop &execution_loop) noexcept : loop_{&execution_loop} {}
-
-  task_scope(const task_scope &) = delete;
-  task_scope &operator=(const task_scope &) = delete;
-  task_scope(task_scope &&) = delete;
-  task_scope &operator=(task_scope &&) = delete;
-
-  ~task_scope() {
-    assert(children_.empty());
-    if (!children_.empty()) {
-      std::terminate();
-    }
-  }
-
-  void spawn(task<void> &&child) {
-    if (join_started_) {
-      throw std::logic_error{"uv::co::task_scope cannot spawn after join"};
-    }
-
-    auto handle = child.release();
-    if (!handle) {
-      throw std::logic_error{"uv::co::task_scope requires a valid task"};
-    }
-
-    auto record = std::make_unique<child_record>();
-    record->scope = this;
-    record->handle = handle;
-    try {
-      handle.promise().bind(*loop_, &cancellation_);
-      handle.promise().set_completion(record.get(), &task_scope::on_child_completed);
-      children_.push_back(std::move(record));
-      ++active_children_;
-      handle.resume();
-    } catch (...) {
-      if (record != nullptr && record->handle) {
-        record->handle.destroy();
-      }
-      throw;
-    }
-  }
-
-  class join_awaiter {
-  public:
-    explicit join_awaiter(task_scope &scope) noexcept : scope_{scope} {}
-
-    bool await_ready() const noexcept { return false; }
-
-    template<class Promise>
-      requires std::derived_from<Promise, detail::task_promise_base>
-    bool await_suspend(std::coroutine_handle<Promise> continuation) {
-      if (&continuation.promise().execution_loop() != scope_.loop_) {
-        throw std::logic_error{"uv::co::task_scope joined from a different loop"};
-      }
-      if (scope_.join_started_) {
-        throw std::logic_error{"uv::co::task_scope can be joined only once"};
-      }
-      scope_.join_started_ = true;
-      if (scope_.active_children_ == 0) {
-        return false;
-      }
-      scope_.join_continuation_ = continuation;
-      return true;
-    }
-
-    void await_resume() { scope_.finish_join(); }
-
-  private:
-    task_scope &scope_;
-  };
-
-  [[nodiscard]] join_awaiter join() noexcept { return join_awaiter{*this}; }
-
-  // Requests cooperative stop for all children. Completion and join remain
-  // asynchronous: non-cancellable native work retains its storage until done.
-  void request_stop() noexcept { cancellation_.request_stop(); }
-  bool stop_requested() const noexcept { return cancellation_.stop_requested(); }
-
-private:
-  using handle_type = task<void>::handle_type;
-
-  struct child_record {
-    task_scope *scope = nullptr;
-    handle_type handle{};
-    bool completed = false;
-  };
-
-  static std::coroutine_handle<> on_child_completed(void *context) noexcept {
-    auto &child = *static_cast<child_record *>(context);
-    return child.scope->child_completed(child);
-  }
-
-  std::coroutine_handle<> child_completed(child_record &child) noexcept {
-    assert(!child.completed);
-    child.completed = true;
-    assert(active_children_ != 0);
-    --active_children_;
-    if (first_failure_ == nullptr) {
-      try {
-        child.handle.promise().rethrow_if_failed();
-      } catch (...) {
-        first_failure_ = std::current_exception();
-      }
-    }
-    if (active_children_ == 0 && join_continuation_) {
-      return std::exchange(join_continuation_, {});
-    }
-    return std::noop_coroutine();
-  }
-
-  void finish_join() {
-    assert(active_children_ == 0);
-    for (auto &child : children_) {
-      assert(child->completed);
-      child->handle.destroy();
-    }
-    children_.clear();
-    if (first_failure_ != nullptr) {
-      std::rethrow_exception(std::exchange(first_failure_, {}));
-    }
-  }
-
-  uv::loop *loop_ = nullptr;
-  detail::cancellation_state cancellation_{};
-  std::vector<std::unique_ptr<child_record>> children_{};
-  std::coroutine_handle<> join_continuation_{};
-  std::exception_ptr first_failure_{};
-  std::size_t active_children_ = 0;
-  bool join_started_ = false;
 };
 
 class stop_requested_awaiter {

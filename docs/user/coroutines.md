@@ -7,6 +7,7 @@ header; it is not included by `uvpp/uv.hpp` and is not a stable v2 API.
 #include <chrono>
 
 #include <uvpp/co/sleep.hpp>
+#include <uvpp/co/task_scope.hpp>
 #include <uvpp/net/tcp_connection.hpp>
 #include <uvpp/net/tcp_listener.hpp>
 
@@ -48,8 +49,9 @@ an uncaught one is observable through the root `spawn_handle`.
 
 Keep the returned `spawn_handle` alive while the task is running, drive the loop
 until it completes, then call `rethrow_if_failed()` to observe a task exception.
-This first slice deliberately has no task scopes, cancellation, or asynchronous
-join. Destroying an active `spawn_handle` terminates the process
+The root `spawn_handle` still has no cancellation or asynchronous join;
+`task_scope` below supplies structured joining and cooperative stop for children.
+Destroying an active `spawn_handle` terminates the process
 instead of releasing a coroutine frame that libuv may still reference.
 
 ## Experimental TCP connect
@@ -62,11 +64,11 @@ The native `uv_tcp_t` stays address-stable when the owner moves.
 
 Destroying the owner starts an internal asynchronous close. Keep driving its loop
 until it becomes idle, including after an exception unwinds a connected owner.
-There is not yet a public `co_await socket.close()` or read API.
+There is not yet a public `co_await socket.close()` API.
 
 `co_await socket.write(data)` borrows a `std::string_view`: do not destroy,
-reallocate, or modify the characters until the await resumes, even if a future
-cancellation request has been made. Once it resumes, the bytes are reusable.
+reallocate, or modify the characters until the await resumes, even if a stop
+request has been made. Once it resumes, the bytes are reusable.
 `write_copy()` is intentionally not implemented. The experimental owner permits
 one pending write; submission and completion failures throw at the await.
 
@@ -76,7 +78,8 @@ throws at the await. Each call is one-shot: it stops the native reader and relea
 both read slots before resuming, so another `read_some` may immediately follow.
 
 Connections are affine to the loop that created them. `write` and `read_some`
-reject a task bound to another loop. Until resource scopes and cancellation exist,
+reject a task bound to another loop. Until a resource scope can retain native
+operation state through asynchronous cleanup,
 destroying a connection with a pending read or write is an unsupported contract
 violation: the experimental implementation asserts and terminates rather than
 risking a use-after-free.
@@ -142,8 +145,10 @@ accepted-connection queue and overload policy.
 `task<void>` children. Construct it with the loop, use it from a task bound to that
 same loop, then join it exactly once. It retains child frames until every child has
 completed; only then does `join()` resume and throw the first child exception, if
-any. `request_stop()` requests cooperative cancellation for every child; it is a
-loop-thread operation and does not yet cancel siblings automatically on failure.
+any. The first unhandled child exception makes the scope fail fast: it requests
+cooperative cancellation for every sibling, joins every child, then rethrows that
+first exception. `request_stop()` provides the same request explicitly; it is a
+loop-thread operation.
 
 ```cpp
 uv::co::task<void> handle(uv::tcp_connection connection);
@@ -172,7 +177,9 @@ int main() {
 Passing the connection by value makes the handler task own it. On normal handler
 exit, its owner starts asynchronous close; keep driving the loop through that close
 completion. `task_scope::join()` joins handler task completion, not yet every
-resource close completion. Until `resource_scope` exists, a scope
+resource close completion. `task_scope` owns executions; a future, distinct
+`resource_scope` will own asynchronous owner cleanup and compose with it rather
+than merging the two responsibilities. Until that scope exists, a `task_scope`
 must not be destroyed without `co_await join()`; doing so terminates rather than
 freeing frames that native operations may still reference.
 

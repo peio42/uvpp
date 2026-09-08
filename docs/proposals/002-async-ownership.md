@@ -62,6 +62,10 @@ directory resources, while preserving their distinct native cleanup protocols.
 
 Coordinate exceptional scope exit with [structured tasks](003-cancellation-and-task-scopes.md).
 Cleanup failure must be observable without discarding the original task failure.
+`resource_scope` and `task_scope` are deliberately separate and composable:
+the former owns asynchronous resource cleanup, while the latter owns child task
+execution. Their server-level composition is specified in
+[011 — Resource scopes](011-resource-scopes.md).
 
 ## Alternatives and open questions
 
@@ -72,7 +76,8 @@ Cleanup failure must be observable without discarding the original task failure.
 - Decide separately whether generic explicit close is a public coroutine operation
   (for example, `co_await socket.close()`); the internal primitive is required either way.
 - Choose asynchronous scope-exit syntax and the destruction fallback above.
-- Decide whether a resource scope and task scope are one public type or composed types.
+- Define registration, exceptional exit, and error aggregation for a resource
+  scope composed with a task scope.
 
 ## Implementation progress and validation
 

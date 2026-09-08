@@ -81,7 +81,8 @@ ordinary loop-thread task transitions.
 ## Alternatives and open questions
 
 - Choose interoperability with `std::stop_token` versus a loop-specific token.
-- Choose fail-fast versus collect-errors scope policies and their result shapes.
+- Define an opt-in collect-errors scope or result shape; the default scope policy
+  is fail-fast.
 - Distinguish timeout, requested stop, native cancellation failure, and I/O failure.
 - Define scope destruction without join; no implicit unsafe frame destruction.
 - Specify spawn-handle state retention/reclamation after destruction, unobserved
@@ -96,8 +97,9 @@ then rethrows the first captured child exception. It is non-movable, permits one
 join, rejects join from another loop, and terminates if destroyed with unjoined
 children. `request_stop()` provides a loop-thread-only cooperative stop state to
 all scoped descendants; `co_await stop_requested()` observes it. This is a
-task-frame ownership slice only: child failure does not yet stop siblings, and it
-does not join native resource close completion or retain external borrowed data
+task-frame ownership slice only: the first child failure requests cooperative stop
+of its siblings, then the scope joins all children and rethrows that first failure.
+It does not join native resource close completion or retain external borrowed data
 beyond the child task contract.
 
 The first stop-aware adapters are timer sleep, TCP one-shot read, and TCP one-shot
@@ -111,13 +113,15 @@ The prototype is sufficient to express listener handoff as
 `scope.spawn(handle(std::move(connection)))`; the handler task owns the accepted
 connection until task completion. A future resource scope must additionally retain
 owners through asynchronous close and define coordinated cancellation, queueing,
-overload, and error cleanup for a complete server lifecycle.
+overload, and error cleanup for a complete server lifecycle; see the distinct
+[resource-scope proposal](011-resource-scopes.md).
 
-Tests cover all-child join, first-error delivery after sibling completion,
+Tests cover all-child join, fail-fast stop of both sleeping and synchronously
+completing siblings followed by first-error delivery,
 cross-loop join rejection, destruction without join, two concurrent accepted TCP
 handlers, and stop of timer/read/accept alongside an in-flight borrowed write.
-Native cancellation for remaining families, failure-triggered sibling stop,
-deadline composition, and their uniform contracts remain proposed.
+Native cancellation for remaining families, deadline composition, and their
+uniform contracts remain proposed.
 
 Validate stop before submission, concurrent stop/completion, unsuccessful native
 cancellation, stop during close, non-cancellable work, late callbacks, sibling

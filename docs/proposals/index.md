@@ -21,6 +21,7 @@ land independently in v2.
 | [008 — Move-only callbacks](008-move-only-callbacks.md) | Draft | Callable ownership, replacement, and storage costs |
 | [009 — Lifetime diagnostics](009-lifetime-diagnostics.md) | Draft | Optional lifecycle checks and instrumentation |
 | [010 — Validation and performance](010-validation-and-performance.md) | Draft | Lifecycle tests, portability, sanitizers, builds, and benchmarks |
+| [011 — Resource scopes](011-resource-scopes.md) | Draft | Composable asynchronous resource cleanup alongside task scopes |
 
 ## Shared Constraints
 

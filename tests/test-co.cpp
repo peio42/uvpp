@@ -8,6 +8,7 @@
 
 #include "gtest/gtest.h"
 #include "uvpp/co/sleep.hpp"
+#include "uvpp/co/task_scope.hpp"
 #include "uvpp/handles/timer.hpp"
 #include "uvpp/handles/tcp.hpp"
 #include "uvpp/net/tcp_connection.hpp"
@@ -73,6 +74,30 @@ struct connected_tcp_pair {
     loop.run();
     loop.close();
   }
+};
+
+class synchronous_stop_awaiter {
+public:
+  bool await_ready() const noexcept { return false; }
+
+  template<class Promise>
+    requires std::derived_from<Promise, uv::co::detail::task_promise_base>
+  bool await_suspend(std::coroutine_handle<Promise> continuation) noexcept {
+    continuation_ = continuation;
+    auto *cancellation = continuation.promise().cancellation();
+    return cancellation != nullptr && cancellation->register_callback(
+        registration_, &synchronous_stop_awaiter::on_stop, this);
+  }
+
+  void await_resume() const noexcept {}
+
+private:
+  static void on_stop(void *context) noexcept {
+    static_cast<synchronous_stop_awaiter *>(context)->continuation_.resume();
+  }
+
+  uv::co::detail::cancellation_registration registration_{};
+  std::coroutine_handle<> continuation_{};
 };
 
 } // namespace
@@ -240,7 +265,37 @@ TEST(UvppV3Coroutine, taskScopeJoinsAllChildrenBeforeResuming) {
   EXPECT_NO_THROW(loop.close());
 }
 
-TEST(UvppV3Coroutine, taskScopeReportsFailureAfterAllChildrenComplete) {
+TEST(UvppV3Coroutine, taskScopeFailureStopsSiblingsBeforeReportingFirstFailure) {
+  uv::loop loop;
+  uv::co::task_scope scope(loop);
+  bool sibling_canceled = false;
+
+  auto failing_child = []() -> uv::co::task<void> {
+    co_await uv::co::sleep_for(0ms);
+    throw std::runtime_error{"expected scoped failure"};
+  };
+  auto sibling = [&]() -> uv::co::task<void> {
+    try {
+      co_await uv::co::sleep_for(1h);
+    } catch (const uv::error &error) {
+      sibling_canceled = error.code().value() == UV_ECANCELED;
+    }
+  };
+  auto parent = [&]() -> uv::co::task<void> {
+    scope.spawn(failing_child());
+    scope.spawn(sibling());
+    co_await scope.join();
+  };
+
+  auto execution = uv::co::spawn(loop, parent());
+  loop.run();
+
+  EXPECT_TRUE(sibling_canceled);
+  EXPECT_THROW(execution.rethrow_if_failed(), std::runtime_error);
+  EXPECT_NO_THROW(loop.close());
+}
+
+TEST(UvppV3Coroutine, taskScopeDefersJoinResumePastSynchronousSiblingStop) {
   uv::loop loop;
   uv::co::task_scope scope(loop);
   bool sibling_completed = false;
@@ -250,7 +305,7 @@ TEST(UvppV3Coroutine, taskScopeReportsFailureAfterAllChildrenComplete) {
     throw std::runtime_error{"expected scoped failure"};
   };
   auto sibling = [&]() -> uv::co::task<void> {
-    co_await uv::co::sleep_for(1ms);
+    co_await synchronous_stop_awaiter{};
     sibling_completed = true;
   };
   auto parent = [&]() -> uv::co::task<void> {

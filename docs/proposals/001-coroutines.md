@@ -187,9 +187,12 @@ inherited child loop binding, timer completion/close before resumption, move-onl
 result delivery, task failure propagation, and accepted TCP ownership. The listener
 has one exclusive accept waiter and transfers each accepted connection into its own
 movable owner before resuming the task. `task_scope::join()` waits for every child
-and reports its first captured failure only after that join. It deliberately has no
-cancellation, resource-close join, or asynchronous root join, so it does not settle
-the public task contract. Because `uv_listen` is persistent but one `accept()`
+and reports its first captured failure only after that join. A first child failure
+requests cooperative stop of its siblings; submitted non-cancellable work still
+retains its storage until actual completion. `task.hpp`, `cancellation.hpp`, and
+`task_scope.hpp` keep the task core, stop state, and structured owner separately
+in focused headers. It deliberately has no resource-close join or asynchronous
+root join, so it does not settle the public task contract. Because `uv_listen` is persistent but one `accept()`
 consumes one notification, it also deliberately has no queue or long-running
 handler policy before scopes define backpressure and shutdown.
 
