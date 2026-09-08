@@ -103,7 +103,10 @@ that waiter claim, then calls `uv_accept` into separately stable connection stor
 An accept error closes that initialized storage before task delivery; success
 transfers it to the resumed task as `tcp_connection`. Listener destruction while an
 accept is active is an explicit experimental contract violation until scopes and
-cancellation can complete the operation safely.
+cancellation can complete the operation safely. A notification with no active
+waiter is deliberately ignored in this one-shot slice: it neither accepts nor
+queues a connection. The eventual scoped server must replace that limitation with
+an explicit queue/backpressure policy.
 
 The first `uv_accept()` following a successful libuv connection notification is
 guaranteed to succeed, so a deterministic native accept-failure integration test

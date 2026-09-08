@@ -123,6 +123,10 @@ awaiter consumes exactly one notification (libuv requires `uv_accept()` during
 that notification). Consequently a long-running server must keep an accept waiter
 armed; this slice has no hidden accepted-connection queue or overflow policy. The
 example above is deliberately `serve_one`, not a general sequential server loop.
+If libuv notifies the listener while no `accept_awaiter` is armed, this one-shot
+slice deliberately ignores that notification: it does not call `uv_accept()` and
+does not queue a connection. This is an experimental limitation, not a final
+server policy.
 
 The accepted owner belongs to the receiving task. Passing it by value to a child
 task and `co_await`ing that child makes the handler frame own it until completion,
