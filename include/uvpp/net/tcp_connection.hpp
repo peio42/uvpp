@@ -22,21 +22,37 @@
 namespace uv {
 
 class tcp_listener;
+class tcp_connection;
 
 namespace detail {
+
+enum class tcp_close_phase {
+  open,
+  closing,
+  closed,
+};
+
+struct tcp_close_waiter {
+  tcp_close_waiter *next = nullptr;
+  std::coroutine_handle<> continuation{};
+  bool linked = false;
+};
 
 struct tcp_connection_state {
   uv_connect_t connect{};
   uv_tcp_t tcp{};
   uv::loop *loop = nullptr;
   std::coroutine_handle<> connect_continuation{};
-  std::coroutine_handle<> close_continuation{};
+  std::unique_ptr<tcp_connection_state> *provisional_owner = nullptr;
+  int *connect_status_destination = nullptr;
   int connect_status = 0;
   bool initialized = false;
-  bool close_started = false;
+  tcp_close_phase close_phase = tcp_close_phase::open;
+  tcp_close_waiter *close_waiters = nullptr;
+  bool owner_released = false;
+  bool close_callback_active = false;
   bool write_active = false;
   void *active_read = nullptr;
-  bool destroy_on_close = false;
 
   static tcp_connection_state &from_connect(uv_connect_t *raw) noexcept {
     auto *bytes = reinterpret_cast<char *>(raw);
@@ -48,22 +64,56 @@ struct tcp_connection_state {
     return *reinterpret_cast<tcp_connection_state *>(bytes - offsetof(tcp_connection_state, tcp));
   }
 
-  void close(std::coroutine_handle<> continuation, bool destroy_when_closed) noexcept {
-    if (close_started) {
-      std::terminate();
+  bool closing() const noexcept { return close_phase != tcp_close_phase::open; }
+
+  // Claims one close waiter and starts uv_close exactly once. A later waiter
+  // joins the pending completion instead of submitting a second close.
+  bool request_close(tcp_close_waiter *waiter = nullptr) noexcept {
+    if (close_phase == tcp_close_phase::closed) {
+      return false;
     }
-    close_started = true;
-    close_continuation = continuation;
-    destroy_on_close = destroy_when_closed;
+    if (waiter != nullptr) {
+      assert(!waiter->linked);
+      waiter->next = close_waiters;
+      waiter->linked = true;
+      close_waiters = waiter;
+    }
+    if (close_phase == tcp_close_phase::closing) {
+      return false;
+    }
+    close_phase = tcp_close_phase::closing;
     uv_close(reinterpret_cast<uv_handle_t *>(&tcp), &tcp_connection_state::on_close);
+    return true;
+  }
+
+  // The high-level owner relinquishes its stable state only here. If close has
+  // already completed inside its callback, deletion waits until every waiter
+  // has been delivered.
+  void release_owner() noexcept {
+    assert(!owner_released);
+    owner_released = true;
+    if (close_phase == tcp_close_phase::open) {
+      (void)request_close();
+      return;
+    }
+    if (close_phase == tcp_close_phase::closed && !close_callback_active) {
+      delete this;
+    }
   }
 
   static void on_connect(uv_connect_t *raw, int status) noexcept {
     auto &self = from_connect(raw);
     self.connect_status = status;
+    assert(self.connect_status_destination != nullptr);
+    *self.connect_status_destination = status;
     auto continuation = std::exchange(self.connect_continuation, {});
     if (status < 0) {
-      self.close(continuation, false);
+      assert(self.provisional_owner != nullptr);
+      auto *owned = self.provisional_owner->release();
+      assert(owned == &self);
+      self.release_owner();
+      self.close_waiter.continuation = continuation;
+      (void)self.request_close(&self.close_waiter);
       return;
     }
     continuation.resume();
@@ -71,19 +121,75 @@ struct tcp_connection_state {
 
   static void on_close(uv_handle_t *raw) noexcept {
     auto &self = from_handle(raw);
-    auto continuation = std::exchange(self.close_continuation, {});
-    const bool destroy = self.destroy_on_close;
-    self.destroy_on_close = false;
-    if (continuation) {
-      continuation.resume();
+    self.close_phase = tcp_close_phase::closed;
+    self.close_callback_active = true;
+    auto *waiter = std::exchange(self.close_waiters, nullptr);
+    while (waiter != nullptr) {
+      auto *next = waiter->next;
+      waiter->next = nullptr;
+      waiter->linked = false;
+      auto continuation = std::exchange(waiter->continuation, {});
+      if (continuation) {
+        continuation.resume();
+      }
+      waiter = next;
     }
-    if (destroy) {
+    self.close_callback_active = false;
+    if (self.owner_released) {
       delete &self;
     }
   }
+
+  tcp_close_waiter close_waiter{};
 };
 
 static_assert(std::is_standard_layout_v<tcp_connection_state>);
+
+// Internal close-completion primitive. Its state pointer is borrowed from an
+// owner that must remain alive through completion (or release ownership through
+// tcp_connection_state::release_owner()). It is intentionally not a public
+// tcp_connection::close() API.
+class tcp_close_completion {
+public:
+  explicit tcp_close_completion(tcp_connection_state *state) noexcept : state_{state} {}
+  tcp_close_completion(const tcp_close_completion &) = delete;
+  tcp_close_completion &operator=(const tcp_close_completion &) = delete;
+  tcp_close_completion(tcp_close_completion &&) = delete;
+  tcp_close_completion &operator=(tcp_close_completion &&) = delete;
+
+  // Affinity must be checked even when close completed before this request.
+  bool await_ready() const noexcept { return false; }
+
+  template<class Promise>
+    requires std::derived_from<Promise, co::detail::task_promise_base>
+  bool await_suspend(std::coroutine_handle<Promise> continuation) {
+    if (state_ == nullptr) {
+      status_ = UV_EBADF;
+      return false;
+    }
+    if (&continuation.promise().execution_loop() != state_->loop) {
+      throw std::logic_error{"uv internal tcp close used from a different loop"};
+    }
+    if (state_->close_phase == tcp_close_phase::closed) {
+      return false;
+    }
+    waiter_.continuation = continuation;
+    initiated_ = state_->request_close(&waiter_);
+    return true;
+  }
+
+  void await_resume() { throw_if_error(status_); }
+
+  bool initiated_close() const noexcept { return initiated_; }
+
+private:
+  tcp_connection_state *state_ = nullptr;
+  tcp_close_waiter waiter_{};
+  int status_ = 0;
+  bool initiated_ = false;
+};
+
+[[nodiscard]] tcp_close_completion close_completion(tcp_connection &) noexcept;
 
 } // namespace detail
 
@@ -109,7 +215,7 @@ public:
 
   uv_tcp_t *native_handle() noexcept { return state_ ? &state_->tcp : nullptr; }
   const uv_tcp_t *native_handle() const noexcept { return state_ ? &state_->tcp : nullptr; }
-  bool closing() const noexcept { return state_ && state_->close_started; }
+  bool closing() const noexcept { return state_ && state_->closing(); }
 
   class read_some_result {
   public:
@@ -133,7 +239,7 @@ public:
     template<class Promise>
       requires std::derived_from<Promise, co::detail::task_promise_base>
     bool await_suspend(std::coroutine_handle<Promise> continuation) {
-      if (state_ == nullptr || state_->close_started) {
+      if (state_ == nullptr || state_->closing()) {
         status_ = UV_EBADF;
         return false;
       }
@@ -250,7 +356,7 @@ public:
     template<class Promise>
       requires std::derived_from<Promise, co::detail::task_promise_base>
     bool await_suspend(std::coroutine_handle<Promise> continuation) {
-      if (state_ == nullptr || state_->close_started) {
+      if (state_ == nullptr || state_->closing()) {
         status_ = UV_EBADF;
         return false;
       }
@@ -323,35 +429,46 @@ public:
     bool await_suspend(std::coroutine_handle<Promise> continuation) {
       if (continuation.promise().stop_requested()) {
         state_ = std::make_unique<detail::tcp_connection_state>();
-        state_->connect_status = UV_ECANCELED;
+        status_ = UV_ECANCELED;
         return false;
       }
       state_ = std::make_unique<detail::tcp_connection_state>();
       auto &state = *state_;
       state.loop = &continuation.promise().execution_loop();
       state.connect_continuation = continuation;
-      state.connect_status = uv_tcp_init(state.loop->native(), &state.tcp);
-      if (state.connect_status < 0) {
+      state.provisional_owner = &state_;
+      state.connect_status_destination = &status_;
+      status_ = uv_tcp_init(state.loop->native(), &state.tcp);
+      state.connect_status = status_;
+      if (status_ < 0) {
         return false;
       }
       state.initialized = true;
-      state.connect_status = uv_tcp_connect(&state.connect, &state.tcp,
+      status_ = uv_tcp_connect(&state.connect, &state.tcp,
           reinterpret_cast<const sockaddr *>(&peer_), &detail::tcp_connection_state::on_connect);
-      if (state.connect_status < 0) {
+      state.connect_status = status_;
+      if (status_ < 0) {
         auto resume = std::exchange(state.connect_continuation, {});
-        state.close(resume, false);
+        auto *owned = state_.release();
+        assert(owned == &state);
+        state.release_owner();
+        state.close_waiter.continuation = resume;
+        (void)state.request_close(&state.close_waiter);
       }
       return true;
     }
 
     tcp_connection await_resume() {
-      throw_if_error(state_->connect_status);
+      throw_if_error(status_);
+      state_->provisional_owner = nullptr;
+      state_->connect_status_destination = nullptr;
       return tcp_connection{std::move(state_)};
     }
 
   private:
     sockaddr_storage peer_{};
     std::unique_ptr<detail::tcp_connection_state> state_{};
+    int status_ = 0;
   };
 
   [[nodiscard]] static connect_awaiter connect(const ipv4 &address) noexcept {
@@ -376,13 +493,25 @@ private:
     if (state->write_active || state->active_read != nullptr) {
       std::terminate();
     }
-    state->close({}, true);
+    state->release_owner();
   }
 
   std::unique_ptr<detail::tcp_connection_state> state_{};
 
   friend class tcp_listener;
+  friend detail::tcp_close_completion detail::close_completion(tcp_connection &) noexcept;
 };
+
+namespace detail {
+
+// Internal boundary for a future resource scope. It borrows the owner; it does
+// not transfer ownership or make public co_await socket.close() available.
+[[nodiscard]] inline tcp_close_completion close_completion(
+    tcp_connection &connection) noexcept {
+  return tcp_close_completion{connection.state_.get()};
+}
+
+} // namespace detail
 
 static_assert(std::is_standard_layout_v<tcp_connection::write_awaiter>);
 

@@ -126,6 +126,14 @@ TCP owner operations also verify that the awaiting task inherited the exact loop
 recorded by the owner. This is a high-level affinity check; raw APIs remain
 caller-controlled.
 
+The TCP close path now uses a family-specific internal state machine rather than
+an awaiter directly around `uv_close()`: `open`, `closing`, and `closed`. Its
+intrusive waiter list makes a repeated cleanup request join an already submitted
+close. The native close callback first detaches that list and marks the state
+closed, then resumes waiters, and only afterwards releases state whose owner was
+destroyed. The internal completion entry point checks loop affinity and is not a
+public `tcp_connection::close()` API.
+
 Validate failure at each setup stage, native submission failure, absent callbacks,
 resubmission from completion, destruction from completion, owned-result extraction,
 and exactly-once cleanup. Exercise DNS, filesystem, write, and close before calling

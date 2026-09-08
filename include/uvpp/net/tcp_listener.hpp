@@ -156,7 +156,7 @@ public:
         listener_->active_accept = nullptr;
         listener_->deliver_accept = nullptr;
         status_ = UV_ECANCELED;
-        connection_->close(std::exchange(continuation_, {}), false);
+        close_untransferred_connection(std::exchange(continuation_, {}));
         return true;
       }
       return true;
@@ -168,6 +168,14 @@ public:
     }
 
   private:
+    void close_untransferred_connection(std::coroutine_handle<> continuation) noexcept {
+      auto *connection = connection_.release();
+      assert(connection != nullptr);
+      connection->release_owner();
+      connection->close_waiter.continuation = continuation;
+      (void)connection->request_close(&connection->close_waiter);
+    }
+
     static void on_connection(void *opaque, int connection_status) noexcept {
       auto &self = *static_cast<accept_awaiter *>(opaque);
       self.status_ = connection_status;
@@ -183,7 +191,7 @@ public:
       if (self.status_ < 0) {
         // The accepted handle was initialized even when uv_accept failed. Keep
         // it alive through uv_close() before reporting the error to the task.
-        self.connection_->close(continuation, false);
+        self.close_untransferred_connection(continuation);
         return;
       }
       continuation.resume();
@@ -200,7 +208,7 @@ public:
       auto continuation = std::exchange(self.continuation_, {});
       // The child handle was initialized before claiming the accept slot. Close
       // it before delivery even though no connection was transferred into it.
-      self.connection_->close(continuation, false);
+      self.close_untransferred_connection(continuation);
     }
 
     detail::tcp_listener_state *listener_ = nullptr;

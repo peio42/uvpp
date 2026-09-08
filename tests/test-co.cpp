@@ -423,6 +423,88 @@ TEST(UvppV3Coroutine, tcpConnectionConnectsMovesAndCloses) {
   EXPECT_NO_THROW(loop.close());
 }
 
+TEST(UvppV3Coroutine, internalTcpCloseCompletionJoinsAndReleasesBeforeResumption) {
+  if (!loopback_tcp_is_permitted()) {
+    GTEST_SKIP() << "loopback TCP is not permitted in this environment";
+  }
+
+  connected_tcp_pair pair;
+  pair.connect();
+  uv::loop other_loop;
+  bool wrong_loop_rejected = false;
+  bool first_resumed = false;
+  bool second_resumed = false;
+  bool post_close_joined = false;
+  bool first_initiated = false;
+  bool second_initiated = false;
+
+  auto wrong_loop = [&]() -> uv::co::task<void> {
+    try {
+      co_await uv::detail::close_completion(*pair.client);
+    } catch (const std::logic_error &) {
+      wrong_loop_rejected = true;
+    }
+  };
+  auto first = [&]() -> uv::co::task<void> {
+    auto close = uv::detail::close_completion(*pair.client);
+    co_await close;
+    first_initiated = close.initiated_close();
+    first_resumed = true;
+
+    auto after_close = uv::detail::close_completion(*pair.client);
+    co_await after_close;
+    post_close_joined = !after_close.initiated_close();
+    pair.loop.stop();
+  };
+  auto second = [&]() -> uv::co::task<void> {
+    auto close = uv::detail::close_completion(*pair.client);
+    co_await close;
+    second_initiated = close.initiated_close();
+    second_resumed = true;
+  };
+
+  auto wrong_execution = uv::co::spawn(other_loop, wrong_loop());
+  EXPECT_TRUE(wrong_execution.done());
+  EXPECT_NO_THROW(wrong_execution.rethrow_if_failed());
+  EXPECT_TRUE(wrong_loop_rejected);
+  other_loop.close();
+
+  auto first_execution = uv::co::spawn(pair.loop, first());
+  auto second_execution = uv::co::spawn(pair.loop, second());
+  pair.loop.run();
+
+  EXPECT_NO_THROW(first_execution.rethrow_if_failed());
+  EXPECT_NO_THROW(second_execution.rethrow_if_failed());
+  EXPECT_TRUE(first_resumed);
+  EXPECT_TRUE(second_resumed);
+  EXPECT_TRUE(post_close_joined);
+  EXPECT_NE(first_initiated, second_initiated);
+  pair.close();
+}
+
+TEST(UvppV3Coroutine, internalTcpCloseCompletionRetainsStateAfterOwnerDestruction) {
+  if (!loopback_tcp_is_permitted()) {
+    GTEST_SKIP() << "loopback TCP is not permitted in this environment";
+  }
+
+  connected_tcp_pair pair;
+  pair.connect();
+  bool resumed = false;
+  auto closer = [&]() -> uv::co::task<void> {
+    co_await uv::detail::close_completion(*pair.client);
+    resumed = true;
+    pair.loop.stop();
+  };
+
+  auto execution = uv::co::spawn(pair.loop, closer());
+  pair.client.reset();
+  pair.loop.run();
+
+  EXPECT_NO_THROW(execution.rethrow_if_failed());
+  EXPECT_TRUE(resumed);
+  pair.close();
+}
+
 TEST(UvppV3Coroutine, tcpConnectionRefusalClosesBeforeDeliveringTheError) {
   uv::loop loop;
   uv::tcp listener(loop);

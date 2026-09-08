@@ -77,9 +77,12 @@ been designed and validated.
 
 ## Implementation and validation gates
 
-Do not implement this scope before the generic internal close-completion primitive
-exists for each adopted owner. The implementation must prove release-before-user-
-resume for close completion, support exception paths, and avoid nested loop runs.
+The TCP connection now prototypes this internal primitive with an `open → closing
+→ closed` state machine, joined close waiters, affinity checks, and terminal slot
+release before waiter resumption. Do not implement this scope before equivalent
+internal close-completion support exists for each adopted owner. The implementation
+must prove release-before-user-resume for close completion, support exception
+paths, and avoid nested loop runs.
 Validate normal exit, exception during a handler, fail-fast cancellation, multiple
 close completions, cleanup failure with and without a primary task failure, active
 borrowed I/O, owner moves, listener shutdown with pending accept, and loop

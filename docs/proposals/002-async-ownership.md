@@ -84,11 +84,15 @@ composition is specified in
 ## Implementation progress and validation
 
 The experimental `uv::tcp_connection` is the first v3 owner slice. It owns one
-stable TCP/connect state allocation, moves only that ownership pointer, and starts
-an internal close-completion path on destruction. The close callback is the only
-point that reclaims state released by an owner; failed connects retain their state
-until close before the awaiting task receives the error. Resource scopes and a
-public close awaitable remain unimplemented.
+stable TCP/connect state allocation, moves only that ownership pointer, and has an
+internal `open → closing → closed` close state machine. Its internal-only
+`uv::detail::close_completion(connection)` awaiter starts `uv_close()` exactly
+once, lets later cleanup requests join the pending callback, and checks the
+awaiting task's loop affinity. The close callback detaches all waiter claims
+before resuming them; state released by an owner remains alive until that delivery
+has completed. Failed connects and untransferred accepted connections use the same
+machine before their awaiting task receives an error. Resource scopes and a public
+close awaitable remain unimplemented.
 
 The experimental `uv::tcp_listener` adds separate stable listener storage and a
 one-shot accept owner transfer. An accepted `tcp_connection` is not owned by the
@@ -109,10 +113,13 @@ active: this is an explicit contract violation, diagnosed by an assertion and
 termination in release builds. It must not be relaxed until a resource scope and
 stop/retention contract can keep operation state alive through actual completion.
 
-Validate normal exit, exception before the final close, failed initialization,
-failed close submission for request-based resources, cancellation during cleanup,
-owner moves, callback-slot conflicts, and loop shutdown with outstanding cleanup.
-Use sanitizers to verify that storage survives every native completion.
+Tests cover one close initiation with multiple joining waiters, release of the
+close waiter list before resumption, wrong-loop rejection, and owner destruction
+while close completion remains awaited. Validate normal exit, exception before the
+final close, failed initialization, failed close submission for request-based
+resources, cancellation during cleanup, owner moves, callback-slot conflicts, and
+loop shutdown with outstanding cleanup. Use sanitizers to verify that storage
+survives every native completion.
 
 ## Remaining Directory Layer
 
