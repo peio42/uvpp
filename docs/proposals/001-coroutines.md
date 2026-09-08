@@ -180,16 +180,18 @@ unsupported cases and their lifetime behavior are explicit.
 The existing callbacks, request wrappers, filesystem owners, and coroutine strategy
 are foundations. An experimental focused-header slice now provides `task<T>`, root
 `spawn(loop, task<void>)`, move-only child-task await, `spawn_handle::rethrow_if_failed()`,
-`sleep_for(duration)`, and one-shot `uv::tcp_listener::accept()`; see [the coroutine guide](../user/coroutines.md) and
+`sleep_for(duration)`, one-shot `uv::tcp_listener::accept()`, and a same-loop
+`task_scope` for `task<void>` children; see [the coroutine guide](../user/coroutines.md) and
 [`tests/test-co.cpp`](../../tests/test-co.cpp). It validates cold root startup,
 inherited child loop binding, timer completion/close before resumption, move-only
 result delivery, task failure propagation, and accepted TCP ownership. The listener
 has one exclusive accept waiter and transfers each accepted connection into its own
-movable owner before resuming the task. It deliberately has no cancellation, task
-scope, or asynchronous join, so it does not settle the public task contract or
-support implicit concurrent handler spawning. Because `uv_listen` is persistent
-but one `accept()` consumes one notification, it also deliberately has no queue or
-long-running handler policy before scopes define backpressure and shutdown.
+movable owner before resuming the task. `task_scope::join()` waits for every child
+and reports its first captured failure only after that join. It deliberately has no
+cancellation, resource-close join, or asynchronous root join, so it does not settle
+the public task contract. Because `uv_listen` is persistent but one `accept()`
+consumes one notification, it also deliberately has no queue or long-running
+handler policy before scopes define backpressure and shutdown.
 
 The coroutine TCP tests now cover cross-loop rejection for connections and
 listeners, read/write/accept exclusivity (`UV_EBUSY`), accepted-peer EOF, and the

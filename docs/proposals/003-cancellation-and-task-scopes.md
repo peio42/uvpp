@@ -1,6 +1,6 @@
 # Cancellation, Deadlines, and Structured Tasks
 
-Status: draft.
+Status: partially implemented.
 
 Architecture: [000 — V3 architecture](000-v3-architecture.md).
 
@@ -89,8 +89,35 @@ ordinary loop-thread task transitions.
 
 ## Implementation progress and validation
 
-Native cancellation is available; task scopes, deadline composition, and their
-uniform contracts are proposed. Stabilize these contracts before the coroutine API.
+The experimental `uv::co::task_scope` now owns immediately-started `task<void>`
+children on one explicit `uv::loop`. `spawn()` consumes and binds a cold child,
+and `join()` resumes only after every child has completed, destroys their frames,
+then rethrows the first captured child exception. It is non-movable, permits one
+join, rejects join from another loop, and terminates if destroyed with unjoined
+children. `request_stop()` provides a loop-thread-only cooperative stop state to
+all scoped descendants; `co_await stop_requested()` observes it. This is a
+task-frame ownership slice only: child failure does not yet stop siblings, and it
+does not join native resource close completion or retain external borrowed data
+beyond the child task contract.
+
+The first stop-aware adapters are timer sleep, TCP one-shot read, and TCP one-shot
+accept. They quiesce their native source, release callback claims, and deliver
+`UV_ECANCELED`. Submitted TCP write and connect cannot be physically cancelled in
+this slice: a prior stop rejects their submission, but an in-flight operation
+remains alive through actual completion. In particular, a borrowed write buffer
+must survive the request even after stop was requested.
+
+The prototype is sufficient to express listener handoff as
+`scope.spawn(handle(std::move(connection)))`; the handler task owns the accepted
+connection until task completion. A future resource scope must additionally retain
+owners through asynchronous close and define coordinated cancellation, queueing,
+overload, and error cleanup for a complete server lifecycle.
+
+Tests cover all-child join, first-error delivery after sibling completion,
+cross-loop join rejection, destruction without join, two concurrent accepted TCP
+handlers, and stop of timer/read/accept alongside an in-flight borrowed write.
+Native cancellation for remaining families, failure-triggered sibling stop,
+deadline composition, and their uniform contracts remain proposed.
 
 Validate stop before submission, concurrent stop/completion, unsuccessful native
 cancellation, stop during close, non-cancellable work, late callbacks, sibling

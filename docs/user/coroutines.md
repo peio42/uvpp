@@ -131,8 +131,58 @@ server policy.
 The accepted owner belongs to the receiving task. Passing it by value to a child
 task and `co_await`ing that child makes the handler frame own it until completion,
 but leaves no accept waiter while the handler is running. Independently spawning a
-handler has no safe automatic owner/join relationship today. A real concurrent
-server therefore waits for a future `task_scope` to own and join handler tasks and
-a `resource_scope` to retain and close their connections on cancellation or
-failure. Those scopes must also choose the accepted-connection queue and overload
-policy; until then, neither pattern is a supported long-running server lifecycle.
+handler previously had no safe automatic owner/join relationship. The experimental
+`task_scope` below provides that task ownership; a future `resource_scope` still
+has to retain and close resources during cancellation or failure, and choose the
+accepted-connection queue and overload policy.
+
+## Experimental task scopes
+
+`uv::co::task_scope` is a non-movable same-loop owner for immediately started
+`task<void>` children. Construct it with the loop, use it from a task bound to that
+same loop, then join it exactly once. It retains child frames until every child has
+completed; only then does `join()` resume and throw the first child exception, if
+any. `request_stop()` requests cooperative cancellation for every child; it is a
+loop-thread operation and does not yet cancel siblings automatically on failure.
+
+```cpp
+uv::co::task<void> handle(uv::tcp_connection connection);
+
+uv::co::task<void> serve_two(
+    uv::tcp_listener &listener, uv::co::task_scope &scope) {
+  for (int count = 0; count != 2; ++count) {
+    auto connection = co_await listener.accept();
+    scope.spawn(handle(std::move(connection)));
+  }
+  co_await scope.join();
+  listener.close();
+}
+
+int main() {
+  uv::loop loop;
+  uv::tcp_listener listener(loop, uv::ipv4{"127.0.0.1", 8080});
+  uv::co::task_scope scope(loop);
+  auto execution = uv::co::spawn(loop, serve_two(listener, scope));
+  loop.run();
+  execution.rethrow_if_failed();
+  loop.close();
+}
+```
+
+Passing the connection by value makes the handler task own it. On normal handler
+exit, its owner starts asynchronous close; keep driving the loop through that close
+completion. `task_scope::join()` joins handler task completion, not yet every
+resource close completion. Until `resource_scope` exists, a scope
+must not be destroyed without `co_await join()`; doing so terminates rather than
+freeing frames that native operations may still reference.
+
+### Cooperative stop
+
+`scope.request_stop()` is a request, not completion. In this slice, a scoped
+`sleep_for`, `tcp_connection::read_some`, or `tcp_listener::accept` terminates
+with `UV_ECANCELED`; each releases its native callback claim before resuming the
+task. An already submitted TCP `write` or `connect` is not physically cancelled:
+it completes normally, and `join()` continues to wait for it. A borrowed write
+buffer must therefore remain valid and unchanged until that completion even after
+a stop request. A task can observe the inherited request with
+`co_await uv::co::stop_requested()`.

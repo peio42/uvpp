@@ -140,6 +140,10 @@ public:
       if (&continuation.promise().execution_loop() != state_->loop) {
         throw std::logic_error{"uv::tcp_connection read used from a different loop"};
       }
+      if (continuation.promise().stop_requested()) {
+        status_ = UV_ECANCELED;
+        return false;
+      }
       if (state_->active_read != nullptr) {
         status_ = UV_EBUSY;
         return false;
@@ -155,6 +159,15 @@ public:
       if (status_ < 0) {
         state_->active_read = nullptr;
         continuation_ = {};
+        return false;
+      }
+      cancellation_ = continuation.promise().cancellation();
+      if (cancellation_ != nullptr && !cancellation_->register_callback(
+          cancellation_registration_, &read_awaiter::on_stop_requested, this)) {
+        (void)uv_read_stop(reinterpret_cast<uv_stream_t *>(&state_->tcp));
+        state_->active_read = nullptr;
+        continuation_ = {};
+        status_ = UV_ECANCELED;
         return false;
       }
       return true;
@@ -194,6 +207,21 @@ public:
       (void)uv_read_stop(raw);
       auto &state = *self.state_;
       state.active_read = nullptr; // Release alloc/read slots before user resumption.
+      if (self.cancellation_ != nullptr) {
+        self.cancellation_->unregister(self.cancellation_registration_);
+      }
+      auto continuation = std::exchange(self.continuation_, {});
+      continuation.resume();
+    }
+
+    static void on_stop_requested(void *context) noexcept {
+      auto &self = *static_cast<read_awaiter *>(context);
+      if (self.state_ == nullptr || self.state_->active_read != &self) {
+        return;
+      }
+      self.status_ = UV_ECANCELED;
+      (void)uv_read_stop(reinterpret_cast<uv_stream_t *>(&self.state_->tcp));
+      self.state_->active_read = nullptr; // Quiesce and release before resumption.
       auto continuation = std::exchange(self.continuation_, {});
       continuation.resume();
     }
@@ -201,6 +229,8 @@ public:
     detail::tcp_connection_state *state_ = nullptr;
     std::span<std::byte> buffer_{};
     std::coroutine_handle<> continuation_{};
+    co::detail::cancellation_state *cancellation_ = nullptr;
+    co::detail::cancellation_registration cancellation_registration_{};
     ssize_t status_ = 0;
   };
 
@@ -226,6 +256,10 @@ public:
       }
       if (&continuation.promise().execution_loop() != state_->loop) {
         throw std::logic_error{"uv::tcp_connection write used from a different loop"};
+      }
+      if (continuation.promise().stop_requested()) {
+        status_ = UV_ECANCELED;
+        return false;
       }
       if (state_->write_active) {
         status_ = UV_EBUSY;
@@ -287,6 +321,11 @@ public:
     template<class Promise>
       requires std::derived_from<Promise, co::detail::task_promise_base>
     bool await_suspend(std::coroutine_handle<Promise> continuation) {
+      if (continuation.promise().stop_requested()) {
+        state_ = std::make_unique<detail::tcp_connection_state>();
+        state_->connect_status = UV_ECANCELED;
+        return false;
+      }
       state_ = std::make_unique<detail::tcp_connection_state>();
       auto &state = *state_;
       state.loop = &continuation.promise().execution_loop();

@@ -114,6 +114,14 @@ requires a fault-injection seam not present in this prototype. The current suite
 instead verifies an accepted peer that closes immediately, while the error path
 remains specified and isolated for future fault injection.
 
+Scoped cooperative cancellation now gives the TCP one-shot read and accept
+awaiters an internal registration. Stop quiesces read with `uv_read_stop()` or
+releases the listener accept claim, then clears the registration/claimed slots
+before resuming with `UV_ECANCELED`; cancelled accept also closes its initialized
+but untransferred client storage before delivery. TCP write has no physical native
+cancellation here: it checks a pre-existing stop before submission but otherwise
+retains its claim and borrowed buffer through write completion.
+
 TCP owner operations also verify that the awaiting task inherited the exact loop
 recorded by the owner. This is a high-level affinity check; raw APIs remain
 caller-controlled.

@@ -131,6 +131,10 @@ public:
       if (&continuation.promise().execution_loop() != listener_->loop) {
         throw std::logic_error{"uv::tcp_listener accept used from a different loop"};
       }
+      if (continuation.promise().stop_requested()) {
+        status_ = UV_ECANCELED;
+        return false;
+      }
       if (listener_->active_accept != nullptr) {
         status_ = UV_EBUSY;
         return false;
@@ -146,6 +150,15 @@ public:
       continuation_ = continuation;
       listener_->active_accept = this;
       listener_->deliver_accept = &accept_awaiter::on_connection;
+      cancellation_ = continuation.promise().cancellation();
+      if (cancellation_ != nullptr && !cancellation_->register_callback(
+          cancellation_registration_, &accept_awaiter::on_stop_requested, this)) {
+        listener_->active_accept = nullptr;
+        listener_->deliver_accept = nullptr;
+        status_ = UV_ECANCELED;
+        connection_->close(std::exchange(continuation_, {}), false);
+        return true;
+      }
       return true;
     }
 
@@ -158,6 +171,9 @@ public:
     static void on_connection(void *opaque, int connection_status) noexcept {
       auto &self = *static_cast<accept_awaiter *>(opaque);
       self.status_ = connection_status;
+      if (self.cancellation_ != nullptr) {
+        self.cancellation_->unregister(self.cancellation_registration_);
+      }
       if (self.status_ >= 0) {
         self.status_ = uv_accept(reinterpret_cast<uv_stream_t *>(&self.listener_->tcp),
             reinterpret_cast<uv_stream_t *>(&self.connection_->tcp));
@@ -173,9 +189,25 @@ public:
       continuation.resume();
     }
 
+    static void on_stop_requested(void *context) noexcept {
+      auto &self = *static_cast<accept_awaiter *>(context);
+      if (self.listener_ == nullptr || self.listener_->active_accept != &self) {
+        return;
+      }
+      self.listener_->active_accept = nullptr;
+      self.listener_->deliver_accept = nullptr;
+      self.status_ = UV_ECANCELED;
+      auto continuation = std::exchange(self.continuation_, {});
+      // The child handle was initialized before claiming the accept slot. Close
+      // it before delivery even though no connection was transferred into it.
+      self.connection_->close(continuation, false);
+    }
+
     detail::tcp_listener_state *listener_ = nullptr;
     std::unique_ptr<detail::tcp_connection_state> connection_{};
     std::coroutine_handle<> continuation_{};
+    co::detail::cancellation_state *cancellation_ = nullptr;
+    co::detail::cancellation_registration cancellation_registration_{};
     int status_ = 0;
   };
 

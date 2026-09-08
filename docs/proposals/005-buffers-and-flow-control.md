@@ -102,8 +102,10 @@ The experimental `uv::tcp_connection::write(std::string_view)` is the first
 coroutine write primitive. It borrows the passed characters until actual
 `uv_write` completion, including an error completion; `write_copy()` is not
 implemented. One pending writer is supported per experimental connection.
-Task cancellation is not yet exposed, so cancellation-request tests remain part
-of proposal 003 rather than a claim about this write primitive.
+Scoped cancellation is now exposed, but a submitted TCP write remains physically
+non-cancellable: its borrowed characters stay alive, address-stable, and unchanged
+until the actual completion callback after a stop request. A stop already requested
+before submission delivers `UV_ECANCELED` without borrowing the buffer.
 
 The experimental `uv::tcp_connection::read_some(std::span<std::byte>)` borrows
 caller storage until a terminal data, EOF, or error notification. It returns a

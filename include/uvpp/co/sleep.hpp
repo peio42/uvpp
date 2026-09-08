@@ -5,6 +5,7 @@
 #include <coroutine>
 #include <cstdint>
 #include <type_traits>
+#include <utility>
 
 #include <uv.h>
 
@@ -25,6 +26,11 @@ public:
     requires std::derived_from<Promise, task_promise_base>
   bool await_suspend(std::coroutine_handle<Promise> continuation) {
     continuation_ = continuation;
+    cancellation_ = continuation.promise().cancellation();
+    if (continuation.promise().stop_requested()) {
+      status_ = UV_ECANCELED;
+      return false;
+    }
 
     status_ = uv_timer_init(continuation.promise().execution_loop().native(), &timer_);
     if (status_ < 0) {
@@ -33,6 +39,12 @@ public:
     status_ = uv_timer_start(&timer_, &sleep_awaiter::timer_trampoline, timeout_, 0);
     if (status_ < 0) {
       uv_close(reinterpret_cast<uv_handle_t *>(&timer_), &sleep_awaiter::close_trampoline);
+      close_started_ = true;
+      return true;
+    }
+    if (cancellation_ != nullptr && !cancellation_->register_callback(
+        cancellation_registration_, &sleep_awaiter::on_stop_requested, this)) {
+      stop_for_cancellation();
     }
     return true;
   }
@@ -49,19 +61,44 @@ private:
   }
 
   static void timer_trampoline(uv_timer_t *timer) noexcept {
-    (void)uv_timer_stop(timer);
-    uv_close(reinterpret_cast<uv_handle_t *>(timer), &sleep_awaiter::close_trampoline);
+    auto &self = from_native(timer);
+    self.finish(0);
   }
 
   static void close_trampoline(uv_handle_t *handle) noexcept {
     auto &self = from_native(reinterpret_cast<uv_timer_t *>(handle));
-    self.continuation_.resume();
+    auto continuation = std::exchange(self.continuation_, {});
+    continuation.resume();
+  }
+
+  static void on_stop_requested(void *context) noexcept {
+    static_cast<sleep_awaiter *>(context)->stop_for_cancellation();
+  }
+
+  void stop_for_cancellation() noexcept {
+    finish(UV_ECANCELED);
+  }
+
+  void finish(int status) noexcept {
+    if (close_started_) {
+      return;
+    }
+    status_ = status;
+    (void)uv_timer_stop(&timer_);
+    if (cancellation_ != nullptr) {
+      cancellation_->unregister(cancellation_registration_);
+    }
+    close_started_ = true;
+    uv_close(reinterpret_cast<uv_handle_t *>(&timer_), &sleep_awaiter::close_trampoline);
   }
 
   uv_timer_t timer_{};
   std::coroutine_handle<> continuation_{};
+  cancellation_state *cancellation_ = nullptr;
+  cancellation_registration cancellation_registration_{};
   uint64_t timeout_ = 0;
   int status_ = 0;
+  bool close_started_ = false;
 };
 
 static_assert(std::is_standard_layout_v<sleep_awaiter>);
