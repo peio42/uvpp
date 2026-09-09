@@ -44,4 +44,5 @@
 #include "uvpp/handles/tcp.hpp"
 #include "uvpp/handles/tty.hpp"
 #include "uvpp/handles/udp.hpp"
+#include "uvpp/net/udp_socket.hpp"
 #include "uvpp/co/resource_scope.hpp"

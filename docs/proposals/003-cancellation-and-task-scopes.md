@@ -102,8 +102,8 @@ of its siblings, then the scope joins all children and rethrows that first failu
 It does not join native resource close completion or retain external borrowed data
 beyond the child task contract.
 
-The first stop-aware adapters are timer sleep, TCP one-shot read, and TCP one-shot
-accept. They quiesce their native source, release callback claims, and deliver
+The first stop-aware adapters are timer sleep, TCP one-shot read/accept, and UDP
+one-shot receive. They quiesce their native source, release callback claims, and deliver
 `UV_ECANCELED`. Submitted TCP write and connect cannot be physically cancelled in
 this slice: a prior stop rejects their submission, but an in-flight operation
 remains alive through actual completion. In particular, a borrowed write buffer
@@ -119,9 +119,9 @@ quiesces a pending accept before its close completion; queueing, overload, and
 coordinated cleanup-error policy remain deferred; see the distinct
 [resource-scope proposal](011-resource-scopes.md).
 
-TCP structured task/resource lifecycle validated by prototype. This validation
-does not make resource cleanup generic: the current resource scope remains a
-TCP-specific experimental implementation.
+TCP/UDP structured task/resource lifecycle validated by prototype. This validation
+does not make resource cleanup generic: the current resource scope remains an
+experimental implementation for these specific families.
 
 Tests cover all-child join, fail-fast stop of both sleeping and synchronously
 completing siblings followed by first-error delivery,

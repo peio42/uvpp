@@ -713,6 +713,95 @@ TEST(UvppV3Coroutine, resourceScopeStressClosesManyConnectionsAndQuiescesPending
   }
 }
 
+TEST(UvppV3Coroutine, udpSocketSendReceiveAndScopedCleanup) {
+  if (!loopback_tcp_is_permitted()) {
+    GTEST_SKIP() << "loopback networking is not permitted in this environment";
+  }
+
+  uv::loop loop;
+  uv::co::task_scope tasks(loop);
+  uv::co::resource_scope resources(loop);
+  std::array<std::byte, 32> buffer{};
+  std::size_t received = 0;
+  bool peer_is_v4 = false;
+  bool cleanup_completed = false;
+
+  auto parent = [&]() -> uv::co::task<void> {
+    auto receiver = resources.own(uv::udp_socket{loop, uv::ipv4{"127.0.0.1", 0}});
+    auto sender = resources.own(uv::udp_socket{loop, uv::ipv4{"127.0.0.1", 0}});
+    const auto receiver_address = receiver.view().sockname().to_v4();
+    auto receive = [&]() -> uv::co::task<void> {
+      auto result = co_await receiver.view().recv_from(buffer);
+      received = result.size();
+      peer_is_v4 = result.peer_is_v4();
+    };
+    auto send = [&]() -> uv::co::task<void> {
+      // Destination is copied into the awaiter; payload remains borrowed until
+      // native send completion.
+      co_await sender.view().send_to("udp", receiver_address);
+    };
+    tasks.spawn(receive());
+    tasks.spawn(send());
+    co_await tasks.join();
+    co_await resources.finish();
+    cleanup_completed = true;
+  };
+
+  auto execution = uv::co::spawn(loop, parent());
+  loop.run();
+  EXPECT_NO_THROW(execution.rethrow_if_failed());
+  EXPECT_EQ(received, 3U);
+  EXPECT_TRUE(peer_is_v4);
+  EXPECT_TRUE(cleanup_completed);
+  EXPECT_NO_THROW(loop.close());
+}
+
+TEST(UvppV3Coroutine, udpSocketStopCancelsReceiveBeforeScopedCleanup) {
+  if (!loopback_tcp_is_permitted()) {
+    GTEST_SKIP() << "loopback networking is not permitted in this environment";
+  }
+
+  uv::loop loop;
+  uv::co::task_scope tasks(loop);
+  uv::co::resource_scope resources(loop);
+  std::array<std::byte, 32> buffer{};
+  int deliveries = 0;
+  bool canceled = false;
+  bool cleanup_completed = false;
+
+  auto parent = [&]() -> uv::co::task<void> {
+    auto receiver = resources.own(uv::udp_socket{loop, uv::ipv4{"127.0.0.1", 0}});
+    const auto receiver_address = receiver.view().sockname().to_v4();
+    auto receive = [&]() -> uv::co::task<void> {
+      try {
+        (void)co_await receiver.view().recv_from(buffer);
+      } catch (const uv::error &error) {
+        ++deliveries;
+        canceled = error.code().value() == UV_ECANCELED;
+      }
+    };
+    tasks.spawn(receive());
+    tasks.request_stop();
+    co_await tasks.join();
+    // A datagram after cancellation must not recover the completed awaiter.
+    // recv_from() released its native and cancellation slots before join resumed.
+    {
+      uv::udp_socket sender{loop, uv::ipv4{"127.0.0.1", 0}};
+      co_await sender.send_to("late", receiver_address);
+    }
+    co_await resources.finish();
+    cleanup_completed = true;
+  };
+
+  auto execution = uv::co::spawn(loop, parent());
+  loop.run();
+  EXPECT_NO_THROW(execution.rethrow_if_failed());
+  EXPECT_EQ(deliveries, 1);
+  EXPECT_TRUE(canceled);
+  EXPECT_TRUE(cleanup_completed);
+  EXPECT_NO_THROW(loop.close());
+}
+
 TEST(UvppV3Coroutine, resourceScopeClosesAfterFailFastTaskJoin) {
   if (!loopback_tcp_is_permitted()) {
     GTEST_SKIP() << "loopback TCP is not permitted in this environment";

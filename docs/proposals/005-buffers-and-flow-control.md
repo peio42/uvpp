@@ -112,6 +112,14 @@ caller storage until a terminal data, EOF, or error notification. It returns a
 count plus EOF flag; errors throw at the await. It is one-shot rather than a
 persistent subscription and supports one active reader per connection.
 
+The experimental `uv::udp_socket::send_to()` likewise borrows its payload until
+actual send completion; a stop already requested rejects submission, while an
+in-flight send remains non-cancellable and retains the borrow. `recv_from()` is
+one-shot and exclusive: it borrows mutable caller storage until the first actual
+datagram, copies the peer address into the result, calls `uv_udp_recv_stop()`, and
+releases receive/cancellation slots before task delivery. Empty libuv receive
+notifications do not complete the await; an empty datagram does.
+
 Validate EOF after partial input, zero-length datagrams, truncated datagrams,
 consumer cancellation, callback conflicts, buffer reuse only after completion,
 copy timing, terminal subscription replacement, ordinary-event slot retention,

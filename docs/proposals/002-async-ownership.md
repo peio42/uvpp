@@ -110,6 +110,15 @@ the listener through that callback and exposes a non-owning registration with
 borrowed view. Queueing and overload policy remain deferred; the listener does not
 silently allocate or buffer connections between one-shot accept awaiters.
 
+The experimental `uv::udp_socket` is the second stable-owner slice. It binds an
+address during construction, moves only stable `uv_udp_t` storage, and has the
+same internal-only `open → closing → closed` close-completion state machine.
+`send_to()` borrows its payload through actual `uv_udp_send` completion; one
+one-shot `recv_from()` borrows caller storage, copies the peer address into its
+result, stops native receive, releases its callback/cancellation slots, then
+resumes. Active UDP send/receive destruction remains an explicit contract
+violation, and resource-scope cleanup rejects it until task work has joined.
+
 The experimental tests use death tests to verify that active connection read/write
 and active listener accept destruction terminate deterministically rather than
 releasing storage early. They exercise both explicit listener `close()` and lexical

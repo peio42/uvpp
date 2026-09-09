@@ -1,6 +1,6 @@
 # Resource Scopes
 
-Status: partially implemented (TCP-only experimental slice).
+Status: partially implemented (TCP/UDP experimental slice).
 
 Architecture: [000 — V3 architecture](000-v3-architecture.md).
 
@@ -9,8 +9,8 @@ Dependencies: [002 — Asynchronous ownership](002-async-ownership.md),
 [004 — Shared operation state](004-operation-state.md).
 
 Target: v3 exploration. The current API is deliberately limited to adopted TCP
-connections and listeners; generic type erasure and cleanup-error aggregation
-remain proposed.
+connections/listeners and UDP sockets; generic type erasure and cleanup-error
+aggregation remain proposed.
 
 ## Motivation
 
@@ -61,12 +61,12 @@ uv::co::task<void> serve(uv::loop &loop, uv::ipv4 address) {
 }
 ```
 
-The current TCP-only prototype uses these spellings. `own(tcp_connection&&)`
+The current TCP/UDP prototype uses these spellings. `own(tcp_connection&&)`
 returns a scope-bound registration whose `.view()` produces `tcp_connection_view`;
 `own(tcp_listener&&)` returns a non-owning listener registration exposing
 `accept()`. Neither registration owns its adopted resource. Invoking `finish()`
 consumes the scope's registration phase even before its returned cold task starts.
-The current TCP-only `finish()` serializes listener then connection close
+The current TCP/UDP `finish()` serializes listener then dependent-owner close
 completion before destroying owner storage; concurrent or batched cleanup is a
 later optimization and policy question.
 Views hold only a validity token; `finish()` invalidates it before destruction, so
@@ -99,9 +99,9 @@ been designed and validated.
 
 ## Implementation progress and validation gates
 
-The TCP connection prototypes the required `open → closing → closed` primitive
+TCP connections and UDP sockets prototype the required `open → closing → closed` primitive
 with joined close waiters, affinity checks, and terminal slot release before waiter
-resumption. The first `resource_scope` adopts TCP connections and listeners and
+resumption. The first `resource_scope` adopts TCP connections/listeners and UDP sockets and
 rejects either owner from another loop. Listener close uses the same state machine:
 it cancels/quiesces a pending accept, releases its slots, and only then starts
 native close. The scope deliberately has no task ownership: callers must join
@@ -124,7 +124,7 @@ destruction before `finish()` as a terminating contract violation. Validate
 cleanup failure with and without a primary task failure and all paths under address
 and undefined-behavior sanitizers.
 
-TCP structured task/resource lifecycle validated by prototype. This proposal
-remains partially implemented while `resource_scope` is TCP-specific and cleanup
-error aggregation, additional resource families, and their distinct lifecycle
-rules remain future work.
+TCP/UDP structured task/resource lifecycle validated by prototype. This proposal
+remains partially implemented while `resource_scope` covers only these families
+and cleanup-error aggregation, additional resource families, and their distinct
+lifecycle rules remain future work.
