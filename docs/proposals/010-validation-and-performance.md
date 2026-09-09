@@ -1,6 +1,6 @@
 # Lifecycle Validation and Performance Baselines
 
-Status: draft.
+Status: partially implemented.
 
 Architecture: [000 — V3 architecture](000-v3-architecture.md).
 
@@ -11,7 +11,8 @@ This proposal is not an implemented API or a release commitment. Names are provi
 ## Motivation and current behavior
 
 The repository runs GCC and Clang tests on Ubuntu and includes native-layout tests.
-There is no current cross-platform CI matrix or benchmark suite. The [Makefile](../../Makefile) now generates and includes transitive header
+There is no current cross-platform CI matrix or broad benchmark suite; the first
+focused resource-scope cleanup measurement is described below. The [Makefile](../../Makefile) now generates and includes transitive header
 dependencies for test objects and examples, including regeneration of missing
 dependency files. This repair is an implemented baseline.
 
@@ -84,9 +85,28 @@ speedup or allocation-free coroutine claim is made before those measurements.
 ## Implementation progress and validation
 
 Existing GCC/Clang tests and incremental dependency fixes are implemented.
-Sanitizer configurations, platform jobs, and benchmarks remain proposed work, suitable
-for v2 independently of v3. Acceptance requires reproducible commands, verified
-incremental rebuilding, a working platform matrix, and recorded benchmark baselines.
+`make test-asan-ubsan` builds a dedicated Clang AddressSanitizer/UndefinedBehaviorSanitizer
+configuration with leak detection and fail-fast diagnostics; the same command runs in
+CI. The sanitizer job is intentionally separate from the ordinary GCC/Clang matrix
+so normal artifacts and sanitizer instrumentation never mix.
+
+The coroutine suite now includes a bounded, deterministic TCP structured-lifecycle
+stress case: repeated rounds establish several accepted connections, adopt them
+with the listener into one resource scope, arm one final accept, then let
+`finish()` quiesce that accept and close all dependent connections. It asserts
+exactly-once `UV_ECANCELED` delivery and clean loop teardown. Loopback restrictions
+produce an explicit test skip rather than a false network failure.
+
+`make measure-cleanup` builds and runs a dependency-free benchmark for repeated
+multi-connection `resource_scope::finish()` calls. It reports C++ allocations made
+while `finish()` is active (explicitly excluding libuv C allocations) and cleanup
+latency min/mean/p95/max, along with compiler, libuv version, and workload size.
+It establishes a reproducible collection method, not a numerical regression budget.
+
+Platform jobs, focused TSan work, fault injection beyond the existing UDP case,
+installed-package validation, and recorded cross-platform benchmark baselines remain
+proposed. Acceptance requires those additions plus verified incremental rebuilding,
+a working platform matrix, and stable regression budgets.
 
 ## Confirmed Feature-Gating Gaps
 

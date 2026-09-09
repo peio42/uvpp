@@ -20,7 +20,7 @@ land independently in v2.
 | [007 — Loop scheduling](007-loop-scheduling.md) | Draft | Common-loop continuations, optional cross-thread posting, and shutdown |
 | [008 — Move-only callbacks](008-move-only-callbacks.md) | Draft | Callable ownership, replacement, and storage costs |
 | [009 — Lifetime diagnostics](009-lifetime-diagnostics.md) | Draft | Optional lifecycle checks and instrumentation |
-| [010 — Validation and performance](010-validation-and-performance.md) | Draft | Lifecycle tests, portability, sanitizers, builds, and benchmarks |
+| [010 — Validation and performance](010-validation-and-performance.md) | Partially implemented | Lifecycle tests, portability, sanitizers, builds, and benchmarks |
 | [011 — Resource scopes](011-resource-scopes.md) | Partially implemented | Composable asynchronous resource cleanup alongside task scopes |
 
 ## Shared Constraints

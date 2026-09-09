@@ -5,6 +5,7 @@
 #include <span>
 #include <stdexcept>
 #include <string>
+#include <vector>
 
 #include "gtest/gtest.h"
 #include "uvpp/co/resource_scope.hpp"
@@ -636,6 +637,80 @@ TEST(UvppV3Coroutine, resourceScopeWaitsForEveryTcpCloseCompletion) {
   }
   loop.run();
   EXPECT_NO_THROW(loop.close());
+}
+
+TEST(UvppV3Coroutine, resourceScopeStressClosesManyConnectionsAndQuiescesPendingAccept) {
+  if (!loopback_tcp_is_permitted()) {
+    GTEST_SKIP() << "loopback TCP is not permitted in this environment";
+  }
+
+  constexpr std::size_t connection_count = 16;
+  constexpr int round_count = 8;
+  for (int round = 0; round != round_count; ++round) {
+    SCOPED_TRACE(round);
+    uv::loop loop;
+    uv::co::task_scope tasks(loop);
+    uv::co::resource_scope resources(loop);
+    uv::tcp_listener raw_listener(loop, uv::ipv4{"127.0.0.1", 0});
+    const auto address = raw_listener.sockname().to_v4();
+    std::size_t accepted_connections = 0;
+    std::size_t completed_handlers = 0;
+    std::size_t pending_accept_deliveries = 0;
+    bool pending_accept_canceled = false;
+    bool cleanup_completed = false;
+    bool clients_connected = false;
+
+    auto handler = [&](uv::tcp_connection_view) -> uv::co::task<void> {
+      ++completed_handlers;
+      co_return;
+    };
+    auto server = [&]() -> uv::co::task<void> {
+      auto listener = resources.own(std::move(raw_listener));
+      for (std::size_t index = 0; index != connection_count; ++index) {
+        auto connection = resources.own(co_await listener.accept());
+        ++accepted_connections;
+        tasks.spawn(handler(connection.view()));
+      }
+      auto pending_accept = [&]() -> uv::co::task<void> {
+        try {
+          (void)co_await listener.accept();
+        } catch (const uv::error &error) {
+          ++pending_accept_deliveries;
+          pending_accept_canceled = error.code().value() == UV_ECANCELED;
+        }
+      };
+      tasks.spawn(pending_accept());
+
+      // Connection handlers have already completed their I/O-free work. The
+      // final accept remains armed specifically to exercise scope quiescing
+      // before dependent connection close completion.
+      co_await resources.finish();
+      cleanup_completed = true;
+      co_await tasks.join();
+    };
+    auto clients = [&]() -> uv::co::task<void> {
+      std::vector<uv::tcp_connection> connections;
+      connections.reserve(connection_count);
+      for (std::size_t index = 0; index != connection_count; ++index) {
+        connections.push_back(co_await uv::tcp_connection::connect(address));
+      }
+      clients_connected = true;
+    };
+
+    auto server_execution = uv::co::spawn(loop, server());
+    auto client_execution = uv::co::spawn(loop, clients());
+    loop.run();
+
+    EXPECT_NO_THROW(server_execution.rethrow_if_failed());
+    EXPECT_NO_THROW(client_execution.rethrow_if_failed());
+    EXPECT_TRUE(clients_connected);
+    EXPECT_EQ(accepted_connections, connection_count);
+    EXPECT_EQ(completed_handlers, connection_count);
+    EXPECT_TRUE(cleanup_completed);
+    EXPECT_TRUE(pending_accept_canceled);
+    EXPECT_EQ(pending_accept_deliveries, 1U);
+    EXPECT_NO_THROW(loop.close());
+  }
 }
 
 TEST(UvppV3Coroutine, resourceScopeClosesAfterFailFastTaskJoin) {

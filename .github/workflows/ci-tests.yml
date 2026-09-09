@@ -41,3 +41,19 @@ jobs:
 
       - name: Build and run tests
         run: make clean test CXX=${{ matrix.compiler.cxx }} CXX_ID=${{ matrix.compiler.id }}
+
+  asan-ubsan:
+    runs-on: ubuntu-latest
+    name: ASan / UBSan
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang libgtest-dev libuv1-dev
+
+      - name: Build and run sanitizer tests
+        run: make clean test-asan-ubsan
