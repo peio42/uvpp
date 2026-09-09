@@ -95,20 +95,20 @@ at suspension time, so the `noexcept` close callback neither allocates nor follo
 linkage in another coroutine frame after its first user resumption. Failed connects
 and untransferred accepted connections use a state-owned fixed callback slot for
 the same no-allocation callback path. The first TCP-only `resource_scope` now
-adopts that owner, hands tasks a non-owning `tcp_connection_view`, and awaits
-internal close completion before destroying owner storage. It rejects cross-loop
-adoption and requires task join before cleanup while borrowed I/O is active.
-A public close awaitable, listener ownership, generic registration, and cleanup
-error aggregation remain unimplemented.
+adopts connections and listeners, hands tasks a non-owning `tcp_connection_view`,
+and awaits internal close completion before destroying owner storage. It rejects
+cross-loop adoption and requires task join before cleanup while borrowed I/O is
+active. A public close awaitable, generic registration, and cleanup-error
+aggregation remain unimplemented.
 
 The experimental `uv::tcp_listener` adds separate stable listener storage and a
-one-shot accept owner transfer. An accepted `tcp_connection` is not owned by the
-listener and remains valid while the listener closes. Its receiving task owns it;
-an awaited handler can take that owner by value. No resource/task scope currently
-relates independently spawned handlers to their accepted connections, so automatic
-concurrent `serve(handler)` is intentionally deferred. The scope design must also
-own any accepted-connection queue and define its overload policy; the listener does
-not silently allocate or buffer connections between one-shot accept awaiters.
+one-shot accept owner transfer. Its internal close completion has the same
+`open → closing → closed` protocol as a connection: it cancels/quiesces an active
+accept and releases its callback slot before native close. `resource_scope` owns
+the listener through that callback and exposes a non-owning registration with
+`accept()`. An accepted connection is separately adopted before its handler gets a
+borrowed view. Queueing and overload policy remain deferred; the listener does not
+silently allocate or buffer connections between one-shot accept awaiters.
 
 The experimental tests use death tests to verify that active connection read/write
 and active listener accept destruction terminate deterministically rather than

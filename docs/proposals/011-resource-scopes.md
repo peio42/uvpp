@@ -8,9 +8,9 @@ Dependencies: [002 — Asynchronous ownership](002-async-ownership.md),
 [003 — Cancellation and task scopes](003-cancellation-and-task-scopes.md), and
 [004 — Shared operation state](004-operation-state.md).
 
-Target: v3 exploration. The current API is deliberately limited to adopted
-`tcp_connection` owners; listener support, generic type erasure, and cleanup-error
-aggregation remain proposed.
+Target: v3 exploration. The current API is deliberately limited to adopted TCP
+connections and listeners; generic type erasure and cleanup-error aggregation
+remain proposed.
 
 ## Motivation
 
@@ -48,7 +48,7 @@ uv::co::task<void> handle(uv::tcp_connection_view connection);
 
 uv::co::task<void> serve(uv::loop &loop, uv::ipv4 address) {
   uv::co::task_scope tasks{loop};
-  uv::co::resource_scope resources{loop}; // proposed
+  uv::co::resource_scope resources{loop};
   auto listener = resources.own(uv::tcp_listener{loop, address});
 
   while (...) {
@@ -62,15 +62,19 @@ uv::co::task<void> serve(uv::loop &loop, uv::ipv4 address) {
 ```
 
 The current TCP-only prototype uses these spellings. `own(tcp_connection&&)`
-returns a scope-bound registration whose `.view()` produces `tcp_connection_view`.
-The registration and view do not own the connection. `finish()` returns a cold
-`task<void>` which, on the scope loop, starts and awaits the internal close
-completion of every adopted connection before destroying its owner storage.
+returns a scope-bound registration whose `.view()` produces `tcp_connection_view`;
+`own(tcp_listener&&)` returns a non-owning listener registration exposing
+`accept()`. Neither registration owns its adopted resource. Invoking `finish()`
+consumes the scope's registration phase even before its returned cold task starts.
+The current TCP-only `finish()` serializes listener then connection close
+completion before destroying owner storage; concurrent or batched cleanup is a
+later optimization and policy question.
 Views hold only a validity token; `finish()` invalidates it before destruction, so
 an attempted subsequent `read_some()` or `write()` is diagnosed rather than
-touching released native state. The listener is a natural resource-scope candidate too:
-it remains owned through close completion just like each accepted connection. The
-ordering is contractual: request task stop when the operation fails or shuts down,
+touching released native state. The listener is owned through close completion just
+like each accepted connection. Its close primitive quiesces an active one-shot
+accept, releases accept callback ownership, and only then submits `uv_close()`.
+The ordering is contractual: request task stop when the operation fails or shuts down,
 join task execution, initiate/await owner cleanup, then release scope storage. A
 selected cleanup policy may start close earlier, but it must retain all native and
 borrowed-operation storage until real completion. It must also prevent a listener
@@ -87,15 +91,18 @@ been designed and validated.
 
 The TCP connection prototypes the required `open → closing → closed` primitive
 with joined close waiters, affinity checks, and terminal slot release before waiter
-resumption. The first `resource_scope` adopts only TCP connections and rejects a
-connection bound to another loop. It deliberately has no task ownership: callers
-must join their `task_scope` before `finish()`. As an experimental guard,
+resumption. The first `resource_scope` adopts TCP connections and listeners and
+rejects either owner from another loop. Listener close uses the same state machine:
+it cancels/quiesces a pending accept, releases its slots, and only then starts
+native close. The scope deliberately has no task ownership: callers must join
+their `task_scope` before `finish()` for connection I/O. As an experimental guard,
 `finish()` rejects an adopted connection with an active borrowed read or write;
 it does not yet coordinate cleanup of such work itself.
 
 Tests cover one normal task/resource lifecycle, several adopted connections,
+listener and accepted-connection ownership, listener close with a pending accept,
 fail-fast task failure followed by cleanup, a submitted borrowed write joined
 before cleanup, cross-loop registration rejection, late-view diagnosis, and
 destruction before `finish()` as a terminating contract violation. Validate
-cleanup failure with and without a primary task failure, listener shutdown with
-pending accept, and all paths under address and undefined-behavior sanitizers.
+cleanup failure with and without a primary task failure and all paths under address
+and undefined-behavior sanitizers.

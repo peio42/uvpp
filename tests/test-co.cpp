@@ -745,6 +745,158 @@ TEST(UvppV3Coroutine, resourceScopeRejectsConnectionFromAnotherLoop) {
   pair.close();
 }
 
+TEST(UvppV3Coroutine, internalTcpListenerCloseCompletionJoinsAndChecksAffinity) {
+  if (!loopback_tcp_is_permitted()) {
+    GTEST_SKIP() << "loopback TCP is not permitted in this environment";
+  }
+
+  uv::loop loop;
+  uv::tcp_listener listener(loop, uv::ipv4{"127.0.0.1", 0});
+  uv::loop other_loop;
+  bool wrong_loop_rejected = false;
+  bool first_resumed = false;
+  bool second_resumed = false;
+  bool first_initiated = false;
+  bool second_initiated = false;
+
+  auto wrong_loop = [&]() -> uv::co::task<void> {
+    try {
+      co_await uv::detail::close_completion(listener);
+    } catch (const std::logic_error &) {
+      wrong_loop_rejected = true;
+    }
+  };
+  auto first = [&]() -> uv::co::task<void> {
+    auto close = uv::detail::close_completion(listener);
+    co_await close;
+    first_initiated = close.initiated_close();
+    first_resumed = true;
+    loop.stop();
+  };
+  auto second = [&]() -> uv::co::task<void> {
+    auto close = uv::detail::close_completion(listener);
+    co_await close;
+    second_initiated = close.initiated_close();
+    second_resumed = true;
+  };
+
+  auto wrong_execution = uv::co::spawn(other_loop, wrong_loop());
+  EXPECT_TRUE(wrong_execution.done());
+  EXPECT_NO_THROW(wrong_execution.rethrow_if_failed());
+  EXPECT_TRUE(wrong_loop_rejected);
+  other_loop.close();
+
+  auto first_execution = uv::co::spawn(loop, first());
+  auto second_execution = uv::co::spawn(loop, second());
+  loop.run();
+
+  EXPECT_NO_THROW(first_execution.rethrow_if_failed());
+  EXPECT_NO_THROW(second_execution.rethrow_if_failed());
+  EXPECT_TRUE(first_resumed);
+  EXPECT_TRUE(second_resumed);
+  EXPECT_NE(first_initiated, second_initiated);
+  EXPECT_NO_THROW(loop.close());
+}
+
+TEST(UvppV3Coroutine, resourceScopeQuiescesActiveAcceptBeforeListenerClose) {
+  if (!loopback_tcp_is_permitted()) {
+    GTEST_SKIP() << "loopback TCP is not permitted in this environment";
+  }
+
+  uv::loop loop;
+  uv::co::task_scope tasks(loop);
+  uv::co::resource_scope resources(loop);
+  bool accept_canceled = false;
+  bool listener_finish_completed = false;
+  bool accept_joined = false;
+
+  auto parent = [&]() -> uv::co::task<void> {
+    auto listener = resources.own(uv::tcp_listener{loop, uv::ipv4{"127.0.0.1", 0}});
+    auto accepter = [&]() -> uv::co::task<void> {
+      try {
+        (void)co_await listener.accept();
+      } catch (const uv::error &error) {
+        accept_canceled = error.code().value() == UV_ECANCELED;
+      }
+    };
+    tasks.spawn(accepter());
+    co_await resources.finish();
+    listener_finish_completed = true;
+    co_await tasks.join();
+    accept_joined = true;
+    loop.stop();
+  };
+
+  auto execution = uv::co::spawn(loop, parent());
+  loop.run();
+
+  EXPECT_NO_THROW(execution.rethrow_if_failed());
+  EXPECT_TRUE(listener_finish_completed);
+  EXPECT_TRUE(accept_canceled);
+  EXPECT_TRUE(accept_joined);
+  EXPECT_NO_THROW(loop.close());
+}
+
+TEST(UvppV3Coroutine, resourceScopeOwnsListenerAndAcceptedConnection) {
+  if (!loopback_tcp_is_permitted()) {
+    GTEST_SKIP() << "loopback TCP is not permitted in this environment";
+  }
+
+  uv::loop loop;
+  uv::co::task_scope tasks(loop);
+  uv::co::resource_scope resources(loop);
+  bool handler_completed = false;
+  bool cleanup_completed = false;
+
+  auto handler = [&](uv::tcp_connection_view) -> uv::co::task<void> {
+    handler_completed = true;
+    co_return;
+  };
+  uv::tcp_listener raw_listener(loop, uv::ipv4{"127.0.0.1", 0});
+  const auto listener_address = raw_listener.sockname().to_v4();
+  auto scoped_server = [&]() -> uv::co::task<void> {
+    auto listener = resources.own(std::move(raw_listener));
+    auto connection = resources.own(co_await listener.accept());
+    tasks.spawn(handler(connection.view()));
+    co_await tasks.join();
+    co_await resources.finish();
+    cleanup_completed = true;
+    loop.stop();
+  };
+  auto client = [&]() -> uv::co::task<void> {
+    auto connection = co_await uv::tcp_connection::connect(listener_address);
+    (void)connection;
+  };
+
+  auto server_execution = uv::co::spawn(loop, scoped_server());
+  auto client_execution = uv::co::spawn(loop, client());
+  loop.run();
+
+  EXPECT_NO_THROW(server_execution.rethrow_if_failed());
+  EXPECT_NO_THROW(client_execution.rethrow_if_failed());
+  EXPECT_TRUE(handler_completed);
+  EXPECT_TRUE(cleanup_completed);
+  EXPECT_NO_THROW(loop.close());
+}
+
+TEST(UvppV3Coroutine, resourceScopeRejectsListenerFromAnotherLoop) {
+  if (!loopback_tcp_is_permitted()) {
+    GTEST_SKIP() << "loopback TCP is not permitted in this environment";
+  }
+
+  uv::loop listener_loop;
+  uv::loop other_loop;
+  uv::tcp_listener listener(listener_loop, uv::ipv4{"127.0.0.1", 0});
+  uv::co::resource_scope resources(other_loop);
+
+  EXPECT_THROW((void)resources.own(std::move(listener)), std::logic_error);
+
+  other_loop.close();
+  listener.close();
+  listener_loop.run();
+  EXPECT_NO_THROW(listener_loop.close());
+}
+
 TEST(UvppV3Coroutine, tcpConnectionRefusalClosesBeforeDeliveringTheError) {
   uv::loop loop;
   uv::tcp listener(loop);

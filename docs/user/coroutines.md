@@ -131,9 +131,9 @@ slice deliberately ignores that notification: it does not call `uv_accept()` and
 does not queue a connection. This is an experimental limitation, not a final
 server policy.
 
-The accepted owner can be transferred into the TCP-only `resource_scope` below.
-The listener itself is not yet scope-owned, and independently spawned handlers
-still require the caller to keep accepts armed and choose an overload policy.
+The accepted owner and listener can both be transferred into the TCP-only
+`resource_scope` below. Independently spawned handlers still require the caller
+to keep accepts armed and choose an overload policy.
 
 ## Experimental task scopes
 
@@ -149,23 +149,22 @@ loop-thread operation.
 ```cpp
 uv::co::task<void> handle(uv::tcp_connection_view connection);
 
-uv::co::task<void> serve_two(
-    uv::tcp_listener &listener, uv::loop &loop) {
+uv::co::task<void> serve_two(uv::loop &loop) {
   uv::co::task_scope tasks(loop);
   uv::co::resource_scope resources(loop);
+  auto listener = resources.own(
+      uv::tcp_listener{loop, uv::ipv4{"127.0.0.1", 8080}});
   for (int count = 0; count != 2; ++count) {
     auto connection = resources.own(co_await listener.accept());
     tasks.spawn(handle(connection.view()));
   }
   co_await tasks.join();
   co_await resources.finish();
-  listener.close();
 }
 
 int main() {
   uv::loop loop;
-  uv::tcp_listener listener(loop, uv::ipv4{"127.0.0.1", 8080});
-  auto execution = uv::co::spawn(loop, serve_two(listener, loop));
+  auto execution = uv::co::spawn(loop, serve_two(loop));
   loop.run();
   execution.rethrow_if_failed();
   loop.close();

@@ -114,8 +114,9 @@ The TCP-only resource-scope prototype now expresses handoff as
 `tasks.spawn(handle(connection.view()))`: the resource scope remains the sole
 connection owner, while the task receives a borrowed view. The caller joins the
 task scope before awaiting `resources.finish()`, which waits native close
-completion before releasing owner storage. Listener ownership, queueing,
-overload, and coordinated cleanup-error policy remain deferred; see the distinct
+completion before releasing owner storage. The same scope now owns a listener and
+quiesces a pending accept before its close completion; queueing, overload, and
+coordinated cleanup-error policy remain deferred; see the distinct
 [resource-scope proposal](011-resource-scopes.md).
 
 Tests cover all-child join, fail-fast stop of both sleeping and synchronously
