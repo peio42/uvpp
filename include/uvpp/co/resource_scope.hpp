@@ -1,5 +1,6 @@
 #pragma once
 
+#include <array>
 #include <cassert>
 #include <concepts>
 #include <coroutine>
@@ -27,9 +28,8 @@ public:
   resource_scope &operator=(resource_scope &&) = delete;
 
   ~resource_scope() {
-    assert(connections_.empty());
-    assert(listeners_.empty());
-    if (!connections_.empty() || !listeners_.empty()) {
+    assert(resources_.empty());
+    if (!resources_.empty()) {
       std::terminate();
     }
   }
@@ -77,9 +77,9 @@ public:
     friend class resource_scope;
   };
 
-  // Transfers the sole tcp_connection owner into the scope. Reserving before
-  // the move gives registration allocation failure a strong rollback: caller
-  // ownership has not yet changed.
+  // Transfers the sole tcp_connection owner into the scope. Reserving and
+  // creating its access token before the move give allocation failure a strong
+  // rollback: caller ownership has not yet changed.
   [[nodiscard]] tcp_connection_registration own(tcp_connection &&connection) {
     if (finish_started_) {
       throw std::logic_error{"uv::co::resource_scope cannot own after finish"};
@@ -88,11 +88,11 @@ public:
       throw std::logic_error{"uv::co::resource_scope registered a connection from a different loop"};
     }
 
-    connections_.reserve(connections_.size() + 1);
+    resources_.reserve(resources_.size() + 1);
     auto access = std::make_shared<uv::detail::tcp_connection_access>();
-    auto resource = std::make_unique<tcp_resource>(std::move(connection), access);
+    auto resource = std::make_unique<tcp_connection_record>(std::move(connection), access);
     access->connection = resource->connection.get();
-    connections_.push_back(std::move(resource));
+    resources_.push_back(std::move(resource));
     return tcp_connection_registration{std::move(access)};
   }
 
@@ -107,11 +107,11 @@ public:
       throw std::logic_error{"uv::co::resource_scope registered a listener from a different loop"};
     }
 
-    listeners_.reserve(listeners_.size() + 1);
+    resources_.reserve(resources_.size() + 1);
     auto access = std::make_shared<uv::detail::tcp_listener_access>();
-    auto resource = std::make_unique<tcp_listener_resource>(std::move(listener), access);
+    auto resource = std::make_unique<tcp_listener_record>(std::move(listener), access);
     access->listener = resource->listener.get();
-    listeners_.push_back(std::move(resource));
+    resources_.push_back(std::move(resource));
     return tcp_listener_registration{std::move(access)};
   }
 
@@ -127,23 +127,74 @@ public:
   }
 
 private:
-  struct tcp_resource {
-    tcp_resource(tcp_connection &&owned,
+  // Ordering is a scope policy, not a claim that every resource shares one
+  // cleanup protocol. A listener is first quiesced/closed so it cannot admit
+  // new dependents; established TCP connections close afterwards.
+  enum class cleanup_phase {
+    quiesce_sources,
+    close_dependents,
+  };
+
+  class resource_record_base {
+  public:
+    virtual ~resource_record_base() = default;
+
+    virtual cleanup_phase phase() const noexcept = 0;
+    virtual task<void> finish() = 0;
+  };
+
+  class tcp_connection_record final : public resource_record_base {
+  public:
+    tcp_connection_record(tcp_connection &&owned,
         std::shared_ptr<uv::detail::tcp_connection_access> access_token)
       : connection{std::make_unique<tcp_connection>(std::move(owned))},
         access{std::move(access_token)} {}
 
+    cleanup_phase phase() const noexcept override {
+      return cleanup_phase::close_dependents;
+    }
+
+    task<void> finish() override {
+      // A task must first settle every borrowing operation and its frame. This
+      // record intentionally does not generalize listener accept quiescing to
+      // connection read/write, whose borrowed buffer contract remains active.
+      if (connection->has_active_operation()) {
+        throw std::logic_error{
+            "uv::co::resource_scope requires task join before TCP cleanup"};
+      }
+      co_await uv::detail::close_completion(*connection);
+      access->connection = nullptr;
+      connection.reset();
+    }
+
     std::unique_ptr<tcp_connection> connection{};
+
+  private:
     std::shared_ptr<uv::detail::tcp_connection_access> access{};
   };
 
-  struct tcp_listener_resource {
-    tcp_listener_resource(tcp_listener &&owned,
+  class tcp_listener_record final : public resource_record_base {
+  public:
+    tcp_listener_record(tcp_listener &&owned,
         std::shared_ptr<uv::detail::tcp_listener_access> access_token)
       : listener{std::make_unique<tcp_listener>(std::move(owned))},
         access{std::move(access_token)} {}
 
+    cleanup_phase phase() const noexcept override {
+      return cleanup_phase::quiesce_sources;
+    }
+
+    task<void> finish() override {
+      // The listener close primitive owns its distinct one-shot accept policy:
+      // quiesce the accept, release its slots, then await native close.
+      co_await uv::detail::close_completion(*listener);
+      access->listener = nullptr;
+      listener.reset();
+    }
+
     std::unique_ptr<tcp_listener> listener{};
+
+  private:
     std::shared_ptr<uv::detail::tcp_listener_access> access{};
   };
 
@@ -170,29 +221,24 @@ private:
 
   task<void> finish_impl() {
     co_await loop_check_awaiter{*this};
-    // Stop accepting first, then release established connections. This remains
-    // serial deliberately; batched close is a later policy/optimization choice.
-    for (auto &resource : listeners_) {
-      co_await uv::detail::close_completion(*resource->listener);
-      resource->access->listener = nullptr;
-      resource->listener.reset();
-    }
-    listeners_.clear();
-    for (auto &resource : connections_) {
-      if (resource->connection->has_active_operation()) {
-        throw std::logic_error{
-            "uv::co::resource_scope requires task join before TCP cleanup"};
+    // Current TCP cleanup is serial by policy. The records decide their own
+    // lifecycle semantics; this loop decides only the phase ordering.
+    static constexpr std::array cleanup_order{
+        cleanup_phase::quiesce_sources,
+        cleanup_phase::close_dependents,
+    };
+    for (const auto phase : cleanup_order) {
+      for (auto &resource : resources_) {
+        if (resource->phase() == phase) {
+          co_await resource->finish();
+        }
       }
-      co_await uv::detail::close_completion(*resource->connection);
-      resource->access->connection = nullptr;
-      resource->connection.reset();
     }
-    connections_.clear();
+    resources_.clear();
   }
 
   uv::loop *loop_ = nullptr;
-  std::vector<std::unique_ptr<tcp_resource>> connections_{};
-  std::vector<std::unique_ptr<tcp_listener_resource>> listeners_{};
+  std::vector<std::unique_ptr<resource_record_base>> resources_{};
   bool finish_started_ = false;
 };
 

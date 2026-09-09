@@ -119,6 +119,10 @@ quiesces a pending accept before its close completion; queueing, overload, and
 coordinated cleanup-error policy remain deferred; see the distinct
 [resource-scope proposal](011-resource-scopes.md).
 
+TCP structured task/resource lifecycle validated by prototype. This validation
+does not make resource cleanup generic: the current resource scope remains a
+TCP-specific experimental implementation.
+
 Tests cover all-child join, fail-fast stop of both sleeping and synchronously
 completing siblings followed by first-error delivery,
 cross-loop join rejection, destruction without join, two concurrent accepted TCP

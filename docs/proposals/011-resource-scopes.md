@@ -110,6 +110,12 @@ their `task_scope` before `finish()` for connection I/O. As an experimental guar
 it does not yet coordinate cleanup of such work itself. In contrast, `finish()`
 does coordinate an active listener accept as described above.
 
+Internally, the scope stores resource records behind a narrow private interface
+and runs them in cleanup phases (`quiesce_sources`, then `close_dependents`).
+This only centralizes registration and ordering: each TCP record retains its own
+cleanup contract, so this is not a claim of uniform resource semantics or a
+public type-erasure API.
+
 Tests cover one normal task/resource lifecycle, several adopted connections,
 listener and accepted-connection ownership, listener close with a pending accept,
 fail-fast task failure followed by cleanup, a submitted borrowed write joined
@@ -117,3 +123,8 @@ before cleanup, cross-loop registration rejection, late-view diagnosis, and
 destruction before `finish()` as a terminating contract violation. Validate
 cleanup failure with and without a primary task failure and all paths under address
 and undefined-behavior sanitizers.
+
+TCP structured task/resource lifecycle validated by prototype. This proposal
+remains partially implemented while `resource_scope` is TCP-specific and cleanup
+error aggregation, additional resource families, and their distinct lifecycle
+rules remain future work.
