@@ -11,6 +11,7 @@
 #include <stdexcept>
 #include <type_traits>
 #include <utility>
+#include <vector>
 
 #include <uv.h>
 
@@ -32,12 +33,6 @@ enum class tcp_close_phase {
   closed,
 };
 
-struct tcp_close_waiter {
-  tcp_close_waiter *next = nullptr;
-  std::coroutine_handle<> continuation{};
-  bool linked = false;
-};
-
 struct tcp_connection_state {
   uv_connect_t connect{};
   uv_tcp_t tcp{};
@@ -48,7 +43,8 @@ struct tcp_connection_state {
   int connect_status = 0;
   bool initialized = false;
   tcp_close_phase close_phase = tcp_close_phase::open;
-  tcp_close_waiter *close_waiters = nullptr;
+  std::vector<std::coroutine_handle<>> close_waiters{};
+  std::coroutine_handle<> callback_close_waiter{};
   bool owner_released = false;
   bool close_callback_active = false;
   bool write_active = false;
@@ -66,17 +62,11 @@ struct tcp_connection_state {
 
   bool closing() const noexcept { return close_phase != tcp_close_phase::open; }
 
-  // Claims one close waiter and starts uv_close exactly once. A later waiter
-  // joins the pending completion instead of submitting a second close.
-  bool request_close(tcp_close_waiter *waiter = nullptr) noexcept {
+  // Starts uv_close exactly once. This path never allocates and is suitable for
+  // owner destruction and native C callbacks.
+  bool request_close() noexcept {
     if (close_phase == tcp_close_phase::closed) {
       return false;
-    }
-    if (waiter != nullptr) {
-      assert(!waiter->linked);
-      waiter->next = close_waiters;
-      waiter->linked = true;
-      close_waiters = waiter;
     }
     if (close_phase == tcp_close_phase::closing) {
       return false;
@@ -84,6 +74,25 @@ struct tcp_connection_state {
     close_phase = tcp_close_phase::closing;
     uv_close(reinterpret_cast<uv_handle_t *>(&tcp), &tcp_connection_state::on_close);
     return true;
+  }
+
+  // Called from coroutine suspension, where allocation failure has the normal
+  // coroutine exception path. The state owns the continuation value before any
+  // user code can run from the close callback.
+  bool request_close_and_join(std::coroutine_handle<> continuation) {
+    if (close_phase == tcp_close_phase::closed) {
+      return false;
+    }
+    close_waiters.push_back(continuation);
+    return request_close();
+  }
+
+  // Connect/accept failure paths originate in libuv callbacks and therefore
+  // cannot allocate. One state-owned continuation slot is sufficient there.
+  void request_close_from_callback(std::coroutine_handle<> continuation) noexcept {
+    assert(!callback_close_waiter);
+    callback_close_waiter = continuation;
+    (void)request_close();
   }
 
   // The high-level owner relinquishes its stable state only here. If close has
@@ -112,8 +121,7 @@ struct tcp_connection_state {
       auto *owned = self.provisional_owner->release();
       assert(owned == &self);
       self.release_owner();
-      self.close_waiter.continuation = continuation;
-      (void)self.request_close(&self.close_waiter);
+      self.request_close_from_callback(continuation);
       return;
     }
     continuation.resume();
@@ -123,16 +131,19 @@ struct tcp_connection_state {
     auto &self = from_handle(raw);
     self.close_phase = tcp_close_phase::closed;
     self.close_callback_active = true;
-    auto *waiter = std::exchange(self.close_waiters, nullptr);
-    while (waiter != nullptr) {
-      auto *next = waiter->next;
-      waiter->next = nullptr;
-      waiter->linked = false;
-      auto continuation = std::exchange(waiter->continuation, {});
+    auto callback_waiter = std::exchange(self.callback_close_waiter, {});
+    // Detach all frame-facing continuations before the first user resumption.
+    // The local vector owns only handle values, so later delivery never reads
+    // linkage or registration storage from another pending coroutine frame.
+    auto waiters = std::move(self.close_waiters);
+    self.close_waiters.clear();
+    if (callback_waiter) {
+      callback_waiter.resume();
+    }
+    for (auto continuation : waiters) {
       if (continuation) {
         continuation.resume();
       }
-      waiter = next;
     }
     self.close_callback_active = false;
     if (self.owner_released) {
@@ -140,7 +151,6 @@ struct tcp_connection_state {
     }
   }
 
-  tcp_close_waiter close_waiter{};
 };
 
 static_assert(std::is_standard_layout_v<tcp_connection_state>);
@@ -173,8 +183,7 @@ public:
     if (state_->close_phase == tcp_close_phase::closed) {
       return false;
     }
-    waiter_.continuation = continuation;
-    initiated_ = state_->request_close(&waiter_);
+    initiated_ = state_->request_close_and_join(continuation);
     return true;
   }
 
@@ -184,7 +193,6 @@ public:
 
 private:
   tcp_connection_state *state_ = nullptr;
-  tcp_close_waiter waiter_{};
   int status_ = 0;
   bool initiated_ = false;
 };
@@ -452,8 +460,7 @@ public:
         auto *owned = state_.release();
         assert(owned == &state);
         state.release_owner();
-        state.close_waiter.continuation = resume;
-        (void)state.request_close(&state.close_waiter);
+        state.request_close_from_callback(resume);
       }
       return true;
     }

@@ -172,8 +172,7 @@ public:
       auto *connection = connection_.release();
       assert(connection != nullptr);
       connection->release_owner();
-      connection->close_waiter.continuation = continuation;
-      (void)connection->request_close(&connection->close_waiter);
+      connection->request_close_from_callback(continuation);
     }
 
     static void on_connection(void *opaque, int connection_status) noexcept {

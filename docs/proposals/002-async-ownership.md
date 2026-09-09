@@ -90,9 +90,12 @@ internal `open → closing → closed` close state machine. Its internal-only
 once, lets later cleanup requests join the pending callback, and checks the
 awaiting task's loop affinity. The close callback detaches all waiter claims
 before resuming them; state released by an owner remains alive until that delivery
-has completed. Failed connects and untransferred accepted connections use the same
-machine before their awaiting task receives an error. Resource scopes and a public
-close awaitable remain unimplemented.
+has completed. Coroutine waiters are copied into state-owned continuation storage
+at suspension time, so the `noexcept` close callback neither allocates nor follows
+linkage in another coroutine frame after its first user resumption. Failed connects
+and untransferred accepted connections use a state-owned fixed callback slot for
+the same no-allocation callback path. Resource scopes and a public close awaitable
+remain unimplemented.
 
 The experimental `uv::tcp_listener` adds separate stable listener storage and a
 one-shot accept owner transfer. An accepted `tcp_connection` is not owned by the
