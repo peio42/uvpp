@@ -80,6 +80,16 @@ selected cleanup policy may start close earlier, but it must retain all native a
 borrowed-operation storage until real completion. It must also prevent a listener
 from beginning close while an accept operation still claims its callback slot.
 
+`resource_scope::finish()` makes one deliberate family-specific distinction in
+this prototype. A connection with active borrowed read or write is rejected: the
+caller must first join the tasks that retain those operation frames and buffers.
+An active listener `accept()`, by contrast, is a scope cleanup capability:
+`finish()` quiesces it, releases its accept and cancellation slots, and waits for
+the provisional child close path before that accept task can receive
+`UV_ECANCELED`. This exception is limited to the listener's one-shot accept
+protocol; it is not a general permission to close resources underneath active
+borrowed I/O.
+
 Cleanup failure must never replace an already active primary failure. When no
 primary failure exists, report cleanup failure normally; otherwise retain it or
 deliver it through an explicit secondary cleanup-error channel. Cross-loop
@@ -97,7 +107,8 @@ it cancels/quiesces a pending accept, releases its slots, and only then starts
 native close. The scope deliberately has no task ownership: callers must join
 their `task_scope` before `finish()` for connection I/O. As an experimental guard,
 `finish()` rejects an adopted connection with an active borrowed read or write;
-it does not yet coordinate cleanup of such work itself.
+it does not yet coordinate cleanup of such work itself. In contrast, `finish()`
+does coordinate an active listener accept as described above.
 
 Tests cover one normal task/resource lifecycle, several adopted connections,
 listener and accepted-connection ownership, listener close with a pending accept,

@@ -55,6 +55,7 @@ struct tcp_connection_state {
   std::coroutine_handle<> connect_continuation{};
   std::unique_ptr<tcp_connection_state> *provisional_owner = nullptr;
   int *connect_status_destination = nullptr;
+  bool *close_completion_destination = nullptr;
   int connect_status = 0;
   bool initialized = false;
   tcp_close_phase close_phase = tcp_close_phase::open;
@@ -150,6 +151,10 @@ struct tcp_connection_state {
     auto &self = from_handle(raw);
     self.close_phase = tcp_close_phase::closed;
     self.close_callback_active = true;
+    if (self.close_completion_destination != nullptr) {
+      *self.close_completion_destination = true;
+      self.close_completion_destination = nullptr;
+    }
     auto callback_waiter = std::exchange(self.callback_close_waiter, {});
     // Detach all frame-facing continuations before the first user resumption.
     // The local vector owns only handle values, so later delivery never reads

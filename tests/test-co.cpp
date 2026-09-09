@@ -806,6 +806,7 @@ TEST(UvppV3Coroutine, resourceScopeQuiescesActiveAcceptBeforeListenerClose) {
   uv::loop loop;
   uv::co::task_scope tasks(loop);
   uv::co::resource_scope resources(loop);
+  int accept_deliveries = 0;
   bool accept_canceled = false;
   bool listener_finish_completed = false;
   bool accept_joined = false;
@@ -813,15 +814,21 @@ TEST(UvppV3Coroutine, resourceScopeQuiescesActiveAcceptBeforeListenerClose) {
   auto parent = [&]() -> uv::co::task<void> {
     auto listener = resources.own(uv::tcp_listener{loop, uv::ipv4{"127.0.0.1", 0}});
     auto accepter = [&]() -> uv::co::task<void> {
+      auto accept = listener.accept();
       try {
-        (void)co_await listener.accept();
+        (void)co_await accept;
       } catch (const uv::error &error) {
+        ++accept_deliveries;
         accept_canceled = error.code().value() == UV_ECANCELED;
       }
     };
     tasks.spawn(accepter());
     co_await resources.finish();
     listener_finish_completed = true;
+    // The listener-close path must have removed the accept cancellation slot.
+    // A stale registration would invoke the old awaiter here and either deliver
+    // a second result or access a completed frame.
+    tasks.request_stop();
     co_await tasks.join();
     accept_joined = true;
     loop.stop();
@@ -832,8 +839,53 @@ TEST(UvppV3Coroutine, resourceScopeQuiescesActiveAcceptBeforeListenerClose) {
 
   EXPECT_NO_THROW(execution.rethrow_if_failed());
   EXPECT_TRUE(listener_finish_completed);
+  EXPECT_EQ(accept_deliveries, 1);
   EXPECT_TRUE(accept_canceled);
   EXPECT_TRUE(accept_joined);
+  EXPECT_NO_THROW(loop.close());
+}
+
+TEST(UvppV3Coroutine, tcpListenerLateNotificationCannotReachQuiescedAccept) {
+  if (!loopback_tcp_is_permitted()) {
+    GTEST_SKIP() << "loopback TCP is not permitted in this environment";
+  }
+
+  uv::loop loop;
+  uv::tcp_listener listener(loop, uv::ipv4{"127.0.0.1", 0});
+  uv::co::task_scope tasks(loop);
+  int accept_deliveries = 0;
+  bool accept_canceled = false;
+  bool listener_close_completed = false;
+
+  auto accepter = [&]() -> uv::co::task<void> {
+    try {
+      (void)co_await listener.accept();
+    } catch (const uv::error &error) {
+      ++accept_deliveries;
+      accept_canceled = error.code().value() == UV_ECANCELED;
+    }
+  };
+  auto parent = [&]() -> uv::co::task<void> {
+    tasks.spawn(accepter());
+    co_await uv::detail::close_completion(listener);
+    listener_close_completed = true;
+    co_await tasks.join();
+
+    // Model a stale notification after native close. The owner deliberately
+    // remains alive so this only exercises terminal slot handling; no libuv
+    // function is called. It must not reach the completed accept frame.
+    uv::detail::tcp_listener_state::on_connection(
+        reinterpret_cast<uv_stream_t *>(listener.native_handle()), 0);
+    loop.stop();
+  };
+
+  auto execution = uv::co::spawn(loop, parent());
+  loop.run();
+
+  EXPECT_NO_THROW(execution.rethrow_if_failed());
+  EXPECT_TRUE(listener_close_completed);
+  EXPECT_TRUE(accept_canceled);
+  EXPECT_EQ(accept_deliveries, 1);
   EXPECT_NO_THROW(loop.close());
 }
 

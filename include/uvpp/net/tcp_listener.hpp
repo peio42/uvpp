@@ -113,6 +113,13 @@ struct tcp_listener_state {
 
   static void on_connection(uv_stream_t *raw, int status) noexcept {
     auto &self = from_handle(reinterpret_cast<uv_handle_t *>(raw));
+    // Native close has claimed this listener.  Libuv must not deliver another
+    // connection notification after uv_close(), but retaining this guard makes
+    // the terminal-slot protocol robust to a stale/fault-injected callback:
+    // it cannot recover a continuation from a completed accept frame.
+    if (self.close_phase != tcp_listener_close_phase::open) {
+      return;
+    }
     auto *accept = std::exchange(self.active_accept, nullptr);
     auto deliver = std::exchange(self.deliver_accept, nullptr);
     (void)std::exchange(self.cancel_accept, nullptr);
@@ -282,6 +289,9 @@ public:
     }
 
     tcp_connection await_resume() {
+      // Cancellation and accept failure own an initialized provisional child.
+      // Its uv_close callback sets this flag before it can resume this frame.
+      assert(!provisional_close_required_ || provisional_close_completed_);
       throw_if_error(status_);
       return tcp_connection{std::move(connection_)};
     }
@@ -290,6 +300,8 @@ public:
     void close_untransferred_connection(std::coroutine_handle<> continuation) noexcept {
       auto *connection = connection_.release();
       assert(connection != nullptr);
+      provisional_close_required_ = true;
+      connection->close_completion_destination = &provisional_close_completed_;
       connection->release_owner();
       connection->request_close_from_callback(continuation);
     }
@@ -342,6 +354,8 @@ public:
     co::detail::cancellation_state *cancellation_ = nullptr;
     co::detail::cancellation_registration cancellation_registration_{};
     int status_ = 0;
+    bool provisional_close_required_ = false;
+    bool provisional_close_completed_ = false;
   };
 
   [[nodiscard]] accept_awaiter accept() noexcept { return accept_awaiter{state_.get()}; }
