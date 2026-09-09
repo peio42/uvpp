@@ -94,8 +94,12 @@ has completed. Coroutine waiters are copied into state-owned continuation storag
 at suspension time, so the `noexcept` close callback neither allocates nor follows
 linkage in another coroutine frame after its first user resumption. Failed connects
 and untransferred accepted connections use a state-owned fixed callback slot for
-the same no-allocation callback path. Resource scopes and a public close awaitable
-remain unimplemented.
+the same no-allocation callback path. The first TCP-only `resource_scope` now
+adopts that owner, hands tasks a non-owning `tcp_connection_view`, and awaits
+internal close completion before destroying owner storage. It rejects cross-loop
+adoption and requires task join before cleanup while borrowed I/O is active.
+A public close awaitable, listener ownership, generic registration, and cleanup
+error aggregation remain unimplemented.
 
 The experimental `uv::tcp_listener` adds separate stable listener storage and a
 one-shot accept owner transfer. An accepted `tcp_connection` is not owned by the

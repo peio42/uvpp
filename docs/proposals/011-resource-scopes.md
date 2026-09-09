@@ -1,6 +1,6 @@
 # Resource Scopes
 
-Status: draft.
+Status: partially implemented (TCP-only experimental slice).
 
 Architecture: [000 — V3 architecture](000-v3-architecture.md).
 
@@ -8,7 +8,9 @@ Dependencies: [002 — Asynchronous ownership](002-async-ownership.md),
 [003 — Cancellation and task scopes](003-cancellation-and-task-scopes.md), and
 [004 — Shared operation state](004-operation-state.md).
 
-Target: v3 exploration. This proposal does not introduce a current public API.
+Target: v3 exploration. The current API is deliberately limited to adopted
+`tcp_connection` owners; listener support, generic type erasure, and cleanup-error
+aggregation remain proposed.
 
 ## Motivation
 
@@ -59,8 +61,14 @@ uv::co::task<void> serve(uv::loop &loop, uv::ipv4 address) {
 }
 ```
 
-This is illustrative only. In particular, `own()`, `view()`, and `finish()` are
-not committed spellings. The listener is a natural resource-scope candidate too:
+The current TCP-only prototype uses these spellings. `own(tcp_connection&&)`
+returns a scope-bound registration whose `.view()` produces `tcp_connection_view`.
+The registration and view do not own the connection. `finish()` returns a cold
+`task<void>` which, on the scope loop, starts and awaits the internal close
+completion of every adopted connection before destroying its owner storage.
+Views hold only a validity token; `finish()` invalidates it before destruction, so
+an attempted subsequent `read_some()` or `write()` is diagnosed rather than
+touching released native state. The listener is a natural resource-scope candidate too:
 it remains owned through close completion just like each accepted connection. The
 ordering is contractual: request task stop when the operation fails or shuts down,
 join task execution, initiate/await owner cleanup, then release scope storage. A
@@ -75,16 +83,19 @@ registration is rejected deterministically. Resource-scope destruction before
 asynchronous exit is an explicit contract violation until a retention fallback has
 been designed and validated.
 
-## Implementation and validation gates
+## Implementation progress and validation gates
 
-The TCP connection now prototypes this internal primitive with an `open → closing
-→ closed` state machine, joined close waiters, affinity checks, and terminal slot
-release before waiter resumption. Do not implement this scope before equivalent
-internal close-completion support exists for each adopted owner. The implementation
-must prove release-before-user-resume for close completion, support exception
-paths, and avoid nested loop runs.
-Validate normal exit, exception during a handler, fail-fast cancellation, multiple
-close completions, cleanup failure with and without a primary task failure, active
-borrowed I/O, owner moves, listener shutdown with pending accept, and loop
-shutdown. Verify that task-facing views cannot outlive their scope-owned resource.
-Run the resulting paths under address and undefined-behavior sanitizers.
+The TCP connection prototypes the required `open → closing → closed` primitive
+with joined close waiters, affinity checks, and terminal slot release before waiter
+resumption. The first `resource_scope` adopts only TCP connections and rejects a
+connection bound to another loop. It deliberately has no task ownership: callers
+must join their `task_scope` before `finish()`. As an experimental guard,
+`finish()` rejects an adopted connection with an active borrowed read or write;
+it does not yet coordinate cleanup of such work itself.
+
+Tests cover one normal task/resource lifecycle, several adopted connections,
+fail-fast task failure followed by cleanup, a submitted borrowed write joined
+before cleanup, cross-loop registration rejection, late-view diagnosis, and
+destruction before `finish()` as a terminating contract violation. Validate
+cleanup failure with and without a primary task failure, listener shutdown with
+pending accept, and all paths under address and undefined-behavior sanitizers.

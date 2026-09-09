@@ -1,12 +1,13 @@
 # Experimental Coroutines
 
 This is the first, deliberately small v3 coroutine slice. Include its focused
-header; it is not included by `uvpp/uv.hpp` and is not a stable v2 API.
+headers; it is not a stable v2 API.
 
 ```cpp
 #include <chrono>
 
 #include <uvpp/co/sleep.hpp>
+#include <uvpp/co/resource_scope.hpp>
 #include <uvpp/co/task_scope.hpp>
 #include <uvpp/net/tcp_connection.hpp>
 #include <uvpp/net/tcp_listener.hpp>
@@ -57,9 +58,9 @@ instead of releasing a coroutine frame that libuv may still reference.
 ## Experimental TCP connect
 
 `uv::tcp_connection::connect(ipv4_or_ipv6)` creates a movable owner in the
-awaiting task's loop. It is a focused experimental header, not yet an umbrella
-`uvpp/uv.hpp` API. A connect submission error and an asynchronous connection error
-are both thrown at the `co_await`; a failed connection is closed before delivery.
+awaiting task's loop. It is experimental. A connect submission error and an
+asynchronous connection error are both thrown at the `co_await`; a failed
+connection is closed before delivery.
 The native `uv_tcp_t` stays address-stable when the owner moves.
 
 Destroying the owner starts an internal asynchronous close. Keep driving its loop
@@ -78,11 +79,10 @@ throws at the await. Each call is one-shot: it stops the native reader and relea
 both read slots before resuming, so another `read_some` may immediately follow.
 
 Connections are affine to the loop that created them. `write` and `read_some`
-reject a task bound to another loop. Until a resource scope can retain native
-operation state through asynchronous cleanup,
-destroying a connection with a pending read or write is an unsupported contract
-violation: the experimental implementation asserts and terminates rather than
-risking a use-after-free.
+reject a task bound to another loop. Destroying a direct connection owner with a
+pending read or write is an unsupported contract violation: the experimental
+implementation asserts and terminates rather than risking a use-after-free. The
+TCP-only `resource_scope` below likewise requires task join before cleanup.
 
 ## Experimental TCP listener
 
@@ -131,13 +131,9 @@ slice deliberately ignores that notification: it does not call `uv_accept()` and
 does not queue a connection. This is an experimental limitation, not a final
 server policy.
 
-The accepted owner belongs to the receiving task. Passing it by value to a child
-task and `co_await`ing that child makes the handler frame own it until completion,
-but leaves no accept waiter while the handler is running. Independently spawning a
-handler previously had no safe automatic owner/join relationship. The experimental
-`task_scope` below provides that task ownership; a future `resource_scope` still
-has to retain and close resources during cancellation or failure, and choose the
-accepted-connection queue and overload policy.
+The accepted owner can be transferred into the TCP-only `resource_scope` below.
+The listener itself is not yet scope-owned, and independently spawned handlers
+still require the caller to keep accepts armed and choose an overload policy.
 
 ## Experimental task scopes
 
@@ -151,37 +147,39 @@ first exception. `request_stop()` provides the same request explicitly; it is a
 loop-thread operation.
 
 ```cpp
-uv::co::task<void> handle(uv::tcp_connection connection);
+uv::co::task<void> handle(uv::tcp_connection_view connection);
 
 uv::co::task<void> serve_two(
-    uv::tcp_listener &listener, uv::co::task_scope &scope) {
+    uv::tcp_listener &listener, uv::loop &loop) {
+  uv::co::task_scope tasks(loop);
+  uv::co::resource_scope resources(loop);
   for (int count = 0; count != 2; ++count) {
-    auto connection = co_await listener.accept();
-    scope.spawn(handle(std::move(connection)));
+    auto connection = resources.own(co_await listener.accept());
+    tasks.spawn(handle(connection.view()));
   }
-  co_await scope.join();
+  co_await tasks.join();
+  co_await resources.finish();
   listener.close();
 }
 
 int main() {
   uv::loop loop;
   uv::tcp_listener listener(loop, uv::ipv4{"127.0.0.1", 8080});
-  uv::co::task_scope scope(loop);
-  auto execution = uv::co::spawn(loop, serve_two(listener, scope));
+  auto execution = uv::co::spawn(loop, serve_two(listener, loop));
   loop.run();
   execution.rethrow_if_failed();
   loop.close();
 }
 ```
 
-Passing the connection by value makes the handler task own it. On normal handler
-exit, its owner starts asynchronous close; keep driving the loop through that close
-completion. `task_scope::join()` joins handler task completion, not yet every
-resource close completion. `task_scope` owns executions; a future, distinct
-`resource_scope` will own asynchronous owner cleanup and compose with it rather
-than merging the two responsibilities. Until that scope exists, a `task_scope`
-must not be destroyed without `co_await join()`; doing so terminates rather than
-freeing frames that native operations may still reference.
+`resources.own()` transfers the sole connection owner into `resource_scope`; the
+handler receives only a `tcp_connection_view`. `task_scope::join()` finishes task
+execution, while `resources.finish()` starts internal close and waits for the
+actual `uv_close` callback before destroying owner storage. A view retained after
+`finish()` diagnoses use instead of accessing released native state. The caller
+must join tasks before calling `finish()`; cleanup with active borrowed I/O is
+rejected in this prototype. `resource_scope` and `task_scope` both terminate when
+destroyed with outstanding work.
 
 ### Cooperative stop
 

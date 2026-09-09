@@ -109,11 +109,13 @@ this slice: a prior stop rejects their submission, but an in-flight operation
 remains alive through actual completion. In particular, a borrowed write buffer
 must survive the request even after stop was requested.
 
-The prototype is sufficient to express listener handoff as
-`scope.spawn(handle(std::move(connection)))`; the handler task owns the accepted
-connection until task completion. A future resource scope must additionally retain
-owners through asynchronous close and define coordinated cancellation, queueing,
-overload, and error cleanup for a complete server lifecycle; see the distinct
+The TCP-only resource-scope prototype now expresses handoff as
+`resources.own(std::move(connection))` followed by
+`tasks.spawn(handle(connection.view()))`: the resource scope remains the sole
+connection owner, while the task receives a borrowed view. The caller joins the
+task scope before awaiting `resources.finish()`, which waits native close
+completion before releasing owner storage. Listener ownership, queueing,
+overload, and coordinated cleanup-error policy remain deferred; see the distinct
 [resource-scope proposal](011-resource-scopes.md).
 
 Tests cover all-child join, fail-fast stop of both sleeping and synchronously

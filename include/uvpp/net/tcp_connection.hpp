@@ -24,6 +24,11 @@ namespace uv {
 
 class tcp_listener;
 class tcp_connection;
+class tcp_connection_view;
+
+namespace co {
+class resource_scope;
+}
 
 namespace detail {
 
@@ -32,6 +37,16 @@ enum class tcp_close_phase {
   closing,
   closed,
 };
+
+// This access token is lifetime bookkeeping for a borrowed high-level view; it
+// does not own the TCP resource. resource_scope clears connection before it
+// destroys its sole tcp_connection owner.
+struct tcp_connection_access {
+  tcp_connection *connection = nullptr;
+};
+
+[[nodiscard]] tcp_connection_view make_tcp_connection_view(
+    std::shared_ptr<tcp_connection_access>) noexcept;
 
 struct tcp_connection_state {
   uv_connect_t connect{};
@@ -80,6 +95,10 @@ struct tcp_connection_state {
   // coroutine exception path. The state owns the continuation value before any
   // user code can run from the close callback.
   bool request_close_and_join(std::coroutine_handle<> continuation) {
+    // tcp_close_completion checks this phase before calling us. In particular,
+    // a close completion observed from user code resumed by on_close() must not
+    // register a new waiter into a callback that is already delivering.
+    assert(close_phase != tcp_close_phase::closed);
     if (close_phase == tcp_close_phase::closed) {
       return false;
     }
@@ -136,7 +155,6 @@ struct tcp_connection_state {
     // The local vector owns only handle values, so later delivery never reads
     // linkage or registration storage from another pending coroutine frame.
     auto waiters = std::move(self.close_waiters);
-    self.close_waiters.clear();
     if (callback_waiter) {
       callback_waiter.resume();
     }
@@ -224,6 +242,12 @@ public:
   uv_tcp_t *native_handle() noexcept { return state_ ? &state_->tcp : nullptr; }
   const uv_tcp_t *native_handle() const noexcept { return state_ ? &state_->tcp : nullptr; }
   bool closing() const noexcept { return state_ && state_->closing(); }
+  bool has_execution_loop(const uv::loop &execution_loop) const noexcept {
+    return state_ != nullptr && state_->loop == &execution_loop;
+  }
+  bool has_active_operation() const noexcept {
+    return state_ != nullptr && (state_->write_active || state_->active_read != nullptr);
+  }
 
   class read_some_result {
   public:
@@ -506,13 +530,50 @@ private:
   std::unique_ptr<detail::tcp_connection_state> state_{};
 
   friend class tcp_listener;
+  friend class tcp_connection_view;
   friend detail::tcp_close_completion detail::close_completion(tcp_connection &) noexcept;
+};
+
+// A non-owning TCP facade produced by resource_scope. It retains only an access
+// token, never the connection owner or its native storage. Operations diagnose
+// use after resource_scope::finish() before touching native state.
+class tcp_connection_view {
+public:
+  [[nodiscard]] tcp_connection::read_awaiter read_some(
+      std::span<std::byte> buffer) const {
+    return connection().read_some(buffer);
+  }
+
+  [[nodiscard]] tcp_connection::write_awaiter write(std::string_view data) const {
+    return connection().write(data);
+  }
+
+private:
+  explicit tcp_connection_view(std::shared_ptr<detail::tcp_connection_access> access) noexcept
+    : access_{std::move(access)} {}
+
+  tcp_connection &connection() const {
+    if (!access_ || access_->connection == nullptr) {
+      throw std::logic_error{"uv::tcp_connection_view used after resource cleanup"};
+    }
+    return *access_->connection;
+  }
+
+  std::shared_ptr<detail::tcp_connection_access> access_{};
+
+  friend tcp_connection_view detail::make_tcp_connection_view(
+      std::shared_ptr<detail::tcp_connection_access>) noexcept;
 };
 
 namespace detail {
 
-// Internal boundary for a future resource scope. It borrows the owner; it does
-// not transfer ownership or make public co_await socket.close() available.
+[[nodiscard]] inline tcp_connection_view make_tcp_connection_view(
+    std::shared_ptr<tcp_connection_access> access) noexcept {
+  return tcp_connection_view{std::move(access)};
+}
+
+// Internal boundary for resource_scope. It borrows the owner; it does not
+// transfer ownership or make public co_await socket.close() available.
 [[nodiscard]] inline tcp_close_completion close_completion(
     tcp_connection &connection) noexcept {
   return tcp_close_completion{connection.state_.get()};
