@@ -1,6 +1,6 @@
 # Resource Scopes
 
-Status: partially implemented (TCP/UDP experimental slice).
+Status: partially implemented (TCP/pipe/UDP experimental slice).
 
 Architecture: [000 — V3 architecture](000-v3-architecture.md).
 
@@ -61,12 +61,13 @@ uv::co::task<void> serve(uv::loop &loop, uv::ipv4 address) {
 }
 ```
 
-The current TCP/UDP prototype uses these spellings. `own(tcp_connection&&)`
+The current TCP/pipe/UDP prototype uses these spellings. `own(tcp_connection&&)`
 returns a scope-bound registration whose `.view()` produces `tcp_connection_view`;
 `own(tcp_listener&&)` returns a non-owning listener registration exposing
-`accept()`. Neither registration owns its adopted resource. Invoking `finish()`
+`accept()`, and `own(pipe_connection&&)`/`own(udp_socket&&)` return equivalent
+borrowed-view registrations. Neither registration owns its adopted resource. Invoking `finish()`
 consumes the scope's registration phase even before its returned cold task starts.
-The current TCP/UDP `finish()` serializes listener then dependent-owner close
+The current TCP/pipe/UDP `finish()` serializes listener then dependent-owner close
 completion before destroying owner storage; concurrent or batched cleanup is a
 later optimization and policy question.
 Views hold only a validity token; `finish()` invalidates it before destruction, so
@@ -80,12 +81,14 @@ selected cleanup policy may start close earlier, but it must retain all native a
 borrowed-operation storage until real completion. It must also prevent a listener
 from beginning close while an accept operation still claims its callback slot.
 
-`resource_scope::finish()` makes one deliberate family-specific distinction in
-this prototype. A connection with active borrowed read or write is rejected: the
-caller must first join the tasks that retain those operation frames and buffers.
-An active listener `accept()`, by contrast, is a scope cleanup capability:
-`finish()` quiesces it, releases its accept and cancellation slots, and waits for
-the provisional child close path before that accept task can receive
+`resource_scope::finish()` does not cancel every active operation. Each resource
+family defines which operations resource cleanup can safely quiesce; every other
+operation must have completed, normally after its `task_scope` joins. In this
+prototype, a TCP or pipe connection with active borrowed read or write, or a UDP
+socket with active receive or send, is rejected: the caller must first join the
+tasks retaining those frames and buffers. An active listener `accept()`, by contrast, is a scope cleanup
+capability: `finish()` quiesces it, releases its accept and cancellation slots,
+and waits for the provisional child close path before that accept task can receive
 `UV_ECANCELED`. This exception is limited to the listener's one-shot accept
 protocol; it is not a general permission to close resources underneath active
 borrowed I/O.
@@ -99,9 +102,9 @@ been designed and validated.
 
 ## Implementation progress and validation gates
 
-TCP connections and UDP sockets prototype the required `open → closing → closed` primitive
+TCP connections, pipe connections, and UDP sockets prototype the required `open → closing → closed` primitive
 with joined close waiters, affinity checks, and terminal slot release before waiter
-resumption. The first `resource_scope` adopts TCP connections/listeners and UDP sockets and
+resumption. The first `resource_scope` adopts TCP connections/listeners, pipe connections, and UDP sockets and
 rejects either owner from another loop. Listener close uses the same state machine:
 it cancels/quiesces a pending accept, releases its slots, and only then starts
 native close. The scope deliberately has no task ownership: callers must join
@@ -111,8 +114,8 @@ it does not yet coordinate cleanup of such work itself. In contrast, `finish()`
 does coordinate an active listener accept as described above.
 
 Internally, the scope stores resource records behind a narrow private interface
-and runs them in cleanup phases (`quiesce_sources`, then `close_dependents`).
-This only centralizes registration and ordering: each TCP record retains its own
+and runs them in cleanup phases (`stop_admission`, then `close_resources`).
+This only centralizes registration and ordering: each resource record retains its own
 cleanup contract, so this is not a claim of uniform resource semantics or a
 public type-erasure API.
 
@@ -124,7 +127,7 @@ destruction before `finish()` as a terminating contract violation. Validate
 cleanup failure with and without a primary task failure and all paths under address
 and undefined-behavior sanitizers.
 
-TCP/UDP structured task/resource lifecycle validated by prototype. This proposal
+TCP/pipe/UDP structured task/resource lifecycle validated by prototype. This proposal
 remains partially implemented while `resource_scope` covers only these families
 and cleanup-error aggregation, additional resource families, and their distinct
 lifecycle rules remain future work.

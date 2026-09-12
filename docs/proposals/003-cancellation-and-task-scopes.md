@@ -102,14 +102,15 @@ of its siblings, then the scope joins all children and rethrows that first failu
 It does not join native resource close completion or retain external borrowed data
 beyond the child task contract.
 
-The first stop-aware adapters are timer sleep, TCP one-shot read/accept, and UDP
-one-shot receive. They quiesce their native source, release callback claims, and deliver
-`UV_ECANCELED`. Submitted TCP write and connect cannot be physically cancelled in
-this slice: a prior stop rejects their submission, but an in-flight operation
-remains alive through actual completion. In particular, a borrowed write buffer
-must survive the request even after stop was requested.
+The first stop-aware adapters are timer sleep, TCP and pipe one-shot read, TCP
+accept, and UDP one-shot receive. They quiesce their native source, release
+callback claims, and deliver `UV_ECANCELED`. Submitted TCP/pipe write and connect
+cannot be physically cancelled in this slice: a prior stop rejects their
+submission, but an in-flight operation remains alive through actual completion.
+In particular, a borrowed write buffer must survive the request even after stop
+was requested.
 
-The TCP-only resource-scope prototype now expresses handoff as
+The TCP/pipe/UDP resource-scope prototype now expresses handoff as
 `resources.own(std::move(connection))` followed by
 `tasks.spawn(handle(connection.view()))`: the resource scope remains the sole
 connection owner, while the task receives a borrowed view. The caller joins the
@@ -119,7 +120,7 @@ quiesces a pending accept before its close completion; queueing, overload, and
 coordinated cleanup-error policy remain deferred; see the distinct
 [resource-scope proposal](011-resource-scopes.md).
 
-TCP/UDP structured task/resource lifecycle validated by prototype. This validation
+TCP/pipe/UDP structured task/resource lifecycle validated by prototype. This validation
 does not make resource cleanup generic: the current resource scope remains an
 experimental implementation for these specific families.
 

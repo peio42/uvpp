@@ -1,5 +1,6 @@
 #include <array>
 #include <chrono>
+#include <filesystem>
 #include <memory>
 #include <optional>
 #include <span>
@@ -12,7 +13,9 @@
 #include "uvpp/co/sleep.hpp"
 #include "uvpp/co/task_scope.hpp"
 #include "uvpp/handles/timer.hpp"
+#include "uvpp/handles/pipe.hpp"
 #include "uvpp/handles/tcp.hpp"
+#include "uvpp/net/pipe_connection.hpp"
 #include "uvpp/net/tcp_connection.hpp"
 #include "uvpp/net/tcp_listener.hpp"
 
@@ -75,6 +78,75 @@ struct connected_tcp_pair {
     }
     loop.run();
     loop.close();
+  }
+};
+
+std::string v3_pipe_path() {
+  return "/tmp/uvpp-v3-pipe-test-" + std::to_string(uv_os_getpid());
+}
+
+bool local_pipe_is_permitted() {
+  const auto path = v3_pipe_path() + "-probe";
+  std::filesystem::remove(path);
+  uv::loop loop;
+  uv::pipe probe(loop);
+  try {
+    probe.bind(path);
+  } catch (const uv::error &error) {
+    probe.close();
+    loop.run();
+    loop.close();
+    std::filesystem::remove(path);
+    if (error.code().value() == UV_EPERM) {
+      return false;
+    }
+    throw;
+  }
+  probe.close();
+  loop.run();
+  loop.close();
+  std::filesystem::remove(path);
+  return true;
+}
+
+struct connected_pipe_pair {
+  uv::loop loop;
+  uv::pipe listener{loop};
+  std::unique_ptr<uv::pipe> peer;
+  std::optional<uv::pipe_connection> client;
+  std::optional<uv::co::spawn_handle> connect_execution;
+  std::string path{v3_pipe_path()};
+
+  connected_pipe_pair() { std::filesystem::remove(path); }
+
+  void connect() {
+    listener.bind(path);
+    listener.listen([&](uv::pipe &server, uv::result status) {
+      EXPECT_TRUE(status);
+      peer = std::make_unique<uv::pipe>(loop);
+      EXPECT_NO_THROW(server.accept(*peer));
+    });
+
+    auto establish = [&]() -> uv::co::task<void> {
+      client.emplace(co_await uv::pipe_connection::connect(path));
+      loop.stop();
+    };
+    connect_execution.emplace(uv::co::spawn(loop, establish()));
+    loop.run();
+    connect_execution->rethrow_if_failed();
+  }
+
+  void close() {
+    client.reset();
+    if (peer && !peer->closing()) {
+      peer->close();
+    }
+    if (!listener.closing()) {
+      listener.close();
+    }
+    loop.run();
+    loop.close();
+    std::filesystem::remove(path);
   }
 };
 
@@ -1490,6 +1562,311 @@ TEST(UvppV3Coroutine, taskScopeStopWaitsForSubmittedBorrowedWrite) {
   EXPECT_TRUE(write_completed);
   EXPECT_TRUE(observed_stop);
   EXPECT_EQ(data.front(), 'B');
+  pair.close();
+}
+
+TEST(UvppV3Coroutine, pipeConnectionStreamsWithBorrowedBuffersAndScopedCleanup) {
+  if (!local_pipe_is_permitted()) {
+    GTEST_SKIP() << "local pipe bind is not permitted in this environment";
+  }
+  connected_pipe_pair pair;
+  pair.connect();
+
+  std::array<char, 32> server_buffer{};
+  std::array<char, 4> response{'p', 'o', 'n', 'g'};
+  uv::write_request response_request;
+  bool server_received = false;
+  bool server_wrote = false;
+  bool handler_completed = false;
+  bool cleanup_completed = false;
+  bool late_view_rejected = false;
+
+  pair.peer->read_start(
+      [&](uv::pipe &, std::size_t) {
+        return uv::buffer_view{server_buffer.data(), server_buffer.size()};
+      },
+      [&](uv::pipe &stream, uv::read_result result) {
+        if (result.eof()) {
+          return;
+        }
+        ASSERT_TRUE(result);
+        ASSERT_EQ(result.count(), 4);
+        EXPECT_EQ((std::string_view{server_buffer.data(), 4}), "ping");
+        server_received = true;
+        stream.read_stop();
+        stream.write(response_request, uv::buffer_view{response.data(), response.size()},
+            [&](uv::write_request &, uv::result status) {
+              EXPECT_TRUE(status);
+              server_wrote = true;
+              stream.close();
+            });
+      });
+
+  uv::co::task_scope tasks(pair.loop);
+  uv::co::resource_scope resources(pair.loop);
+  auto parent = [&]() -> uv::co::task<void> {
+    auto connection = resources.own(std::move(*pair.client));
+    pair.client.reset();
+    auto view = connection.view();
+    auto handler = [&](uv::pipe_connection_view pipe) -> uv::co::task<void> {
+      std::string request{"ping"};
+      co_await pipe.write(request);
+      std::array<std::byte, 16> buffer{};
+      const auto result = co_await pipe.read_some(buffer);
+      EXPECT_FALSE(result.eof());
+      EXPECT_EQ(result.count(), 4U);
+      EXPECT_EQ((std::string_view{reinterpret_cast<const char *>(buffer.data()), result.count()}),
+          "pong");
+      handler_completed = true;
+    };
+    tasks.spawn(handler(view));
+    co_await tasks.join();
+    co_await resources.finish();
+    cleanup_completed = true;
+    try {
+      (void)view.write("late");
+    } catch (const std::logic_error &) {
+      late_view_rejected = true;
+    }
+    pair.listener.close();
+  };
+
+  auto execution = uv::co::spawn(pair.loop, parent());
+  pair.loop.run();
+
+  EXPECT_NO_THROW(execution.rethrow_if_failed());
+  EXPECT_TRUE(server_received);
+  EXPECT_TRUE(server_wrote);
+  EXPECT_TRUE(handler_completed);
+  EXPECT_TRUE(cleanup_completed);
+  EXPECT_TRUE(late_view_rejected);
+  pair.close();
+}
+
+TEST(UvppV3Coroutine, pipeConnectionRejectsReadAndWriteFromAnotherLoop) {
+  if (!local_pipe_is_permitted()) {
+    GTEST_SKIP() << "local pipe bind is not permitted in this environment";
+  }
+  connected_pipe_pair pair;
+  pair.connect();
+
+  uv::loop other_loop;
+  std::array<std::byte, 8> buffer{};
+  bool read_rejected = false;
+  bool write_rejected = false;
+  auto read = [&]() -> uv::co::task<void> {
+    try {
+      (void)co_await pair.client->read_some(buffer);
+    } catch (const std::logic_error &) {
+      read_rejected = true;
+    }
+  };
+  auto write = [&]() -> uv::co::task<void> {
+    try {
+      co_await pair.client->write("wrong loop");
+    } catch (const std::logic_error &) {
+      write_rejected = true;
+    }
+  };
+
+  auto read_execution = uv::co::spawn(other_loop, read());
+  auto write_execution = uv::co::spawn(other_loop, write());
+
+  EXPECT_TRUE(read_execution.done());
+  EXPECT_TRUE(write_execution.done());
+  EXPECT_NO_THROW(read_execution.rethrow_if_failed());
+  EXPECT_NO_THROW(write_execution.rethrow_if_failed());
+  EXPECT_TRUE(read_rejected);
+  EXPECT_TRUE(write_rejected);
+
+  other_loop.close();
+  pair.close();
+}
+
+TEST(UvppV3Coroutine, pipeConnectionRejectsSimultaneousReadSome) {
+  if (!local_pipe_is_permitted()) {
+    GTEST_SKIP() << "local pipe bind is not permitted in this environment";
+  }
+  connected_pipe_pair pair;
+  pair.connect();
+
+  std::array<std::byte, 8> first_buffer{};
+  std::array<std::byte, 8> second_buffer{};
+  bool first_saw_eof = false;
+  int second_status = 0;
+  auto first = [&]() -> uv::co::task<void> {
+    first_saw_eof = (co_await pair.client->read_some(first_buffer)).eof();
+    pair.loop.stop();
+  };
+  auto second = [&]() -> uv::co::task<void> {
+    try {
+      (void)co_await pair.client->read_some(second_buffer);
+    } catch (const uv::error &error) {
+      second_status = error.code().value();
+    }
+  };
+
+  auto first_execution = uv::co::spawn(pair.loop, first());
+  auto second_execution = uv::co::spawn(pair.loop, second());
+  pair.peer->close();
+  pair.loop.run();
+
+  EXPECT_NO_THROW(first_execution.rethrow_if_failed());
+  EXPECT_NO_THROW(second_execution.rethrow_if_failed());
+  EXPECT_TRUE(first_saw_eof);
+  EXPECT_EQ(second_status, UV_EBUSY);
+  pair.close();
+}
+
+TEST(UvppV3Coroutine, taskScopeStopCancelsPipeReadAndReleasesItsSlots) {
+  if (!local_pipe_is_permitted()) {
+    GTEST_SKIP() << "local pipe bind is not permitted in this environment";
+  }
+  connected_pipe_pair pair;
+  pair.connect();
+
+  uv::co::task_scope scope(pair.loop);
+  std::array<std::byte, 8> first_buffer{};
+  std::array<std::byte, 8> second_buffer{};
+  bool canceled = false;
+  bool second_saw_eof = false;
+  auto reader = [&]() -> uv::co::task<void> {
+    try {
+      (void)co_await pair.client->read_some(first_buffer);
+    } catch (const uv::error &error) {
+      canceled = error.code().value() == UV_ECANCELED;
+    }
+  };
+  auto parent = [&]() -> uv::co::task<void> {
+    scope.spawn(reader());
+    scope.request_stop();
+    co_await scope.join();
+    pair.peer->close();
+    second_saw_eof = (co_await pair.client->read_some(second_buffer)).eof();
+    pair.loop.stop();
+  };
+
+  auto execution = uv::co::spawn(pair.loop, parent());
+  pair.loop.run();
+
+  EXPECT_NO_THROW(execution.rethrow_if_failed());
+  EXPECT_TRUE(canceled);
+  EXPECT_TRUE(second_saw_eof);
+  pair.close();
+}
+
+TEST(UvppV3Coroutine, pipeConnectionRejectsSimultaneousWrite) {
+  if (!local_pipe_is_permitted()) {
+    GTEST_SKIP() << "local pipe bind is not permitted in this environment";
+  }
+  connected_pipe_pair pair;
+  pair.connect();
+
+  std::string first_data{"first"};
+  std::string second_data{"second"};
+  bool first_completed = false;
+  int second_status = 0;
+  auto first = [&]() -> uv::co::task<void> {
+    co_await pair.client->write(first_data);
+    first_completed = true;
+    pair.loop.stop();
+  };
+  auto second = [&]() -> uv::co::task<void> {
+    try {
+      co_await pair.client->write(second_data);
+    } catch (const uv::error &error) {
+      second_status = error.code().value();
+    }
+  };
+
+  auto first_execution = uv::co::spawn(pair.loop, first());
+  auto second_execution = uv::co::spawn(pair.loop, second());
+  pair.loop.run();
+
+  EXPECT_NO_THROW(first_execution.rethrow_if_failed());
+  EXPECT_NO_THROW(second_execution.rethrow_if_failed());
+  EXPECT_TRUE(first_completed);
+  EXPECT_EQ(second_status, UV_EBUSY);
+  pair.close();
+}
+
+TEST(UvppV3Coroutine, pipeConnectionReportsConnectCompletionFailure) {
+  const auto path = v3_pipe_path() + "-missing";
+  std::filesystem::remove(path);
+  uv::loop loop;
+  int status = 0;
+  auto connect = [&]() -> uv::co::task<void> {
+    try {
+      (void)co_await uv::pipe_connection::connect(path);
+    } catch (const uv::error &error) {
+      status = error.code().value();
+    }
+  };
+
+  auto execution = uv::co::spawn(loop, connect());
+  loop.run();
+
+  EXPECT_NO_THROW(execution.rethrow_if_failed());
+  EXPECT_LT(status, 0);
+  EXPECT_NO_THROW(loop.close());
+  std::filesystem::remove(path);
+}
+
+TEST(UvppV3Coroutine, internalPipeCloseCompletionJoinsAndChecksAffinity) {
+  if (!local_pipe_is_permitted()) {
+    GTEST_SKIP() << "local pipe bind is not permitted in this environment";
+  }
+  connected_pipe_pair pair;
+  pair.connect();
+
+  uv::loop other_loop;
+  bool wrong_loop_rejected = false;
+  bool first_resumed = false;
+  bool second_resumed = false;
+  bool post_close_joined = false;
+  bool first_initiated = false;
+  bool second_initiated = false;
+  auto wrong_loop = [&]() -> uv::co::task<void> {
+    try {
+      co_await uv::detail::close_completion(*pair.client);
+    } catch (const std::logic_error &) {
+      wrong_loop_rejected = true;
+    }
+  };
+  auto first = [&]() -> uv::co::task<void> {
+    auto close = uv::detail::close_completion(*pair.client);
+    co_await close;
+    first_initiated = close.initiated_close();
+    first_resumed = true;
+    auto after_close = uv::detail::close_completion(*pair.client);
+    co_await after_close;
+    post_close_joined = !after_close.initiated_close();
+    pair.loop.stop();
+  };
+  auto second = [&]() -> uv::co::task<void> {
+    auto close = uv::detail::close_completion(*pair.client);
+    co_await close;
+    second_initiated = close.initiated_close();
+    second_resumed = true;
+  };
+
+  auto wrong_execution = uv::co::spawn(other_loop, wrong_loop());
+  EXPECT_TRUE(wrong_execution.done());
+  EXPECT_NO_THROW(wrong_execution.rethrow_if_failed());
+  EXPECT_TRUE(wrong_loop_rejected);
+  other_loop.close();
+
+  auto first_execution = uv::co::spawn(pair.loop, first());
+  auto second_execution = uv::co::spawn(pair.loop, second());
+  pair.loop.run();
+
+  EXPECT_NO_THROW(first_execution.rethrow_if_failed());
+  EXPECT_NO_THROW(second_execution.rethrow_if_failed());
+  EXPECT_TRUE(first_initiated);
+  EXPECT_FALSE(second_initiated);
+  EXPECT_TRUE(first_resumed);
+  EXPECT_TRUE(second_resumed);
+  EXPECT_TRUE(post_close_joined);
   pair.close();
 }
 

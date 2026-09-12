@@ -97,6 +97,12 @@ with the listener into one resource scope, arm one final accept, then let
 exactly-once `UV_ECANCELED` delivery and clean loop teardown. Loopback restrictions
 produce an explicit test skip rather than a false network failure.
 
+The coroutine suite also covers local-pipe connect failure and, where local pipe
+bind is permitted, an outgoing pipe stream exchange, borrowed read/write slot
+exclusivity, cancellation slot release, cross-loop rejection, and scoped close
+completion. Sandboxes that prohibit Unix-domain pipe binding report these
+transport tests as explicit skips.
+
 `make measure-cleanup` builds and runs a dependency-free benchmark for repeated
 multi-connection `resource_scope::finish()` calls. It reports C++ allocations made
 while `finish()` is active (explicitly excluding libuv C allocations) and cleanup

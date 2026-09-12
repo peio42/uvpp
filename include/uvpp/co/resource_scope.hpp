@@ -10,15 +10,16 @@
 #include <vector>
 
 #include "uvpp/co/task.hpp"
+#include "uvpp/net/pipe_connection.hpp"
 #include "uvpp/net/tcp_connection.hpp"
 #include "uvpp/net/tcp_listener.hpp"
 #include "uvpp/net/udp_socket.hpp"
 
 namespace uv::co {
 
-// Experimental resource owner for TCP and UDP owners on one loop. It
+// Experimental resource owner for TCP, pipe, and UDP owners on one loop. It
 // deliberately owns no task frames: compose it with task_scope, join those tasks
-// first, then co_await finish() to close and release every adopted TCP owner.
+// first, then co_await finish() to close and release every adopted owner.
 class [[nodiscard]] resource_scope {
 public:
   explicit resource_scope(uv::loop &execution_loop) noexcept : loop_{&execution_loop} {}
@@ -94,6 +95,22 @@ public:
     friend class resource_scope;
   };
 
+  class [[nodiscard]] pipe_connection_registration {
+  public:
+    [[nodiscard]] pipe_connection_view view() const noexcept {
+      return uv::detail::make_pipe_connection_view(access_);
+    }
+
+  private:
+    explicit pipe_connection_registration(
+        std::shared_ptr<uv::detail::pipe_connection_access> access) noexcept
+      : access_{std::move(access)} {}
+
+    std::shared_ptr<uv::detail::pipe_connection_access> access_{};
+
+    friend class resource_scope;
+  };
+
   // Transfers the sole tcp_connection owner into the scope. Reserving and
   // creating its access token before the move give allocation failure a strong
   // rollback: caller ownership has not yet changed.
@@ -147,6 +164,26 @@ public:
     return udp_socket_registration{std::move(access)};
   }
 
+  // Pipe connections follow the same ownership rule as TCP connections: a
+  // task receives only a borrowed view and must settle borrowed stream I/O
+  // before this scope can start close completion.
+  [[nodiscard]] pipe_connection_registration own(pipe_connection &&connection) {
+    if (finish_started_) {
+      throw std::logic_error{"uv::co::resource_scope cannot own after finish"};
+    }
+    if (!connection.has_execution_loop(*loop_)) {
+      throw std::logic_error{
+          "uv::co::resource_scope registered a pipe connection from a different loop"};
+    }
+
+    resources_.reserve(resources_.size() + 1);
+    auto access = std::make_shared<uv::detail::pipe_connection_access>();
+    auto resource = std::make_unique<pipe_connection_record>(std::move(connection), access);
+    access->connection = resource->connection.get();
+    resources_.push_back(std::move(resource));
+    return pipe_connection_registration{std::move(access)};
+  }
+
   // finish() is deliberately a task rather than a public socket close API. It
   // serializes internal close completion and destroys each owner only after its
   // actual uv_close callback has released all close callback ownership.
@@ -160,11 +197,11 @@ public:
 
 private:
   // Ordering is a scope policy, not a claim that every resource shares one
-  // cleanup protocol. A listener is first quiesced/closed so it cannot admit
-  // new dependents; established TCP and UDP owners close afterwards.
+  // cleanup protocol. A listener first stops admission so it cannot admit new
+  // dependents; established TCP and UDP owners close afterwards.
   enum class cleanup_phase {
-    quiesce_sources,
-    close_dependents,
+    stop_admission,
+    close_resources,
   };
 
   class resource_record_base {
@@ -183,7 +220,7 @@ private:
         access{std::move(access_token)} {}
 
     cleanup_phase phase() const noexcept override {
-      return cleanup_phase::close_dependents;
+      return cleanup_phase::close_resources;
     }
 
     task<void> finish() override {
@@ -213,7 +250,7 @@ private:
         access{std::move(access_token)} {}
 
     cleanup_phase phase() const noexcept override {
-      return cleanup_phase::quiesce_sources;
+      return cleanup_phase::stop_admission;
     }
 
     task<void> finish() override {
@@ -230,6 +267,33 @@ private:
     std::shared_ptr<uv::detail::tcp_listener_access> access{};
   };
 
+  class pipe_connection_record final : public resource_record_base {
+  public:
+    pipe_connection_record(pipe_connection &&owned,
+        std::shared_ptr<uv::detail::pipe_connection_access> access_token)
+      : connection{std::make_unique<pipe_connection>(std::move(owned))},
+        access{std::move(access_token)} {}
+
+    cleanup_phase phase() const noexcept override {
+      return cleanup_phase::close_resources;
+    }
+
+    task<void> finish() override {
+      if (connection->has_active_operation()) {
+        throw std::logic_error{
+            "uv::co::resource_scope requires task join before pipe cleanup"};
+      }
+      co_await uv::detail::close_completion(*connection);
+      access->connection = nullptr;
+      connection.reset();
+    }
+
+    std::unique_ptr<pipe_connection> connection{};
+
+  private:
+    std::shared_ptr<uv::detail::pipe_connection_access> access{};
+  };
+
   class udp_socket_record final : public resource_record_base {
   public:
     udp_socket_record(udp_socket &&owned,
@@ -237,7 +301,7 @@ private:
       : socket{std::make_unique<udp_socket>(std::move(owned))},
         access{std::move(access_token)} {}
 
-    cleanup_phase phase() const noexcept override { return cleanup_phase::close_dependents; }
+    cleanup_phase phase() const noexcept override { return cleanup_phase::close_resources; }
 
     task<void> finish() override {
       if (socket->has_active_operation()) {
@@ -278,11 +342,11 @@ private:
 
   task<void> finish_impl() {
     co_await loop_check_awaiter{*this};
-    // Current TCP cleanup is serial by policy. The records decide their own
-    // lifecycle semantics; this loop decides only the phase ordering.
+    // Current resource cleanup is serial by policy. The records decide their
+    // own lifecycle semantics; this loop decides only the phase ordering.
     static constexpr std::array cleanup_order{
-        cleanup_phase::quiesce_sources,
-        cleanup_phase::close_dependents,
+        cleanup_phase::stop_admission,
+        cleanup_phase::close_resources,
     };
     for (const auto phase : cleanup_order) {
       for (auto &resource : resources_) {

@@ -112,6 +112,12 @@ caller storage until a terminal data, EOF, or error notification. It returns a
 count plus EOF flag; errors throw at the await. It is one-shot rather than a
 persistent subscription and supports one active reader per connection.
 
+The experimental `uv::pipe_connection` uses the same stream borrowing contract:
+`write()` borrows characters through `uv_write` completion, while one-shot
+`read_some()` borrows mutable storage until data, EOF, error, or cancellation has
+quiesced `uv_read_start` and released its callback slots. It supports one reader
+and one writer per connection; submitted writes are not physically cancellable.
+
 The experimental `uv::udp_socket::send_to()` likewise borrows its payload until
 actual send completion; a stop already requested rejects submission, while an
 in-flight send remains non-cancellable and retains the borrow. `recv_from()` is

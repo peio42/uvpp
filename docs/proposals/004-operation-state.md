@@ -97,6 +97,12 @@ prevents later read callbacks; its non-zero TTY/Windows return is not a failure,
 so it does not alter this TCP-only terminal protocol. The next `read_some` may
 therefore be started by resumed code without an old callback clearing its claim.
 
+The experimental pipe connection follows this same one-shot stream protocol:
+`read_some()` calls `uv_read_stop()`, releases allocation/read and cancellation
+claims, then resumes. Its borrowed `write()` has one exclusive request slot and
+releases that slot only from the completion callback. Its separate close state
+machine also snapshots joined close waiters before the first user resumption.
+
 The TCP listener slice treats `uv_listen` as a persistent native source with one
 exclusive high-level accept waiter. On a connection notification it first releases
 that waiter claim, then calls `uv_accept` into separately stable connection storage.

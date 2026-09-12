@@ -94,7 +94,7 @@ has completed. Coroutine waiters are copied into state-owned continuation storag
 at suspension time, so the `noexcept` close callback neither allocates nor follows
 linkage in another coroutine frame after its first user resumption. Failed connects
 and untransferred accepted connections use a state-owned fixed callback slot for
-the same no-allocation callback path. The first TCP-only `resource_scope` now
+the same no-allocation callback path. The first `resource_scope` now
 adopts connections and listeners, hands tasks a non-owning `tcp_connection_view`,
 and awaits internal close completion before destroying owner storage. It rejects
 cross-loop adoption and requires task join before cleanup while borrowed I/O is
@@ -118,6 +118,17 @@ one-shot `recv_from()` borrows caller storage, copies the peer address into its
 result, stops native receive, releases its callback/cancellation slots, then
 resumes. Active UDP send/receive destruction remains an explicit contract
 violation, and resource-scope cleanup rejects it until task work has joined.
+
+The experimental `uv::pipe_connection` applies the same stable-owner protocol to
+one outgoing local pipe connection. `connect(name, ipc)` copies the name into
+the awaiter, preserves its address-stable `uv_pipe_t` state through completion
+failure cleanup, and distinguishes an immediate `uv_pipe_connect2()` submission
+error where that libuv API is available. Its one-shot `read_some()` and `write()`
+borrow caller buffers through native completion, reject concurrent readers or
+writers, and check task-loop affinity. The `ipc` initialization mode is exposed,
+but handle transfer and a high-level pipe listener remain separate work. A
+`resource_scope` can adopt the owner and exposes only `pipe_connection_view` to
+tasks; active borrowed stream I/O must have joined before cleanup starts.
 
 The experimental tests use death tests to verify that active connection read/write
 and active listener accept destruction terminate deterministically rather than
