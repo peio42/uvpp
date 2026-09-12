@@ -102,8 +102,8 @@ of its siblings, then the scope joins all children and rethrows that first failu
 It does not join native resource close completion or retain external borrowed data
 beyond the child task contract.
 
-The first stop-aware adapters are timer sleep, TCP and pipe one-shot read, TCP
-accept, and UDP one-shot receive. They quiesce their native source, release
+The first stop-aware adapters are timer sleep, TCP and pipe one-shot read/accept,
+and UDP one-shot receive. They quiesce their native source, release
 callback claims, and deliver `UV_ECANCELED`. Submitted TCP/pipe write and connect
 cannot be physically cancelled in this slice: a prior stop rejects their
 submission, but an in-flight operation remains alive through actual completion.

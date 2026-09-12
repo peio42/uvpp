@@ -24,6 +24,7 @@ namespace uv {
 
 class pipe_connection;
 class pipe_connection_view;
+class pipe_listener;
 
 namespace detail {
 
@@ -50,6 +51,7 @@ struct pipe_connection_state {
   std::coroutine_handle<> connect_continuation{};
   std::unique_ptr<pipe_connection_state> *provisional_owner = nullptr;
   int *connect_status_destination = nullptr;
+  bool *close_completion_destination = nullptr;
   int connect_status = 0;
   pipe_close_phase close_phase = pipe_close_phase::open;
   std::vector<std::coroutine_handle<>> close_waiters{};
@@ -132,6 +134,10 @@ struct pipe_connection_state {
     auto &self = from_handle(raw);
     self.close_phase = pipe_close_phase::closed;
     self.close_callback_active = true;
+    if (self.close_completion_destination != nullptr) {
+      *self.close_completion_destination = true;
+      self.close_completion_destination = nullptr;
+    }
     auto callback_waiter = std::exchange(self.callback_close_waiter, {});
     // Detach every frame-facing continuation before the first user resumption.
     // The local vector owns only handles, so a resumed task cannot invalidate
@@ -521,6 +527,7 @@ private:
   std::unique_ptr<detail::pipe_connection_state> state_{};
 
   friend class pipe_connection_view;
+  friend class pipe_listener;
   friend detail::pipe_close_completion detail::close_completion(pipe_connection &) noexcept;
 };
 

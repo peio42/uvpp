@@ -126,9 +126,14 @@ failure cleanup, and distinguishes an immediate `uv_pipe_connect2()` submission
 error where that libuv API is available. Its one-shot `read_some()` and `write()`
 borrow caller buffers through native completion, reject concurrent readers or
 writers, and check task-loop affinity. The `ipc` initialization mode is exposed,
-but handle transfer and a high-level pipe listener remain separate work. A
+but handle transfer remains separate work. `uv::pipe_listener` binds one local
+name, owns a separate stable listener state, and transfers each one-shot
+`accept()` into an independent `pipe_connection`. Its internal close primitive
+quiesces a pending accept, closes the provisional child before `UV_ECANCELED`
+delivery, then waits for listener close completion. A
 `resource_scope` can adopt the owner and exposes only `pipe_connection_view` to
-tasks; active borrowed stream I/O must have joined before cleanup starts.
+tasks; it can also own a `pipe_listener` and safely quiesce its one-shot accept.
+Active borrowed stream I/O must have joined before cleanup starts.
 
 The experimental tests use death tests to verify that active connection read/write
 and active listener accept destruction terminate deterministically rather than

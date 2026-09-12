@@ -16,6 +16,7 @@
 #include "uvpp/handles/pipe.hpp"
 #include "uvpp/handles/tcp.hpp"
 #include "uvpp/net/pipe_connection.hpp"
+#include "uvpp/net/pipe_listener.hpp"
 #include "uvpp/net/tcp_connection.hpp"
 #include "uvpp/net/tcp_listener.hpp"
 
@@ -1870,6 +1871,187 @@ TEST(UvppV3Coroutine, internalPipeCloseCompletionJoinsAndChecksAffinity) {
   pair.close();
 }
 
+TEST(UvppV3Coroutine, pipeListenerAcceptsIntoAnIndependentMovableConnectionOwner) {
+  if (!local_pipe_is_permitted()) {
+    GTEST_SKIP() << "local pipe bind is not permitted in this environment";
+  }
+  const auto path = v3_pipe_path() + "-listener-move";
+  std::filesystem::remove(path);
+  uv::loop loop;
+  uv::pipe_listener listener(loop, path);
+  bool accepted = false;
+  bool accepted_owner_was_stable = false;
+  bool client_connected = false;
+
+  auto server = [&]() -> uv::co::task<void> {
+    auto connection = co_await listener.accept();
+    auto *before_move = connection.native_handle();
+    auto moved = std::move(connection);
+    accepted_owner_was_stable = moved.native_handle() == before_move;
+    accepted = true;
+    listener.close();
+  };
+  auto client = [&]() -> uv::co::task<void> {
+    auto connection = co_await uv::pipe_connection::connect(path);
+    client_connected = connection.native_handle() != nullptr;
+  };
+
+  auto server_execution = uv::co::spawn(loop, server());
+  auto client_execution = uv::co::spawn(loop, client());
+  loop.run();
+
+  EXPECT_NO_THROW(server_execution.rethrow_if_failed());
+  EXPECT_NO_THROW(client_execution.rethrow_if_failed());
+  EXPECT_TRUE(accepted);
+  EXPECT_TRUE(accepted_owner_was_stable);
+  EXPECT_TRUE(client_connected);
+  EXPECT_NO_THROW(loop.close());
+  std::filesystem::remove(path);
+}
+
+TEST(UvppV3Coroutine, pipeListenerRejectsSecondConcurrentAccept) {
+  if (!local_pipe_is_permitted()) {
+    GTEST_SKIP() << "local pipe bind is not permitted in this environment";
+  }
+  const auto path = v3_pipe_path() + "-listener-busy";
+  std::filesystem::remove(path);
+  uv::loop loop;
+  uv::pipe_listener listener(loop, path);
+  bool first_accepted = false;
+  int second_status = 0;
+  auto first = [&]() -> uv::co::task<void> {
+    auto connection = co_await listener.accept();
+    first_accepted = connection.native_handle() != nullptr;
+    listener.close();
+  };
+  auto second = [&]() -> uv::co::task<void> {
+    try {
+      (void)co_await listener.accept();
+    } catch (const uv::error &error) {
+      second_status = error.code().value();
+    }
+  };
+  auto client = [&]() -> uv::co::task<void> {
+    auto connection = co_await uv::pipe_connection::connect(path);
+    (void)connection;
+  };
+
+  auto first_execution = uv::co::spawn(loop, first());
+  auto second_execution = uv::co::spawn(loop, second());
+  auto client_execution = uv::co::spawn(loop, client());
+  loop.run();
+
+  EXPECT_NO_THROW(first_execution.rethrow_if_failed());
+  EXPECT_NO_THROW(second_execution.rethrow_if_failed());
+  EXPECT_NO_THROW(client_execution.rethrow_if_failed());
+  EXPECT_TRUE(first_accepted);
+  EXPECT_EQ(second_status, UV_EBUSY);
+  EXPECT_NO_THROW(loop.close());
+  std::filesystem::remove(path);
+}
+
+TEST(UvppV3Coroutine, pipeListenerRejectsAcceptFromAnotherLoop) {
+  if (!local_pipe_is_permitted()) {
+    GTEST_SKIP() << "local pipe bind is not permitted in this environment";
+  }
+  const auto path = v3_pipe_path() + "-listener-affinity";
+  std::filesystem::remove(path);
+  uv::loop listener_loop;
+  uv::pipe_listener listener(listener_loop, path);
+  uv::loop other_loop;
+  bool rejected = false;
+  auto cross_loop_accept = [&]() -> uv::co::task<void> {
+    try {
+      (void)co_await listener.accept();
+    } catch (const std::logic_error &) {
+      rejected = true;
+    }
+  };
+
+  auto execution = uv::co::spawn(other_loop, cross_loop_accept());
+  EXPECT_TRUE(execution.done());
+  EXPECT_NO_THROW(execution.rethrow_if_failed());
+  EXPECT_TRUE(rejected);
+
+  other_loop.close();
+  listener.close();
+  listener_loop.run();
+  EXPECT_NO_THROW(listener_loop.close());
+  std::filesystem::remove(path);
+}
+
+TEST(UvppV3Coroutine, taskScopeStopCancelsPipeAcceptBeforeResumption) {
+  if (!local_pipe_is_permitted()) {
+    GTEST_SKIP() << "local pipe bind is not permitted in this environment";
+  }
+  const auto path = v3_pipe_path() + "-listener-cancel";
+  std::filesystem::remove(path);
+  uv::loop loop;
+  uv::pipe_listener listener(loop, path);
+  uv::co::task_scope scope(loop);
+  bool canceled = false;
+  auto accepter = [&]() -> uv::co::task<void> {
+    try {
+      (void)co_await listener.accept();
+    } catch (const uv::error &error) {
+      canceled = error.code().value() == UV_ECANCELED;
+    }
+  };
+  auto parent = [&]() -> uv::co::task<void> {
+    scope.spawn(accepter());
+    scope.request_stop();
+    co_await scope.join();
+    listener.close();
+  };
+
+  auto execution = uv::co::spawn(loop, parent());
+  loop.run();
+
+  EXPECT_NO_THROW(execution.rethrow_if_failed());
+  EXPECT_TRUE(canceled);
+  EXPECT_NO_THROW(loop.close());
+  std::filesystem::remove(path);
+}
+
+TEST(UvppV3Coroutine, resourceScopeQuiescesPendingPipeAcceptBeforeListenerClose) {
+  if (!local_pipe_is_permitted()) {
+    GTEST_SKIP() << "local pipe bind is not permitted in this environment";
+  }
+  const auto path = v3_pipe_path() + "-listener-scope-close";
+  std::filesystem::remove(path);
+  uv::loop loop;
+  uv::co::task_scope tasks(loop);
+  uv::co::resource_scope resources(loop);
+  int deliveries = 0;
+  bool canceled = false;
+  bool cleanup_completed = false;
+  auto parent = [&]() -> uv::co::task<void> {
+    auto listener = resources.own(uv::pipe_listener{loop, path});
+    auto accept = [&]() -> uv::co::task<void> {
+      try {
+        (void)co_await listener.accept();
+      } catch (const uv::error &error) {
+        ++deliveries;
+        canceled = error.code().value() == UV_ECANCELED;
+      }
+    };
+    tasks.spawn(accept());
+    co_await resources.finish();
+    cleanup_completed = true;
+    co_await tasks.join();
+  };
+
+  auto execution = uv::co::spawn(loop, parent());
+  loop.run();
+
+  EXPECT_NO_THROW(execution.rethrow_if_failed());
+  EXPECT_EQ(deliveries, 1);
+  EXPECT_TRUE(canceled);
+  EXPECT_TRUE(cleanup_completed);
+  EXPECT_NO_THROW(loop.close());
+  std::filesystem::remove(path);
+}
+
 TEST(UvppV3Coroutine, tcpListenerRejectsSecondConcurrentAccept) {
   uv::loop loop;
   std::unique_ptr<uv::tcp_listener> listener;
@@ -2093,6 +2275,27 @@ TEST(UvppV3CoroutineDeathTest, tcpConnectionDestructionWithActiveReadTerminates)
     auto execution = uv::co::spawn(pair.loop, reader());
     pair.client.reset();
   }()), "");
+}
+
+TEST(UvppV3CoroutineDeathTest, pipeListenerCloseWithActiveAcceptTerminates) {
+  if (!local_pipe_is_permitted()) {
+    GTEST_SKIP() << "local pipe bind is not permitted in this environment";
+  }
+  const auto path = v3_pipe_path() + "-listener-death";
+  std::filesystem::remove(path);
+
+  EXPECT_DEATH(([&] {
+    uv::loop loop;
+    uv::pipe_listener listener(loop, path);
+    auto accept = [&]() -> uv::co::task<void> {
+      (void)co_await listener.accept();
+    };
+    auto execution = uv::co::spawn(loop, accept());
+    (void)execution;
+    listener.close();
+  }()), "");
+
+  std::filesystem::remove(path);
 }
 
 TEST(UvppV3CoroutineDeathTest, taskScopeDestructionWithoutJoinTerminates) {

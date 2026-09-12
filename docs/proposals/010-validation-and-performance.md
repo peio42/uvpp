@@ -100,7 +100,9 @@ produce an explicit test skip rather than a false network failure.
 The coroutine suite also covers local-pipe connect failure and, where local pipe
 bind is permitted, an outgoing pipe stream exchange, borrowed read/write slot
 exclusivity, cancellation slot release, cross-loop rejection, and scoped close
-completion. Sandboxes that prohibit Unix-domain pipe binding report these
+completion. Pipe-listener tests cover stable accepted-owner transfer, concurrent
+accept exclusion, pending-accept cancellation, scope shutdown, and the direct
+close violation. Sandboxes that prohibit Unix-domain pipe binding report these
 transport tests as explicit skips.
 
 `make measure-cleanup` builds and runs a dependency-free benchmark for repeated

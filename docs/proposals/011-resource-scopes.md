@@ -64,7 +64,8 @@ uv::co::task<void> serve(uv::loop &loop, uv::ipv4 address) {
 The current TCP/pipe/UDP prototype uses these spellings. `own(tcp_connection&&)`
 returns a scope-bound registration whose `.view()` produces `tcp_connection_view`;
 `own(tcp_listener&&)` returns a non-owning listener registration exposing
-`accept()`, and `own(pipe_connection&&)`/`own(udp_socket&&)` return equivalent
+`accept()`, `own(pipe_listener&&)` does the same for local pipes, and
+`own(pipe_connection&&)`/`own(udp_socket&&)` return equivalent
 borrowed-view registrations. Neither registration owns its adopted resource. Invoking `finish()`
 consumes the scope's registration phase even before its returned cold task starts.
 The current TCP/pipe/UDP `finish()` serializes listener then dependent-owner close
@@ -104,14 +105,14 @@ been designed and validated.
 
 TCP connections, pipe connections, and UDP sockets prototype the required `open → closing → closed` primitive
 with joined close waiters, affinity checks, and terminal slot release before waiter
-resumption. The first `resource_scope` adopts TCP connections/listeners, pipe connections, and UDP sockets and
+resumption. The first `resource_scope` adopts TCP connections/listeners, pipe connections/listeners, and UDP sockets and
 rejects either owner from another loop. Listener close uses the same state machine:
 it cancels/quiesces a pending accept, releases its slots, and only then starts
 native close. The scope deliberately has no task ownership: callers must join
 their `task_scope` before `finish()` for connection I/O. As an experimental guard,
 `finish()` rejects an adopted connection with an active borrowed read or write;
 it does not yet coordinate cleanup of such work itself. In contrast, `finish()`
-does coordinate an active listener accept as described above.
+does coordinate an active TCP or pipe listener accept as described above.
 
 Internally, the scope stores resource records behind a narrow private interface
 and runs them in cleanup phases (`stop_admission`, then `close_resources`).

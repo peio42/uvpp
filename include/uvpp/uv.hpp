@@ -15,6 +15,7 @@
 #include "uvpp/net/buffer.hpp"
 #include "uvpp/net/interface.hpp"
 #include "uvpp/net/pipe_connection.hpp"
+#include "uvpp/net/pipe_listener.hpp"
 #include "uvpp/net/socket_address.hpp"
 #include "uvpp/requests/connect.hpp"
 #include "uvpp/requests/dns.hpp"

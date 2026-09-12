@@ -11,6 +11,7 @@
 
 #include "uvpp/co/task.hpp"
 #include "uvpp/net/pipe_connection.hpp"
+#include "uvpp/net/pipe_listener.hpp"
 #include "uvpp/net/tcp_connection.hpp"
 #include "uvpp/net/tcp_listener.hpp"
 #include "uvpp/net/udp_socket.hpp"
@@ -111,6 +112,29 @@ public:
     friend class resource_scope;
   };
 
+  class [[nodiscard]] pipe_listener_registration {
+  public:
+    [[nodiscard]] pipe_listener::accept_awaiter accept() const {
+      return listener().accept();
+    }
+
+  private:
+    explicit pipe_listener_registration(
+        std::shared_ptr<uv::detail::pipe_listener_access> access) noexcept
+      : access_{std::move(access)} {}
+
+    pipe_listener &listener() const {
+      if (!access_ || access_->listener == nullptr) {
+        throw std::logic_error{"uv::pipe_listener registration used after resource cleanup"};
+      }
+      return *access_->listener;
+    }
+
+    std::shared_ptr<uv::detail::pipe_listener_access> access_{};
+
+    friend class resource_scope;
+  };
+
   // Transfers the sole tcp_connection owner into the scope. Reserving and
   // creating its access token before the move give allocation failure a strong
   // rollback: caller ownership has not yet changed.
@@ -184,6 +208,25 @@ public:
     return pipe_connection_registration{std::move(access)};
   }
 
+  // The listener registration retains no owner and exposes only one-shot
+  // accept(). resource_scope may quiesce that accept during finish().
+  [[nodiscard]] pipe_listener_registration own(pipe_listener &&listener) {
+    if (finish_started_) {
+      throw std::logic_error{"uv::co::resource_scope cannot own after finish"};
+    }
+    if (!listener.has_execution_loop(*loop_)) {
+      throw std::logic_error{
+          "uv::co::resource_scope registered a pipe listener from a different loop"};
+    }
+
+    resources_.reserve(resources_.size() + 1);
+    auto access = std::make_shared<uv::detail::pipe_listener_access>();
+    auto resource = std::make_unique<pipe_listener_record>(std::move(listener), access);
+    access->listener = resource->listener.get();
+    resources_.push_back(std::move(resource));
+    return pipe_listener_registration{std::move(access)};
+  }
+
   // finish() is deliberately a task rather than a public socket close API. It
   // serializes internal close completion and destroys each owner only after its
   // actual uv_close callback has released all close callback ownership.
@@ -198,7 +241,7 @@ public:
 private:
   // Ordering is a scope policy, not a claim that every resource shares one
   // cleanup protocol. A listener first stops admission so it cannot admit new
-  // dependents; established TCP and UDP owners close afterwards.
+  // dependents; established TCP, pipe, and UDP owners close afterwards.
   enum class cleanup_phase {
     stop_admission,
     close_resources,
@@ -292,6 +335,30 @@ private:
 
   private:
     std::shared_ptr<uv::detail::pipe_connection_access> access{};
+  };
+
+  class pipe_listener_record final : public resource_record_base {
+  public:
+    pipe_listener_record(pipe_listener &&owned,
+        std::shared_ptr<uv::detail::pipe_listener_access> access_token)
+      : listener{std::make_unique<pipe_listener>(std::move(owned))},
+        access{std::move(access_token)} {}
+
+    cleanup_phase phase() const noexcept override {
+      return cleanup_phase::stop_admission;
+    }
+
+    task<void> finish() override {
+      // This family safely quiesces its one-shot accept before native close.
+      co_await uv::detail::close_completion(*listener);
+      access->listener = nullptr;
+      listener.reset();
+    }
+
+    std::unique_ptr<pipe_listener> listener{};
+
+  private:
+    std::shared_ptr<uv::detail::pipe_listener_access> access{};
   };
 
   class udp_socket_record final : public resource_record_base {
