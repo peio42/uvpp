@@ -17,6 +17,7 @@
 
 #include "uvpp/co/task.hpp"
 #include "uvpp/core/error.hpp"
+#include "uvpp/detail/async_close_state.hpp"
 #include "uvpp/net/address.hpp"
 #include "uvpp/net/buffer.hpp"
 #include "uvpp/net/socket_address.hpp"
@@ -28,8 +29,6 @@ class udp_socket_view;
 
 namespace detail {
 
-enum class udp_close_phase { open, closing, closed };
-
 struct udp_socket_access { udp_socket *socket = nullptr; };
 [[nodiscard]] udp_socket_view make_udp_socket_view(
     std::shared_ptr<udp_socket_access>) noexcept;
@@ -37,11 +36,7 @@ struct udp_socket_access { udp_socket *socket = nullptr; };
 struct udp_socket_state {
   uv_udp_t udp{};
   uv::loop *loop = nullptr;
-  udp_close_phase close_phase = udp_close_phase::open;
-  std::vector<std::coroutine_handle<>> close_waiters{};
-  std::coroutine_handle<> callback_close_waiter{};
-  bool owner_released = false;
-  bool close_callback_active = false;
+  async_close_state close{};
   bool send_active = false;
   void *active_receive = nullptr;
 
@@ -49,38 +44,23 @@ struct udp_socket_state {
     auto *bytes = reinterpret_cast<char *>(raw);
     return *reinterpret_cast<udp_socket_state *>(bytes - offsetof(udp_socket_state, udp));
   }
-  bool closing() const noexcept { return close_phase != udp_close_phase::open; }
+  bool closing() const noexcept { return close.closing(); }
   bool request_close() noexcept {
-    if (close_phase != udp_close_phase::open) return false;
-    close_phase = udp_close_phase::closing;
+    if (!close.begin()) return false;
     uv_close(reinterpret_cast<uv_handle_t *>(&udp), &udp_socket_state::on_close);
     return true;
   }
-  bool request_close_and_join(std::coroutine_handle<> continuation) {
-    assert(close_phase != udp_close_phase::closed);
-    if (close_phase == udp_close_phase::closed) return false;
-    close_waiters.push_back(continuation);
-    return request_close();
-  }
   void release_owner() noexcept {
-    assert(!owner_released);
-    owner_released = true;
-    if (close_phase == udp_close_phase::open) {
+    close.owner_released();
+    if (close.open()) {
       (void)request_close();
-    } else if (close_phase == udp_close_phase::closed && !close_callback_active) {
+    } else if (close.can_destroy_now()) {
       delete this;
     }
   }
   static void on_close(uv_handle_t *raw) noexcept {
     auto &self = from_handle(raw);
-    self.close_phase = udp_close_phase::closed;
-    self.close_callback_active = true;
-    auto callback_waiter = std::exchange(self.callback_close_waiter, {});
-    auto waiters = std::move(self.close_waiters);
-    if (callback_waiter) callback_waiter.resume();
-    for (auto continuation : waiters) if (continuation) continuation.resume();
-    self.close_callback_active = false;
-    if (self.owner_released) delete &self;
+    self.close.complete([&self]() noexcept { delete &self; });
   }
 };
 
@@ -95,8 +75,9 @@ public:
     if (&continuation.promise().execution_loop() != state_->loop) {
       throw std::logic_error{"uv internal udp close used from a different loop"};
     }
-    if (state_->close_phase == udp_close_phase::closed) return false;
-    initiated_ = state_->request_close_and_join(continuation);
+    if (state_->close.closed()) return false;
+    if (!state_->close.add_waiter(continuation)) return false;
+    initiated_ = state_->request_close();
     return true;
   }
   void await_resume() { throw_if_error(status_); }

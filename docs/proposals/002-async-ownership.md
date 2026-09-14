@@ -53,6 +53,13 @@ ownership. Repeated cleanup requests on an owner may join the existing completio
 they must not submit another native close. Cancellation cannot undo close or
 release its storage early.
 
+The private `uv::detail::async_close_state` factors only this common bookkeeping:
+the `open → closing → closed` phase, joined coroutine waiters, the fixed
+callback-origin waiter, owner-release retention, and release-before-resume
+delivery. It does not store a native handle or call `uv_close()`. Each family
+retains its own `request_close()` transition, pre-close quiescence, and native
+close callback entry point.
+
 ## Implementation and costs
 
 Start with one explicit allocation for stable owned handle state. Avoid universal

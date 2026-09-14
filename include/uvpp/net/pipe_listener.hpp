@@ -17,6 +17,7 @@
 #include "uvpp/co/task.hpp"
 #include "uvpp/core/error.hpp"
 #include "uvpp/core/version.hpp"
+#include "uvpp/detail/async_close_state.hpp"
 #include "uvpp/net/pipe_connection.hpp"
 
 namespace uv {
@@ -24,12 +25,6 @@ namespace uv {
 class pipe_listener;
 
 namespace detail {
-
-enum class pipe_listener_close_phase {
-  open,
-  closing,
-  closed,
-};
 
 struct pipe_listener_access {
   pipe_listener *listener = nullptr;
@@ -45,11 +40,7 @@ struct pipe_listener_state {
   void (*deliver_accept)(void *, int) noexcept = nullptr;
   void (*cancel_accept)(void *) noexcept = nullptr;
   bool ipc = false;
-  pipe_listener_close_phase close_phase = pipe_listener_close_phase::open;
-  std::vector<std::coroutine_handle<>> close_waiters{};
-  std::coroutine_handle<> callback_close_waiter{};
-  bool owner_released = false;
-  bool close_callback_active = false;
+  async_close_state close{};
 
   static pipe_listener_state &from_handle(uv_handle_t *raw) noexcept {
     auto *bytes = reinterpret_cast<char *>(raw);
@@ -57,7 +48,7 @@ struct pipe_listener_state {
         bytes - offsetof(pipe_listener_state, pipe));
   }
 
-  bool closing() const noexcept { return close_phase != pipe_listener_close_phase::open; }
+  bool closing() const noexcept { return close.closing(); }
 
   // A listener owns the one-shot accept slot, so scope cleanup may quiesce it.
   // The awaiter closes its initialized, untransferred child before task delivery.
@@ -74,35 +65,24 @@ struct pipe_listener_state {
   }
 
   bool request_close() noexcept {
-    if (close_phase != pipe_listener_close_phase::open) {
+    if (!close.begin()) {
       return false;
     }
     quiesce_active_accept();
     assert(active_accept == nullptr);
     assert(deliver_accept == nullptr);
     assert(cancel_accept == nullptr);
-    close_phase = pipe_listener_close_phase::closing;
     uv_close(reinterpret_cast<uv_handle_t *>(&pipe), &pipe_listener_state::on_close);
     return true;
   }
 
-  bool request_close_and_join(std::coroutine_handle<> continuation) {
-    assert(close_phase != pipe_listener_close_phase::closed);
-    if (close_phase == pipe_listener_close_phase::closed) {
-      return false;
-    }
-    close_waiters.push_back(continuation);
-    return request_close();
-  }
-
   void release_owner() noexcept {
-    assert(!owner_released);
-    owner_released = true;
-    if (close_phase == pipe_listener_close_phase::open) {
+    close.owner_released();
+    if (close.open()) {
       (void)request_close();
       return;
     }
-    if (close_phase == pipe_listener_close_phase::closed && !close_callback_active) {
+    if (close.can_destroy_now()) {
       delete this;
     }
   }
@@ -111,7 +91,7 @@ struct pipe_listener_state {
     auto &self = from_handle(reinterpret_cast<uv_handle_t *>(raw));
     // A notification without an armed awaiter is deliberately ignored by this
     // one-shot slice. It neither accepts nor queues a connection.
-    if (self.close_phase != pipe_listener_close_phase::open) {
+    if (self.close.closing()) {
       return;
     }
     auto *accept = std::exchange(self.active_accept, nullptr);
@@ -124,23 +104,7 @@ struct pipe_listener_state {
 
   static void on_close(uv_handle_t *raw) noexcept {
     auto &self = from_handle(raw);
-    self.close_phase = pipe_listener_close_phase::closed;
-    self.close_callback_active = true;
-    auto callback_waiter = std::exchange(self.callback_close_waiter, {});
-    // Detach all frame-facing handles before the first user resumption.
-    auto waiters = std::move(self.close_waiters);
-    if (callback_waiter) {
-      callback_waiter.resume();
-    }
-    for (auto continuation : waiters) {
-      if (continuation) {
-        continuation.resume();
-      }
-    }
-    self.close_callback_active = false;
-    if (self.owner_released) {
-      delete &self;
-    }
+    self.close.complete([&self]() noexcept { delete &self; });
   }
 };
 
@@ -166,10 +130,13 @@ public:
     if (&continuation.promise().execution_loop() != state_->loop) {
       throw std::logic_error{"uv internal pipe listener close used from a different loop"};
     }
-    if (state_->close_phase == pipe_listener_close_phase::closed) {
+    if (state_->close.closed()) {
       return false;
     }
-    initiated_ = state_->request_close_and_join(continuation);
+    if (!state_->close.add_waiter(continuation)) {
+      return false;
+    }
+    initiated_ = state_->request_close();
     return true;
   }
 

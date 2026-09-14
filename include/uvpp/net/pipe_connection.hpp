@@ -18,6 +18,7 @@
 #include "uvpp/co/task.hpp"
 #include "uvpp/core/error.hpp"
 #include "uvpp/core/version.hpp"
+#include "uvpp/detail/async_close_state.hpp"
 #include "uvpp/net/buffer.hpp"
 
 namespace uv {
@@ -27,12 +28,6 @@ class pipe_connection_view;
 class pipe_listener;
 
 namespace detail {
-
-enum class pipe_close_phase {
-  open,
-  closing,
-  closed,
-};
 
 // This access token is lifetime bookkeeping for a borrowed high-level view; it
 // does not own the pipe resource. resource_scope clears connection before it
@@ -53,11 +48,7 @@ struct pipe_connection_state {
   int *connect_status_destination = nullptr;
   bool *close_completion_destination = nullptr;
   int connect_status = 0;
-  pipe_close_phase close_phase = pipe_close_phase::open;
-  std::vector<std::coroutine_handle<>> close_waiters{};
-  std::coroutine_handle<> callback_close_waiter{};
-  bool owner_released = false;
-  bool close_callback_active = false;
+  async_close_state close{};
   bool write_active = false;
   void *active_read = nullptr;
 
@@ -73,42 +64,30 @@ struct pipe_connection_state {
         bytes - offsetof(pipe_connection_state, pipe));
   }
 
-  bool closing() const noexcept { return close_phase != pipe_close_phase::open; }
+  bool closing() const noexcept { return close.closing(); }
 
   bool request_close() noexcept {
-    if (close_phase != pipe_close_phase::open) {
+    if (!close.begin()) {
       return false;
     }
-    close_phase = pipe_close_phase::closing;
     uv_close(reinterpret_cast<uv_handle_t *>(&pipe), &pipe_connection_state::on_close);
     return true;
-  }
-
-  bool request_close_and_join(std::coroutine_handle<> continuation) {
-    assert(close_phase != pipe_close_phase::closed);
-    if (close_phase == pipe_close_phase::closed) {
-      return false;
-    }
-    close_waiters.push_back(continuation);
-    return request_close();
   }
 
   // Failed connect paths originate in a libuv callback or an immediate native
   // submission result, where the fixed state-owned slot avoids allocation.
   void request_close_from_callback(std::coroutine_handle<> continuation) noexcept {
-    assert(!callback_close_waiter);
-    callback_close_waiter = continuation;
+    close.set_callback_waiter(continuation);
     (void)request_close();
   }
 
   void release_owner() noexcept {
-    assert(!owner_released);
-    owner_released = true;
-    if (close_phase == pipe_close_phase::open) {
+    close.owner_released();
+    if (close.open()) {
       (void)request_close();
       return;
     }
-    if (close_phase == pipe_close_phase::closed && !close_callback_active) {
+    if (close.can_destroy_now()) {
       delete this;
     }
   }
@@ -132,29 +111,11 @@ struct pipe_connection_state {
 
   static void on_close(uv_handle_t *raw) noexcept {
     auto &self = from_handle(raw);
-    self.close_phase = pipe_close_phase::closed;
-    self.close_callback_active = true;
     if (self.close_completion_destination != nullptr) {
       *self.close_completion_destination = true;
       self.close_completion_destination = nullptr;
     }
-    auto callback_waiter = std::exchange(self.callback_close_waiter, {});
-    // Detach every frame-facing continuation before the first user resumption.
-    // The local vector owns only handles, so a resumed task cannot invalidate
-    // callback linkage that this callback still needs to inspect.
-    auto waiters = std::move(self.close_waiters);
-    if (callback_waiter) {
-      callback_waiter.resume();
-    }
-    for (auto continuation : waiters) {
-      if (continuation) {
-        continuation.resume();
-      }
-    }
-    self.close_callback_active = false;
-    if (self.owner_released) {
-      delete &self;
-    }
+    self.close.complete([&self]() noexcept { delete &self; });
   }
 };
 
@@ -180,10 +141,13 @@ public:
     if (&continuation.promise().execution_loop() != state_->loop) {
       throw std::logic_error{"uv internal pipe close used from a different loop"};
     }
-    if (state_->close_phase == pipe_close_phase::closed) {
+    if (state_->close.closed()) {
       return false;
     }
-    initiated_ = state_->request_close_and_join(continuation);
+    if (!state_->close.add_waiter(continuation)) {
+      return false;
+    }
+    initiated_ = state_->request_close();
     return true;
   }
 

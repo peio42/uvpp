@@ -14,6 +14,7 @@
 
 #include "uvpp/co/task.hpp"
 #include "uvpp/core/error.hpp"
+#include "uvpp/detail/async_close_state.hpp"
 #include "uvpp/net/address.hpp"
 #include "uvpp/net/socket_address.hpp"
 #include "uvpp/net/tcp_connection.hpp"
@@ -23,12 +24,6 @@ namespace uv {
 class tcp_listener;
 
 namespace detail {
-
-enum class tcp_listener_close_phase {
-  open,
-  closing,
-  closed,
-};
 
 struct tcp_listener_access {
   tcp_listener *listener = nullptr;
@@ -44,18 +39,14 @@ struct tcp_listener_state {
   void (*deliver_accept)(void *, int) noexcept = nullptr;
   void (*cancel_accept)(void *) noexcept = nullptr;
   bool initialized = false;
-  tcp_listener_close_phase close_phase = tcp_listener_close_phase::open;
-  std::vector<std::coroutine_handle<>> close_waiters{};
-  std::coroutine_handle<> callback_close_waiter{};
-  bool owner_released = false;
-  bool close_callback_active = false;
+  async_close_state close{};
 
   static tcp_listener_state &from_handle(uv_handle_t *raw) noexcept {
     auto *bytes = reinterpret_cast<char *>(raw);
     return *reinterpret_cast<tcp_listener_state *>(bytes - offsetof(tcp_listener_state, tcp));
   }
 
-  bool closing() const noexcept { return close_phase != tcp_listener_close_phase::open; }
+  bool closing() const noexcept { return close.closing(); }
 
   // Cancelling the one-shot accept releases the listener callback slot before
   // it starts close. The awaiter closes its initialized, untransferred child
@@ -75,38 +66,24 @@ struct tcp_listener_state {
   // Starts uv_close exactly once. This is the internal close-completion path;
   // it is permitted to quiesce an armed accept before claiming close.
   bool request_close() noexcept {
-    if (close_phase == tcp_listener_close_phase::closed ||
-        close_phase == tcp_listener_close_phase::closing) {
+    if (!close.begin()) {
       return false;
     }
     quiesce_active_accept();
     assert(active_accept == nullptr);
     assert(deliver_accept == nullptr);
     assert(cancel_accept == nullptr);
-    close_phase = tcp_listener_close_phase::closing;
     uv_close(reinterpret_cast<uv_handle_t *>(&tcp), &tcp_listener_state::on_close);
     return true;
   }
 
-  bool request_close_and_join(std::coroutine_handle<> continuation) {
-    // tcp_listener_close_completion checks this phase before calling us. A
-    // completion observed from on_close() cannot register into that delivery.
-    assert(close_phase != tcp_listener_close_phase::closed);
-    if (close_phase == tcp_listener_close_phase::closed) {
-      return false;
-    }
-    close_waiters.push_back(continuation);
-    return request_close();
-  }
-
   void release_owner() noexcept {
-    assert(!owner_released);
-    owner_released = true;
-    if (close_phase == tcp_listener_close_phase::open) {
+    close.owner_released();
+    if (close.open()) {
       (void)request_close();
       return;
     }
-    if (close_phase == tcp_listener_close_phase::closed && !close_callback_active) {
+    if (close.can_destroy_now()) {
       delete this;
     }
   }
@@ -117,7 +94,7 @@ struct tcp_listener_state {
     // connection notification after uv_close(), but retaining this guard makes
     // the terminal-slot protocol robust to a stale/fault-injected callback:
     // it cannot recover a continuation from a completed accept frame.
-    if (self.close_phase != tcp_listener_close_phase::open) {
+    if (self.close.closing()) {
       return;
     }
     auto *accept = std::exchange(self.active_accept, nullptr);
@@ -133,23 +110,7 @@ struct tcp_listener_state {
 
   static void on_close(uv_handle_t *raw) noexcept {
     auto &self = from_handle(raw);
-    self.close_phase = tcp_listener_close_phase::closed;
-    self.close_callback_active = true;
-    auto callback_waiter = std::exchange(self.callback_close_waiter, {});
-    // Detach every frame-facing continuation before the first user resumption.
-    auto waiters = std::move(self.close_waiters);
-    if (callback_waiter) {
-      callback_waiter.resume();
-    }
-    for (auto continuation : waiters) {
-      if (continuation) {
-        continuation.resume();
-      }
-    }
-    self.close_callback_active = false;
-    if (self.owner_released) {
-      delete &self;
-    }
+    self.close.complete([&self]() noexcept { delete &self; });
   }
 };
 
@@ -177,10 +138,13 @@ public:
     if (&continuation.promise().execution_loop() != state_->loop) {
       throw std::logic_error{"uv internal tcp listener close used from a different loop"};
     }
-    if (state_->close_phase == tcp_listener_close_phase::closed) {
+    if (state_->close.closed()) {
       return false;
     }
-    initiated_ = state_->request_close_and_join(continuation);
+    if (!state_->close.add_waiter(continuation)) {
+      return false;
+    }
+    initiated_ = state_->request_close();
     return true;
   }
 
