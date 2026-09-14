@@ -1,23 +1,19 @@
 #pragma once
 
-#include <concepts>
-#include <coroutine>
 #include <cassert>
 #include <cstddef>
 #include <cstring>
 #include <memory>
-#include <span>
 #include <string_view>
-#include <stdexcept>
 #include <type_traits>
 #include <utility>
 #include <vector>
 
 #include <uv.h>
 
-#include "uvpp/co/task.hpp"
 #include "uvpp/core/error.hpp"
 #include "uvpp/detail/async_close_state.hpp"
+#include "uvpp/detail/stream_io.hpp"
 #include "uvpp/net/address.hpp"
 #include "uvpp/net/buffer.hpp"
 
@@ -54,8 +50,7 @@ struct tcp_connection_state {
   int connect_status = 0;
   bool initialized = false;
   async_close_state close{};
-  bool write_active = false;
-  void *active_read = nullptr;
+  stream_io_state io{};
 
   static tcp_connection_state &from_connect(uv_connect_t *raw) noexcept {
     auto *bytes = reinterpret_cast<char *>(raw);
@@ -68,6 +63,17 @@ struct tcp_connection_state {
   }
 
   bool closing() const noexcept { return close.closing(); }
+
+  uv_stream_t *stream_handle() noexcept {
+    return reinterpret_cast<uv_stream_t *>(&tcp);
+  }
+
+  uv::loop &execution_loop() noexcept {
+    assert(loop != nullptr);
+    return *loop;
+  }
+
+  stream_io_state &io_state() noexcept { return io; }
 
   // Starts uv_close exactly once. This path never allocates and is suitable for
   // owner destruction and native C callbacks.
@@ -206,196 +212,18 @@ public:
     return state_ != nullptr && state_->loop == &execution_loop;
   }
   bool has_active_operation() const noexcept {
-    return state_ != nullptr && (state_->write_active || state_->active_read != nullptr);
+    return state_ != nullptr && (state_->io.write_active || state_->io.active_read != nullptr);
   }
 
-  class read_some_result {
-  public:
-    read_some_result(std::size_t count, bool eof) noexcept : count_{count}, eof_{eof} {}
-
-    std::size_t count() const noexcept { return count_; }
-    bool eof() const noexcept { return eof_; }
-
-  private:
-    std::size_t count_ = 0;
-    bool eof_ = false;
-  };
-
-  class read_awaiter {
-  public:
-    read_awaiter(detail::tcp_connection_state *state, std::span<std::byte> buffer) noexcept
-      : state_{state}, buffer_{buffer} {}
-
-    bool await_ready() const noexcept { return false; }
-
-    template<class Promise>
-      requires std::derived_from<Promise, co::detail::task_promise_base>
-    bool await_suspend(std::coroutine_handle<Promise> continuation) {
-      if (state_ == nullptr || state_->closing()) {
-        status_ = UV_EBADF;
-        return false;
-      }
-      if (&continuation.promise().execution_loop() != state_->loop) {
-        throw std::logic_error{"uv::tcp_connection read used from a different loop"};
-      }
-      if (continuation.promise().stop_requested()) {
-        status_ = UV_ECANCELED;
-        return false;
-      }
-      if (state_->active_read != nullptr) {
-        status_ = UV_EBUSY;
-        return false;
-      }
-      if (buffer_.empty()) {
-        status_ = UV_EINVAL;
-        return false;
-      }
-      state_->active_read = this;
-      continuation_ = continuation;
-      status_ = uv_read_start(reinterpret_cast<uv_stream_t *>(&state_->tcp),
-          &read_awaiter::on_alloc, &read_awaiter::on_read);
-      if (status_ < 0) {
-        state_->active_read = nullptr;
-        continuation_ = {};
-        return false;
-      }
-      cancellation_ = continuation.promise().cancellation();
-      if (cancellation_ != nullptr && !cancellation_->register_callback(
-          cancellation_registration_, &read_awaiter::on_stop_requested, this)) {
-        (void)uv_read_stop(reinterpret_cast<uv_stream_t *>(&state_->tcp));
-        state_->active_read = nullptr;
-        continuation_ = {};
-        status_ = UV_ECANCELED;
-        return false;
-      }
-      return true;
-    }
-
-    read_some_result await_resume() {
-      if (status_ == UV_EOF) {
-        return {0, true};
-      }
-      if (status_ < 0) {
-        throw_if_error(static_cast<int>(status_));
-      }
-      return {static_cast<std::size_t>(status_), false};
-    }
-
-  private:
-    static read_awaiter &active(uv_handle_t *raw) noexcept {
-      auto &state = detail::tcp_connection_state::from_handle(raw);
-      return *static_cast<read_awaiter *>(state.active_read);
-    }
-
-    static void on_alloc(uv_handle_t *raw, size_t, uv_buf_t *out) noexcept {
-      auto &self = active(raw);
-      *out = detail::make_native_buffer_unchecked(
-          reinterpret_cast<char *>(self.buffer_.data()), self.buffer_.size());
-    }
-
-    static void on_read(uv_stream_t *raw, ssize_t nread, const uv_buf_t *) noexcept {
-      auto &self = active(reinterpret_cast<uv_handle_t *>(raw));
-      if (nread == 0) {
-        return;
-      }
-      self.status_ = nread;
-      // libuv guarantees that uv_read_stop() prevents future read callbacks.
-      // Its non-zero TTY/Windows return does not indicate a stop failure, and
-      // tcp_connection is a TCP-only owner in any case.
-      (void)uv_read_stop(raw);
-      auto &state = *self.state_;
-      state.active_read = nullptr; // Release alloc/read slots before user resumption.
-      if (self.cancellation_ != nullptr) {
-        self.cancellation_->unregister(self.cancellation_registration_);
-      }
-      auto continuation = std::exchange(self.continuation_, {});
-      continuation.resume();
-    }
-
-    static void on_stop_requested(void *context) noexcept {
-      auto &self = *static_cast<read_awaiter *>(context);
-      if (self.state_ == nullptr || self.state_->active_read != &self) {
-        return;
-      }
-      self.status_ = UV_ECANCELED;
-      (void)uv_read_stop(reinterpret_cast<uv_stream_t *>(&self.state_->tcp));
-      self.state_->active_read = nullptr; // Quiesce and release before resumption.
-      auto continuation = std::exchange(self.continuation_, {});
-      continuation.resume();
-    }
-
-    detail::tcp_connection_state *state_ = nullptr;
-    std::span<std::byte> buffer_{};
-    std::coroutine_handle<> continuation_{};
-    co::detail::cancellation_state *cancellation_ = nullptr;
-    co::detail::cancellation_registration cancellation_registration_{};
-    ssize_t status_ = 0;
-  };
+  using read_some_result = detail::stream_read_some_result;
+  using read_awaiter = detail::stream_read_awaiter<detail::tcp_connection_state>;
 
   // Borrows buffer storage until data, EOF, or an error has stopped the read.
   [[nodiscard]] read_awaiter read_some(std::span<std::byte> buffer) noexcept {
     return read_awaiter{state_.get(), buffer};
   }
 
-  class write_awaiter {
-  public:
-    write_awaiter(detail::tcp_connection_state *state, std::string_view data) noexcept
-      : state_{state}, buffer_{detail::make_native_buffer_unchecked(
-          const_cast<char *>(data.data()), data.size())} {}
-
-    bool await_ready() const noexcept { return false; }
-
-    template<class Promise>
-      requires std::derived_from<Promise, co::detail::task_promise_base>
-    bool await_suspend(std::coroutine_handle<Promise> continuation) {
-      if (state_ == nullptr || state_->closing()) {
-        status_ = UV_EBADF;
-        return false;
-      }
-      if (&continuation.promise().execution_loop() != state_->loop) {
-        throw std::logic_error{"uv::tcp_connection write used from a different loop"};
-      }
-      if (continuation.promise().stop_requested()) {
-        status_ = UV_ECANCELED;
-        return false;
-      }
-      if (state_->write_active) {
-        status_ = UV_EBUSY;
-        return false;
-      }
-      state_->write_active = true;
-      continuation_ = continuation;
-      status_ = uv_write(&request_, reinterpret_cast<uv_stream_t *>(&state_->tcp),
-          &buffer_, 1, &write_awaiter::on_write);
-      if (status_ < 0) {
-        state_->write_active = false;
-        continuation_ = {};
-        return false;
-      }
-      return true;
-    }
-
-    void await_resume() { throw_if_error(status_); }
-
-  private:
-    static write_awaiter &from_native(uv_write_t *raw) noexcept {
-      return *reinterpret_cast<write_awaiter *>(raw);
-    }
-
-    static void on_write(uv_write_t *raw, int status) noexcept {
-      auto &self = from_native(raw);
-      self.status_ = status;
-      self.state_->write_active = false;
-      auto continuation = std::exchange(self.continuation_, {});
-      continuation.resume();
-    }
-
-    uv_write_t request_{};
-    detail::tcp_connection_state *state_ = nullptr;
-    uv_buf_t buffer_{};
-    std::coroutine_handle<> continuation_{};
-    int status_ = 0;
-  };
+  using write_awaiter = detail::stream_write_awaiter<detail::tcp_connection_state>;
 
   // Borrows data until the native write completion invokes the awaiting task.
   // The caller must keep it alive, address-stable, and unmodified until then.
@@ -479,9 +307,9 @@ private:
       return;
     }
     auto *state = state_.release();
-    assert(!state->write_active);
-    assert(state->active_read == nullptr);
-    if (state->write_active || state->active_read != nullptr) {
+    assert(!state->io.write_active);
+    assert(state->io.active_read == nullptr);
+    if (state->io.write_active || state->io.active_read != nullptr) {
       std::terminate();
     }
     state->release_owner();

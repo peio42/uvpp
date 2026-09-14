@@ -85,23 +85,24 @@ mechanism. The experimental TCP connect awaiter owns stable `uv_connect_t` and
 before delivering a failed connection. It is a family-specific prototype, not yet
 a common coroutine frontend.
 
-The same TCP slice now has one borrowed `uv_write_t` awaiter per connection. A
-submission failure clears its writer claim without a callback; terminal completion
-clears the claim before resuming the task. It stores only the native buffer view,
-not the bytes it borrows.
+TCP and pipe now share private stream-operation awaiters backed by a common
+`stream_io_state`. Each family provides only its native `uv_stream_t`, execution
+loop, I/O-slot state, and explicit native-handle recovery; this keeps application
+`uv_handle_t::data` untouched. The common one-shot `read_some()` protocol checks
+state, affinity, and pre-existing stop; claims allocation/read slots; starts the
+native source; then registers cancellation. Data, EOF, errors, and completed
+cancellation quiesce with `uv_read_stop()`, release allocation/read and
+cancellation slots, and only then resume the task. Zero-byte notifications remain
+armed. An unexpected stop failure terminates rather than releasing a callback slot
+that a later native callback could use after its coroutine frame has gone away.
 
-Its experimental `read_some` claims both native read slots. Data, EOF, and errors
-call `uv_read_stop()`, clear the alloc/read claim, and only then resume the task;
-zero-byte notifications remain armed. libuv guarantees that `uv_read_stop()`
-prevents later read callbacks; its non-zero TTY/Windows return is not a failure,
-so it does not alter this TCP-only terminal protocol. The next `read_some` may
-therefore be started by resumed code without an old callback clearing its claim.
-
-The experimental pipe connection follows this same one-shot stream protocol:
-`read_some()` calls `uv_read_stop()`, releases allocation/read and cancellation
-claims, then resumes. Its borrowed `write()` has one exclusive request slot and
-releases that slot only from the completion callback. Its separate close state
-machine also snapshots joined close waiters before the first user resumption.
+The shared borrowed `write()` similarly performs state, affinity, and
+pre-existing-stop checks, claims one `uv_write_t` slot, and clears it on submission
+failure or native completion before resumption. It stores the native buffer view,
+not the bytes it borrows. TCP and pipe retain only their family-specific
+connect/accept/endpoint behavior around that common stream protocol; pipe's close
+state machine separately snapshots joined close waiters before the first user
+resumption.
 
 The TCP listener slice treats `uv_listen` as a persistent native source with one
 exclusive high-level accept waiter. On a connection notification it first releases
