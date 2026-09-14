@@ -136,9 +136,13 @@ writers, and check task-loop affinity. An IPC-enabled connected pipe now also
 prototypes `write_with_handle(data, tcp_connection&)` and
 `receive_handle(buffer)`: the former borrows and pins the source TCP owner through
 `uv_write2()` completion, while the latter pre-allocates and adopts one pending
-TCP handle into a stable uvpp owner before resuming. This is native capability
-passing, not transfer of the source C++ owner; pipe/UDP handle families and
-listener transfer remain future work. `uv::pipe_listener` binds one local
+TCP handle into a stable uvpp owner before resuming. It is an unframed control
+primitive: byte delivery and native-handle availability have no one-to-one
+association; caller storage accumulates bytes while waiting and fails with
+`UV_ENOBUFS` if exhausted first. All TCP handles pending in the delivering callback
+become stable owners in the returned result, while an unsupported native handle
+fails the pipe closed. This is native capability passing, not transfer of the source C++ owner;
+pipe/UDP handle families and listener transfer remain future work. `uv::pipe_listener` binds one local
 name with a non-IPC listening native handle; its `ipc` option configures the
 connected children accepted from that listener. It owns a separate stable listener state, and transfers each one-shot
 `accept()` into an independent `pipe_connection`. Its internal close primitive

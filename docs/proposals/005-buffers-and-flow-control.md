@@ -121,11 +121,16 @@ and one writer per connection; submitted writes are not physically cancellable.
 For the initial IPC transfer slice, `pipe_connection::write_with_handle()` also
 borrows its byte payload until `uv_write2()` completion and pins the exported TCP
 owner for that same interval. `receive_handle(buffer)` borrows mutable caller
-storage for the associated control message and returns a freshly adopted stable
-owner only after the terminal callback has stopped the read. It is deliberately a
-dedicated-control-pipe protocol: bytes must carry exactly one pending TCP handle;
-any other count is a terminal protocol error rather than silently discarded or
-queued.
+scratch storage while it reads until libuv reports a pending TCP handle, then
+returns one freshly adopted stable owner after the terminal callback has stopped
+the read. It is deliberately a dedicated-control-pipe primitive, not a framed
+transport: bytes and pending handles cannot be associated. Bytes before the
+handle-bearing callback accumulate in the caller buffer; the returned count covers
+the complete accumulation. Exhausting that buffer before a handle is visible is
+`UV_ENOBUFS`. If several TCP handles are pending, the native queue is drained into
+one result and the caller takes its TCP owners one at a time. An
+unsupported pending type fails closed rather than leaving a poisoned pending entry
+in the pipe.
 
 The experimental `uv::udp_socket::send_to()` likewise borrows its payload until
 actual send completion; a stop already requested rejects submission, while an

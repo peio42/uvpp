@@ -5,7 +5,6 @@
 #include <coroutine>
 #include <cstddef>
 #include <memory>
-#include <optional>
 #include <span>
 #include <stdexcept>
 #include <string>
@@ -13,7 +12,6 @@
 #include <type_traits>
 #include <utility>
 #include <vector>
-#include <variant>
 
 #include <uv.h>
 
@@ -35,9 +33,9 @@ enum class received_handle_kind {
   tcp,
 };
 
-// A stable high-level owner constructed directly from a pending IPC handle.
-// The currently supported alternative is TCP; the wrapper deliberately avoids
-// exposing its representation so pipe/UDP support can be added later.
+// Stable high-level TCP owners constructed directly from one native pending
+// handle queue. The result deliberately does not expose its representation so
+// pipe/UDP support can be added later.
 class received_handle {
 public:
   received_handle(const received_handle &) = delete;
@@ -46,28 +44,28 @@ public:
   received_handle &operator=(received_handle &&) noexcept = default;
 
   received_handle_kind kind() const noexcept {
-    return std::holds_alternative<tcp_connection>(storage_)
-        ? received_handle_kind::tcp
-        : received_handle_kind::empty;
+    return tcp_.empty() ? received_handle_kind::empty : received_handle_kind::tcp;
   }
 
   std::size_t bytes_transferred() const noexcept { return bytes_transferred_; }
+  std::size_t tcp_count() const noexcept { return tcp_.size(); }
 
   tcp_connection take_tcp() {
-    if (!std::holds_alternative<tcp_connection>(storage_)) {
+    if (tcp_.empty()) {
       throw std::logic_error{"received IPC handle is not TCP"};
     }
-    auto result = std::move(std::get<tcp_connection>(storage_));
-    storage_.template emplace<std::monostate>();
+    auto result = std::move(tcp_.back());
+    tcp_.pop_back();
     return result;
   }
 
 private:
-  explicit received_handle(tcp_connection &&connection, std::size_t bytes_transferred) noexcept
-    : storage_{std::in_place_type<tcp_connection>, std::move(connection)},
+  explicit received_handle(std::vector<tcp_connection> &&tcp,
+      std::size_t bytes_transferred) noexcept
+    : tcp_{std::move(tcp)},
       bytes_transferred_{bytes_transferred} {}
 
-  std::variant<std::monostate, tcp_connection> storage_{};
+  std::vector<tcp_connection> tcp_{};
   std::size_t bytes_transferred_ = 0;
 
   friend class pipe_connection;
@@ -321,13 +319,15 @@ public:
         return false;
       }
 
-      // C callbacks are noexcept. Reserve the future stable TCP owner before
-      // starting the native source, so pending-handle adoption never allocates
-      // in the callback.
+      // C callbacks are noexcept. Reserve one future stable TCP owner before
+      // starting the native source. A burst may require further no-throw
+      // allocations in the callback; allocation failure becomes UV_ENOMEM and
+      // closes the pipe rather than escaping the native callback.
       incoming_ = std::make_unique<detail::tcp_connection_state>();
       incoming_->loop = state_->loop;
-      state_->io.active_read = this;
       continuation_ = continuation;
+
+      state_->io.active_read = this;
       status_ = uv_read_start(state_->stream_handle(), &receive_handle_awaiter::on_alloc,
           &receive_handle_awaiter::on_read);
       if (status_ < 0) {
@@ -349,9 +349,9 @@ public:
 
     received_handle await_resume() {
       assert(!provisional_close_required_ || provisional_close_completed_);
-      assert(received_.has_value() || status_ < 0);
+      assert(!received_.empty() || status_ < 0);
       throw_if_error(status_);
-      return std::move(*received_);
+      return received_handle{std::move(received_), bytes_transferred_};
     }
 
   private:
@@ -364,25 +364,49 @@ public:
     static void on_alloc(uv_handle_t *raw, size_t, uv_buf_t *out) noexcept {
       auto &self = active(raw);
       *out = detail::make_native_buffer_unchecked(
-          reinterpret_cast<char *>(self.buffer_.data()), self.buffer_.size());
+          reinterpret_cast<char *>(self.buffer_.data() + self.bytes_transferred_),
+          self.buffer_.size() - self.bytes_transferred_);
     }
 
     static void on_read(uv_stream_t *raw, ssize_t nread, const uv_buf_t *) noexcept {
       auto &self = active(reinterpret_cast<uv_handle_t *>(raw));
-      if (nread == 0) {
-        return;
-      }
       self.status_ = nread;
       if (nread > 0) {
-        self.bytes_transferred_ = static_cast<std::size_t>(nread);
-        self.adopt_pending_tcp();
+        self.bytes_transferred_ += static_cast<std::size_t>(nread);
+        // Pipe reads are a byte stream: an nread notification is not an IPC
+        // message boundary. Preserve every byte read while waiting for a
+        // pending handle, but do not associate a particular subset with the
+        // adopted owner.
+        if (!self.adopt_pending_tcp()) {
+          if (self.bytes_transferred_ == self.buffer_.size()) {
+            self.status_ = UV_ENOBUFS;
+          } else {
+            return;
+          }
+        }
+      } else if (nread == 0) {
+        // Do not rely on this being possible, but consume a pending handle if
+        // libuv reports one without accompanying bytes.
+        if (!self.adopt_pending_tcp()) {
+          return;
+        }
       }
       self.stop_native_or_terminate();
       self.release_slots();
       auto continuation = std::exchange(self.continuation_, {});
       if (self.status_ < 0 && self.incoming_ != nullptr && self.incoming_->initialized) {
+        if (self.close_pipe_) {
+          self.close_pipe_after_protocol_failure();
+        }
+        self.discard_received();
         self.close_untransferred_connection(continuation);
         return;
+      }
+      if (self.status_ < 0 && self.close_pipe_) {
+        self.close_pipe_after_protocol_failure();
+      }
+      if (self.status_ < 0) {
+        self.discard_received();
       }
       continuation.resume();
     }
@@ -399,28 +423,82 @@ public:
       continuation.resume();
     }
 
-    void adopt_pending_tcp() noexcept {
-      const int count = uv_pipe_pending_count(&state_->pipe);
-      if (count < 0) {
-        status_ = count;
-        return;
+    // Drains every pending native handle visible in this stream notification.
+    // A single receive result carries the resulting owners; accepting only one
+    // here can lose the notification needed to observe its queued siblings.
+    bool adopt_pending_tcp() noexcept {
+      bool adopted = false;
+      for (;;) {
+        const int count = uv_pipe_pending_count(&state_->pipe);
+        if (count < 0) {
+          status_ = count;
+          close_pipe_ = true;
+          return true;
+        }
+        if (count == 0) {
+          status_ = 0;
+          return adopted;
+        }
+        if (uv_pipe_pending_type(&state_->pipe) != UV_TCP) {
+          status_ = UV_EPROTO;
+          close_pipe_ = true;
+          return true;
+        }
+        if (received_.capacity() < received_.size() + static_cast<std::size_t>(count)) {
+          try {
+            received_.reserve(received_.size() + static_cast<std::size_t>(count));
+          } catch (...) {
+            status_ = UV_ENOMEM;
+            close_pipe_ = true;
+            return true;
+          }
+        }
+
+        std::unique_ptr<detail::tcp_connection_state> candidate;
+        if (incoming_ != nullptr) {
+          candidate = std::move(incoming_);
+        } else {
+          try {
+            candidate = std::make_unique<detail::tcp_connection_state>();
+          } catch (...) {
+            status_ = UV_ENOMEM;
+            close_pipe_ = true;
+            return true;
+          }
+          candidate->loop = state_->loop;
+        }
+
+        status_ = uv_tcp_init(state_->loop->native(), &candidate->tcp);
+        if (status_ < 0) {
+          close_pipe_ = true;
+          incoming_ = std::move(candidate);
+          return true;
+        }
+        candidate->initialized = true;
+        status_ = uv_accept(state_->stream_handle(), candidate->stream_handle());
+        if (status_ < 0) {
+          close_pipe_ = true;
+          incoming_ = std::move(candidate);
+          return true;
+        }
+        // reserve() above made this move-only emplacement non-allocating.
+        received_.emplace_back(tcp_connection{std::move(candidate)});
+        adopted = true;
       }
-      if (count != 1 || uv_pipe_pending_type(&state_->pipe) != UV_TCP) {
-        status_ = UV_EPROTO;
-        return;
+    }
+
+    // The TCP-only result cannot consume a pending handle of another native
+    // family. Fail closed so it cannot remain as a poison entry which a later
+    // receive_handle() would observe with unspecified semantics.
+    void close_pipe_after_protocol_failure() noexcept {
+      assert(close_pipe_ && status_ < 0);
+      if (state_ != nullptr && !state_->closing()) {
+        (void)state_->request_close();
       }
-      status_ = uv_tcp_init(state_->loop->native(), &incoming_->tcp);
-      if (status_ < 0) {
-        return;
-      }
-      incoming_->initialized = true;
-      status_ = uv_accept(state_->stream_handle(), incoming_->stream_handle());
-      if (status_ < 0) {
-        return;
-      }
-      received_.emplace(received_handle{
-          tcp_connection{std::move(incoming_)}, bytes_transferred_});
-      status_ = 0;
+    }
+
+    void discard_received() noexcept {
+      received_.clear();
     }
 
     void close_untransferred_connection(std::coroutine_handle<> continuation) noexcept {
@@ -453,7 +531,7 @@ public:
     detail::pipe_connection_state *state_ = nullptr;
     std::span<std::byte> buffer_{};
     std::unique_ptr<detail::tcp_connection_state> incoming_{};
-    std::optional<received_handle> received_{};
+    std::vector<tcp_connection> received_{};
     std::coroutine_handle<> continuation_{};
     co::detail::cancellation_state *cancellation_ = nullptr;
     co::detail::cancellation_registration cancellation_registration_{};
@@ -461,11 +539,17 @@ public:
     std::size_t bytes_transferred_ = 0;
     bool provisional_close_required_ = false;
     bool provisional_close_completed_ = false;
+    bool close_pipe_ = false;
   };
 
-  // Receives one TCP handle message from a connected IPC pipe. The supplied
-  // buffer borrows the associated message bytes through completion. A message
-  // without one pending TCP handle is a terminal protocol error in this slice.
+  // Receives stream bytes until a notification exposes at least one pending
+  // TCP handle, then drains that native pending queue into stable TCP owners.
+  // libuv exposes a byte stream, not a framing relationship between those
+  // bytes and native handles: buffer accumulates every byte seen while waiting,
+  // but the returned count must not be associated with a particular owner. If
+  // the buffer fills first, the operation fails with UV_ENOBUFS. take_tcp()
+  // extracts one owner at a time from the returned queue. An unsupported pending
+  // type fails closed with UV_EPROTO.
   [[nodiscard]] receive_handle_awaiter receive_handle(std::span<std::byte> buffer) noexcept {
     return receive_handle_awaiter{state_.get(), buffer};
   }

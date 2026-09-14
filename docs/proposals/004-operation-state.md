@@ -109,12 +109,22 @@ protocol, submitting `uv_write2()` only after it has pinned the sent TCP owner's
 stable state. Submission failure and completion release both the pipe write slot
 and this export pin before user delivery. `receive_handle(buffer)` is a separate
 one-shot read protocol: it reserves the future TCP state before `uv_read_start()`,
-then, after a data callback, validates the pending native type, initializes it,
-and adopts it with `uv_accept()` before quiescing and releasing read/cancellation
-slots. A type mismatch, a message without a pending handle, or more than one
-pending handle is `UV_EPROTO`; an
-initialized child that cannot be adopted is closed before its task receives the
-error. The result is a move-only high-level `received_handle`, not a raw pointer.
+continues through byte notifications until libuv exposes at least one pending
+native handle, then validates and adopts TCP handles with `uv_accept()` before
+quiescing and releasing read/cancellation slots. This is deliberately not a
+message-framing API: byte callbacks and pending handles have no one-to-one
+association. The caller buffer accumulates every byte received while waiting; its
+returned count must not be interpreted as the payload belonging to an adopted
+handle. Filling that buffer before a handle arrives fails with `UV_ENOBUFS`. The callback drains
+the entire native pending queue into the move-only `received_handle` result;
+`take_tcp()` then extracts one high-level owner at a time. This avoids depending
+on a future byte notification to expose a queued sibling. An unsupported pending
+type, or a native adoption failure, fails closed with an error and closes the
+pipe; an initialized child that cannot be adopted is also closed before its task
+receives the error. The awaiter reserves the first child before the read; a burst
+may require additional high-level owner allocations in the native callback. Those
+allocations are guarded and turn into `UV_ENOMEM` plus fail-closed cleanup rather
+than allowing an exception to escape libuv. The result never exposes a raw pointer.
 
 TCP and pipe listeners share a private `accept_slot` for their persistent
 `uv_listen()` sources. The slot owns only the exclusive one-shot high-level claim
