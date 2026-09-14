@@ -1813,6 +1813,70 @@ TEST(UvppV3Coroutine, pipeConnectionReportsConnectCompletionFailure) {
   std::filesystem::remove(path);
 }
 
+TEST(UvppV3Coroutine, ipcPipeTransfersTcpIntoAStableReceivedOwner) {
+  if (!local_pipe_is_permitted() || !loopback_tcp_is_permitted()) {
+    GTEST_SKIP() << "local pipe or loopback TCP is not permitted in this environment";
+  }
+  const auto path = v3_pipe_path() + "-ipc-handle";
+  std::filesystem::remove(path);
+  uv::loop loop;
+  uv::pipe_listener control_listener(loop, path, true);
+  uv::tcp tcp_listener(loop);
+  tcp_listener.bind(uv::ipv4{"127.0.0.1", 0});
+  const uv::ipv4 tcp_address{"127.0.0.1", tcp_listener.sockname().port()};
+  std::unique_ptr<uv::tcp> tcp_peer;
+  tcp_listener.listen([&](uv::tcp &server, uv::result status) {
+    EXPECT_TRUE(status);
+    tcp_peer = std::make_unique<uv::tcp>(loop);
+    EXPECT_NO_THROW(server.accept(*tcp_peer));
+  });
+
+  bool received_tcp = false;
+  bool received_owner_was_stable = false;
+  bool bytes_preserved = false;
+  auto receiver = [&]() -> uv::co::task<void> {
+    {
+      auto control = co_await control_listener.accept();
+      std::array<std::byte, 8> buffer{};
+      auto incoming = co_await control.receive_handle(buffer);
+      bytes_preserved = incoming.bytes_transferred() == 1 &&
+          buffer.front() == static_cast<std::byte>('h') &&
+          incoming.kind() == uv::received_handle_kind::tcp;
+      auto transferred = incoming.take_tcp();
+      auto *before_move = transferred.native_handle();
+      auto moved = std::move(transferred);
+      received_owner_was_stable = moved.native_handle() == before_move;
+      received_tcp = moved.native_handle() != nullptr;
+    }
+    if (tcp_peer && !tcp_peer->closing()) {
+      tcp_peer->close();
+    }
+    tcp_listener.close();
+    control_listener.close();
+  };
+  auto sender = [&]() -> uv::co::task<void> {
+    {
+      auto control = co_await uv::pipe_connection::connect(path, true);
+      {
+        auto source = co_await uv::tcp_connection::connect(tcp_address);
+        co_await control.write_with_handle("h", source);
+      }
+    }
+  };
+
+  auto receiver_execution = uv::co::spawn(loop, receiver());
+  auto sender_execution = uv::co::spawn(loop, sender());
+  loop.run();
+
+  EXPECT_NO_THROW(receiver_execution.rethrow_if_failed());
+  EXPECT_NO_THROW(sender_execution.rethrow_if_failed());
+  EXPECT_TRUE(received_tcp);
+  EXPECT_TRUE(received_owner_was_stable);
+  EXPECT_TRUE(bytes_preserved);
+  EXPECT_NO_THROW(loop.close());
+  std::filesystem::remove(path);
+}
+
 TEST(UvppV3Coroutine, internalPipeCloseCompletionJoinsAndChecksAffinity) {
   if (!local_pipe_is_permitted()) {
     GTEST_SKIP() << "local pipe bind is not permitted in this environment";

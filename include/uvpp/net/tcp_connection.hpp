@@ -22,6 +22,7 @@ namespace uv {
 class tcp_listener;
 class tcp_connection;
 class tcp_connection_view;
+class pipe_connection;
 
 namespace co {
 class resource_scope;
@@ -51,6 +52,7 @@ struct tcp_connection_state {
   bool initialized = false;
   async_close_state close{};
   stream_io_state io{};
+  bool handle_export_active = false;
 
   static tcp_connection_state &from_connect(uv_connect_t *raw) noexcept {
     auto *bytes = reinterpret_cast<char *>(raw);
@@ -74,6 +76,24 @@ struct tcp_connection_state {
   }
 
   stream_io_state &io_state() noexcept { return io; }
+
+  static int acquire_handle_export(void *opaque) noexcept {
+    auto &self = *static_cast<tcp_connection_state *>(opaque);
+    if (self.closing()) {
+      return UV_EBADF;
+    }
+    if (self.handle_export_active) {
+      return UV_EBUSY;
+    }
+    self.handle_export_active = true;
+    return 0;
+  }
+
+  static void release_handle_export(void *opaque) noexcept {
+    auto &self = *static_cast<tcp_connection_state *>(opaque);
+    assert(self.handle_export_active);
+    self.handle_export_active = false;
+  }
 
   // Starts uv_close exactly once. This path never allocates and is suitable for
   // owner destruction and native C callbacks.
@@ -212,7 +232,8 @@ public:
     return state_ != nullptr && state_->loop == &execution_loop;
   }
   bool has_active_operation() const noexcept {
-    return state_ != nullptr && (state_->io.write_active || state_->io.active_read != nullptr);
+    return state_ != nullptr && (state_->io.write_active || state_->io.active_read != nullptr ||
+        state_->handle_export_active);
   }
 
   using read_some_result = detail::stream_read_some_result;
@@ -309,7 +330,9 @@ private:
     auto *state = state_.release();
     assert(!state->io.write_active);
     assert(state->io.active_read == nullptr);
-    if (state->io.write_active || state->io.active_read != nullptr) {
+    assert(!state->handle_export_active);
+    if (state->io.write_active || state->io.active_read != nullptr ||
+        state->handle_export_active) {
       std::terminate();
     }
     state->release_owner();
@@ -319,6 +342,7 @@ private:
 
   friend class tcp_listener;
   friend class tcp_connection_view;
+  friend class pipe_connection;
   friend detail::tcp_close_completion detail::close_completion(tcp_connection &) noexcept;
 };
 

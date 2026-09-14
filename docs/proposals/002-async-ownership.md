@@ -132,9 +132,15 @@ the awaiter, preserves its address-stable `uv_pipe_t` state through completion
 failure cleanup, and distinguishes an immediate `uv_pipe_connect2()` submission
 error where that libuv API is available. Its one-shot `read_some()` and `write()`
 borrow caller buffers through native completion, reject concurrent readers or
-writers, and check task-loop affinity. The `ipc` initialization mode is exposed,
-but handle transfer remains separate work. `uv::pipe_listener` binds one local
-name, owns a separate stable listener state, and transfers each one-shot
+writers, and check task-loop affinity. An IPC-enabled connected pipe now also
+prototypes `write_with_handle(data, tcp_connection&)` and
+`receive_handle(buffer)`: the former borrows and pins the source TCP owner through
+`uv_write2()` completion, while the latter pre-allocates and adopts one pending
+TCP handle into a stable uvpp owner before resuming. This is native capability
+passing, not transfer of the source C++ owner; pipe/UDP handle families and
+listener transfer remain future work. `uv::pipe_listener` binds one local
+name with a non-IPC listening native handle; its `ipc` option configures the
+connected children accepted from that listener. It owns a separate stable listener state, and transfers each one-shot
 `accept()` into an independent `pipe_connection`. Its internal close primitive
 quiesces a pending accept, closes the provisional child before `UV_ECANCELED`
 delivery, then waits for listener close completion. A

@@ -193,6 +193,7 @@ public:
 
       connection_ = std::make_unique<detail::pipe_connection_state>();
       connection_->loop = listener_->loop;
+      connection_->ipc = listener_->ipc;
       status_ = uv_pipe_init(connection_->loop->native(), &connection_->pipe,
           listener_->ipc ? 1 : 0);
       if (status_ < 0) {
@@ -286,7 +287,9 @@ private:
     auto state = std::make_unique<detail::pipe_listener_state>();
     state->loop = &loop;
     state->ipc = ipc;
-    int status = uv_pipe_init(loop.native(), &state->pipe, ipc ? 1 : 0);
+    // IPC mode belongs to connected accepted pipes, never to the listening
+    // endpoint on which uv_accept() is called.
+    int status = uv_pipe_init(loop.native(), &state->pipe, 0);
     if (status < 0) {
       throw_if_error(status);
     }

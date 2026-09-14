@@ -104,6 +104,18 @@ connect/accept/endpoint behavior around that common stream protocol; pipe's clos
 state machine separately snapshots joined close waiters before the first user
 resumption.
 
+The experimental IPC-pipe `write_with_handle()` uses that same exclusive write
+protocol, submitting `uv_write2()` only after it has pinned the sent TCP owner's
+stable state. Submission failure and completion release both the pipe write slot
+and this export pin before user delivery. `receive_handle(buffer)` is a separate
+one-shot read protocol: it reserves the future TCP state before `uv_read_start()`,
+then, after a data callback, validates the pending native type, initializes it,
+and adopts it with `uv_accept()` before quiescing and releasing read/cancellation
+slots. A type mismatch, a message without a pending handle, or more than one
+pending handle is `UV_EPROTO`; an
+initialized child that cannot be adopted is closed before its task receives the
+error. The result is a move-only high-level `received_handle`, not a raw pointer.
+
 TCP and pipe listeners share a private `accept_slot` for their persistent
 `uv_listen()` sources. The slot owns only the exclusive one-shot high-level claim
 and its delivery/cancellation function pointers. A notification or cleanup first

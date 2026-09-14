@@ -25,6 +25,18 @@ struct stream_io_state {
   void *active_read = nullptr;
 };
 
+// An additional object whose native lifetime is borrowed by a stream write.
+// IPC handle passing uses this to retain its source handle through uv_write2()
+// completion without teaching the common stream state about TCP ownership.
+struct stream_write_pin {
+  void *context = nullptr;
+  uv::loop *loop = nullptr;
+  int (*acquire)(void *) noexcept = nullptr;
+  void (*release)(void *) noexcept = nullptr;
+
+  bool present() const noexcept { return context != nullptr; }
+};
+
 class stream_read_some_result {
 public:
   stream_read_some_result(std::size_t count, bool eof) noexcept : count_{count}, eof_{eof} {}
@@ -173,9 +185,12 @@ private:
 template<class State>
 class stream_write_awaiter {
 public:
-  stream_write_awaiter(State *state, std::string_view data) noexcept
+  stream_write_awaiter(State *state, std::string_view data,
+      uv_stream_t *send_handle = nullptr, stream_write_pin pin = {},
+      int handle_submission_status = 0) noexcept
     : state_{state}, buffer_{make_native_buffer_unchecked(
-          const_cast<char *>(data.data()), data.size())} {}
+          const_cast<char *>(data.data()), data.size())}, send_handle_{send_handle},
+      pin_{pin}, handle_submission_status_{handle_submission_status} {}
 
   bool await_ready() const noexcept { return false; }
 
@@ -189,8 +204,15 @@ public:
     if (&continuation.promise().execution_loop() != &state_->execution_loop()) {
       throw std::logic_error{"uv stream write used from a different loop"};
     }
+    if (pin_.present() && &continuation.promise().execution_loop() != pin_.loop) {
+      throw std::logic_error{"uv stream write-with-handle used from a different loop"};
+    }
     if (continuation.promise().stop_requested()) {
       status_ = UV_ECANCELED;
+      return false;
+    }
+    if (handle_submission_status_ < 0) {
+      status_ = handle_submission_status_;
       return false;
     }
     auto &io = state_->io_state();
@@ -198,13 +220,27 @@ public:
       status_ = UV_EBUSY;
       return false;
     }
+    if (pin_.present()) {
+      assert(pin_.acquire != nullptr);
+      assert(pin_.release != nullptr);
+      assert(pin_.loop != nullptr);
+      status_ = pin_.acquire(pin_.context);
+      if (status_ < 0) {
+        return false;
+      }
+      pin_acquired_ = true;
+    }
 
     io.write_active = true;
     continuation_ = continuation;
-    status_ = uv_write(&request_, state_->stream_handle(), &buffer_, 1,
-        &stream_write_awaiter::on_write);
+    status_ = send_handle_ == nullptr
+        ? uv_write(&request_, state_->stream_handle(), &buffer_, 1,
+              &stream_write_awaiter::on_write)
+        : uv_write2(&request_, state_->stream_handle(), &buffer_, 1, send_handle_,
+              &stream_write_awaiter::on_write);
     if (status_ < 0) {
       io.write_active = false;
+      release_pin();
       continuation_ = {};
       return false;
     }
@@ -222,15 +258,27 @@ private:
     auto &self = from_native(raw);
     self.status_ = status;
     self.state_->io_state().write_active = false; // Release before resumption.
+    self.release_pin();
     auto continuation = std::exchange(self.continuation_, {});
     continuation.resume();
+  }
+
+  void release_pin() noexcept {
+    if (pin_acquired_) {
+      pin_.release(pin_.context);
+      pin_acquired_ = false;
+    }
   }
 
   uv_write_t request_{};
   State *state_ = nullptr;
   uv_buf_t buffer_{};
+  uv_stream_t *send_handle_ = nullptr;
+  stream_write_pin pin_{};
   std::coroutine_handle<> continuation_{};
   int status_ = 0;
+  int handle_submission_status_ = 0;
+  bool pin_acquired_ = false;
 };
 
 } // namespace uv::detail

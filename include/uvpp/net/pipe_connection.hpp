@@ -1,13 +1,19 @@
 #pragma once
 
 #include <cassert>
+#include <concepts>
+#include <coroutine>
 #include <cstddef>
 #include <memory>
+#include <optional>
+#include <span>
+#include <stdexcept>
 #include <string>
 #include <string_view>
 #include <type_traits>
 #include <utility>
 #include <vector>
+#include <variant>
 
 #include <uv.h>
 
@@ -16,12 +22,56 @@
 #include "uvpp/detail/async_close_state.hpp"
 #include "uvpp/detail/stream_io.hpp"
 #include "uvpp/net/buffer.hpp"
+#include "uvpp/net/tcp_connection.hpp"
 
 namespace uv {
 
 class pipe_connection;
 class pipe_connection_view;
 class pipe_listener;
+
+enum class received_handle_kind {
+  empty,
+  tcp,
+};
+
+// A stable high-level owner constructed directly from a pending IPC handle.
+// The currently supported alternative is TCP; the wrapper deliberately avoids
+// exposing its representation so pipe/UDP support can be added later.
+class received_handle {
+public:
+  received_handle(const received_handle &) = delete;
+  received_handle &operator=(const received_handle &) = delete;
+  received_handle(received_handle &&) noexcept = default;
+  received_handle &operator=(received_handle &&) noexcept = default;
+
+  received_handle_kind kind() const noexcept {
+    return std::holds_alternative<tcp_connection>(storage_)
+        ? received_handle_kind::tcp
+        : received_handle_kind::empty;
+  }
+
+  std::size_t bytes_transferred() const noexcept { return bytes_transferred_; }
+
+  tcp_connection take_tcp() {
+    if (!std::holds_alternative<tcp_connection>(storage_)) {
+      throw std::logic_error{"received IPC handle is not TCP"};
+    }
+    auto result = std::move(std::get<tcp_connection>(storage_));
+    storage_.template emplace<std::monostate>();
+    return result;
+  }
+
+private:
+  explicit received_handle(tcp_connection &&connection, std::size_t bytes_transferred) noexcept
+    : storage_{std::in_place_type<tcp_connection>, std::move(connection)},
+      bytes_transferred_{bytes_transferred} {}
+
+  std::variant<std::monostate, tcp_connection> storage_{};
+  std::size_t bytes_transferred_ = 0;
+
+  friend class pipe_connection;
+};
 
 namespace detail {
 
@@ -44,6 +94,7 @@ struct pipe_connection_state {
   int *connect_status_destination = nullptr;
   bool *close_completion_destination = nullptr;
   int connect_status = 0;
+  bool ipc = false;
   async_close_state close{};
   stream_io_state io{};
 
@@ -217,6 +268,208 @@ public:
     return write_awaiter{state_.get(), data};
   }
 
+  // Borrows both the bytes and the TCP owner through uv_write2() completion.
+  // This passes a native capability; it does not move the source C++ owner.
+  [[nodiscard]] write_awaiter write_with_handle(
+      std::string_view data, tcp_connection &handle) {
+    detail::check_buffer_length(data.size());
+    if (state_ == nullptr || handle.state_ == nullptr) {
+      return write_awaiter{state_.get(), data, nullptr, {}, UV_EBADF};
+    }
+    auto *source = handle.state_.get();
+    const detail::stream_write_pin pin{
+        source,
+        source->loop,
+        &detail::tcp_connection_state::acquire_handle_export,
+        &detail::tcp_connection_state::release_handle_export};
+    return write_awaiter{state_.get(), data, source->stream_handle(), pin,
+        state_->ipc ? 0 : UV_EINVAL};
+  }
+
+  class receive_handle_awaiter {
+  public:
+    receive_handle_awaiter(detail::pipe_connection_state *state,
+        std::span<std::byte> buffer) noexcept
+      : state_{state}, buffer_{buffer} {}
+
+    bool await_ready() const noexcept { return false; }
+
+    template<class Promise>
+      requires std::derived_from<Promise, co::detail::task_promise_base>
+    bool await_suspend(std::coroutine_handle<Promise> continuation) {
+      if (state_ == nullptr || state_->closing()) {
+        status_ = UV_EBADF;
+        return false;
+      }
+      if (&continuation.promise().execution_loop() != state_->loop) {
+        throw std::logic_error{"uv::pipe_connection receive_handle used from a different loop"};
+      }
+      if (continuation.promise().stop_requested()) {
+        status_ = UV_ECANCELED;
+        return false;
+      }
+      if (!state_->ipc) {
+        status_ = UV_EINVAL;
+        return false;
+      }
+      if (state_->io.active_read != nullptr) {
+        status_ = UV_EBUSY;
+        return false;
+      }
+      if (buffer_.empty()) {
+        status_ = UV_EINVAL;
+        return false;
+      }
+
+      // C callbacks are noexcept. Reserve the future stable TCP owner before
+      // starting the native source, so pending-handle adoption never allocates
+      // in the callback.
+      incoming_ = std::make_unique<detail::tcp_connection_state>();
+      incoming_->loop = state_->loop;
+      state_->io.active_read = this;
+      continuation_ = continuation;
+      status_ = uv_read_start(state_->stream_handle(), &receive_handle_awaiter::on_alloc,
+          &receive_handle_awaiter::on_read);
+      if (status_ < 0) {
+        state_->io.active_read = nullptr;
+        continuation_ = {};
+        return false;
+      }
+      cancellation_ = continuation.promise().cancellation();
+      if (cancellation_ != nullptr && !cancellation_->register_callback(
+          cancellation_registration_, &receive_handle_awaiter::on_stop_requested, this)) {
+        stop_native_or_terminate();
+        release_slots();
+        continuation_ = {};
+        status_ = UV_ECANCELED;
+        return false;
+      }
+      return true;
+    }
+
+    received_handle await_resume() {
+      assert(!provisional_close_required_ || provisional_close_completed_);
+      assert(received_.has_value() || status_ < 0);
+      throw_if_error(status_);
+      return std::move(*received_);
+    }
+
+  private:
+    static receive_handle_awaiter &active(uv_handle_t *raw) noexcept {
+      auto &state = detail::pipe_connection_state::from_handle(raw);
+      assert(state.io.active_read != nullptr);
+      return *static_cast<receive_handle_awaiter *>(state.io.active_read);
+    }
+
+    static void on_alloc(uv_handle_t *raw, size_t, uv_buf_t *out) noexcept {
+      auto &self = active(raw);
+      *out = detail::make_native_buffer_unchecked(
+          reinterpret_cast<char *>(self.buffer_.data()), self.buffer_.size());
+    }
+
+    static void on_read(uv_stream_t *raw, ssize_t nread, const uv_buf_t *) noexcept {
+      auto &self = active(reinterpret_cast<uv_handle_t *>(raw));
+      if (nread == 0) {
+        return;
+      }
+      self.status_ = nread;
+      if (nread > 0) {
+        self.bytes_transferred_ = static_cast<std::size_t>(nread);
+        self.adopt_pending_tcp();
+      }
+      self.stop_native_or_terminate();
+      self.release_slots();
+      auto continuation = std::exchange(self.continuation_, {});
+      if (self.status_ < 0 && self.incoming_ != nullptr && self.incoming_->initialized) {
+        self.close_untransferred_connection(continuation);
+        return;
+      }
+      continuation.resume();
+    }
+
+    static void on_stop_requested(void *context) noexcept {
+      auto &self = *static_cast<receive_handle_awaiter *>(context);
+      if (self.state_ == nullptr || self.state_->io.active_read != &self) {
+        return;
+      }
+      self.status_ = UV_ECANCELED;
+      self.stop_native_or_terminate();
+      self.release_slots();
+      auto continuation = std::exchange(self.continuation_, {});
+      continuation.resume();
+    }
+
+    void adopt_pending_tcp() noexcept {
+      const int count = uv_pipe_pending_count(&state_->pipe);
+      if (count < 0) {
+        status_ = count;
+        return;
+      }
+      if (count != 1 || uv_pipe_pending_type(&state_->pipe) != UV_TCP) {
+        status_ = UV_EPROTO;
+        return;
+      }
+      status_ = uv_tcp_init(state_->loop->native(), &incoming_->tcp);
+      if (status_ < 0) {
+        return;
+      }
+      incoming_->initialized = true;
+      status_ = uv_accept(state_->stream_handle(), incoming_->stream_handle());
+      if (status_ < 0) {
+        return;
+      }
+      received_.emplace(received_handle{
+          tcp_connection{std::move(incoming_)}, bytes_transferred_});
+      status_ = 0;
+    }
+
+    void close_untransferred_connection(std::coroutine_handle<> continuation) noexcept {
+      auto *connection = incoming_.release();
+      assert(connection != nullptr);
+      provisional_close_required_ = true;
+      connection->close_completion_destination = &provisional_close_completed_;
+      connection->release_owner();
+      connection->request_close_from_callback(continuation);
+    }
+
+    void stop_native_or_terminate() noexcept {
+      const int status = uv_read_stop(state_->stream_handle());
+      assert(status >= 0);
+      if (status < 0) {
+        std::terminate();
+      }
+    }
+
+    void release_slots() noexcept {
+      if (state_ != nullptr && state_->io.active_read == this) {
+        state_->io.active_read = nullptr;
+      }
+      if (cancellation_ != nullptr) {
+        cancellation_->unregister(cancellation_registration_);
+        cancellation_ = nullptr;
+      }
+    }
+
+    detail::pipe_connection_state *state_ = nullptr;
+    std::span<std::byte> buffer_{};
+    std::unique_ptr<detail::tcp_connection_state> incoming_{};
+    std::optional<received_handle> received_{};
+    std::coroutine_handle<> continuation_{};
+    co::detail::cancellation_state *cancellation_ = nullptr;
+    co::detail::cancellation_registration cancellation_registration_{};
+    ssize_t status_ = 0;
+    std::size_t bytes_transferred_ = 0;
+    bool provisional_close_required_ = false;
+    bool provisional_close_completed_ = false;
+  };
+
+  // Receives one TCP handle message from a connected IPC pipe. The supplied
+  // buffer borrows the associated message bytes through completion. A message
+  // without one pending TCP handle is a terminal protocol error in this slice.
+  [[nodiscard]] receive_handle_awaiter receive_handle(std::span<std::byte> buffer) noexcept {
+    return receive_handle_awaiter{state_.get(), buffer};
+  }
+
   class connect_awaiter {
   public:
     connect_awaiter(std::string_view name, bool ipc) : name_{name}, ipc_{ipc} {}
@@ -237,6 +490,7 @@ public:
       state.connect_continuation = continuation;
       state.provisional_owner = &state_;
       state.connect_status_destination = &status_;
+      state.ipc = ipc_;
       status_ = uv_pipe_init(state.loop->native(), &state.pipe, ipc_ ? 1 : 0);
       state.connect_status = status_;
       if (status_ < 0) {
@@ -319,6 +573,16 @@ public:
 
   [[nodiscard]] pipe_connection::write_awaiter write(std::string_view data) const {
     return connection().write(data);
+  }
+
+  [[nodiscard]] pipe_connection::write_awaiter write_with_handle(
+      std::string_view data, tcp_connection &handle) const {
+    return connection().write_with_handle(data, handle);
+  }
+
+  [[nodiscard]] pipe_connection::receive_handle_awaiter receive_handle(
+      std::span<std::byte> buffer) const {
+    return connection().receive_handle(buffer);
   }
 
 private:
