@@ -14,6 +14,7 @@
 
 #include "uvpp/co/task.hpp"
 #include "uvpp/core/error.hpp"
+#include "uvpp/detail/accept_slot.hpp"
 #include "uvpp/detail/async_close_state.hpp"
 #include "uvpp/net/address.hpp"
 #include "uvpp/net/socket_address.hpp"
@@ -35,9 +36,7 @@ class tcp_listener_close_completion;
 struct tcp_listener_state {
   uv_tcp_t tcp{};
   uv::loop *loop = nullptr;
-  void *active_accept = nullptr;
-  void (*deliver_accept)(void *, int) noexcept = nullptr;
-  void (*cancel_accept)(void *) noexcept = nullptr;
+  accept_slot accept{};
   bool initialized = false;
   async_close_state close{};
 
@@ -51,17 +50,7 @@ struct tcp_listener_state {
   // Cancelling the one-shot accept releases the listener callback slot before
   // it starts close. The awaiter closes its initialized, untransferred child
   // state before eventually resuming its task with UV_ECANCELED.
-  void quiesce_active_accept() noexcept {
-    auto *accept = std::exchange(active_accept, nullptr);
-    auto cancel = std::exchange(cancel_accept, nullptr);
-    deliver_accept = nullptr;
-    if (cancel != nullptr) {
-      assert(accept != nullptr);
-      cancel(accept);
-    } else {
-      assert(accept == nullptr);
-    }
-  }
+  void quiesce_active_accept() noexcept { accept.quiesce(); }
 
   // Starts uv_close exactly once. This is the internal close-completion path;
   // it is permitted to quiesce an armed accept before claiming close.
@@ -70,9 +59,7 @@ struct tcp_listener_state {
       return false;
     }
     quiesce_active_accept();
-    assert(active_accept == nullptr);
-    assert(deliver_accept == nullptr);
-    assert(cancel_accept == nullptr);
+    assert(!accept.claimed());
     uv_close(reinterpret_cast<uv_handle_t *>(&tcp), &tcp_listener_state::on_close);
     return true;
   }
@@ -97,15 +84,10 @@ struct tcp_listener_state {
     if (self.close.closing()) {
       return;
     }
-    auto *accept = std::exchange(self.active_accept, nullptr);
-    auto deliver = std::exchange(self.deliver_accept, nullptr);
-    (void)std::exchange(self.cancel_accept, nullptr);
     // uv_accept() is valid only for this notification. A long-running server
     // must therefore keep an accept waiter armed; queueing/backpressure is a
     // future scoped-server policy, not an implicit listener side effect.
-    if (deliver != nullptr) {
-      deliver(accept, status);
-    }
+    self.accept.deliver(status);
   }
 
   static void on_close(uv_handle_t *raw) noexcept {
@@ -227,7 +209,7 @@ public:
         status_ = UV_ECANCELED;
         return false;
       }
-      if (listener_->active_accept != nullptr) {
+      if (listener_->accept.claimed()) {
         status_ = UV_EBUSY;
         return false;
       }
@@ -240,9 +222,8 @@ public:
       }
       connection_->initialized = true;
       continuation_ = continuation;
-      listener_->active_accept = this;
-      listener_->deliver_accept = &accept_awaiter::on_connection;
-      listener_->cancel_accept = &accept_awaiter::on_listener_close_requested;
+      listener_->accept.claim(
+          this, &accept_awaiter::on_connection, &accept_awaiter::on_listener_close_requested);
       cancellation_ = continuation.promise().cancellation();
       if (cancellation_ != nullptr && !cancellation_->register_callback(
           cancellation_registration_, &accept_awaiter::on_stop_requested, this)) {
@@ -275,6 +256,7 @@ public:
       self.status_ = connection_status;
       if (self.cancellation_ != nullptr) {
         self.cancellation_->unregister(self.cancellation_registration_);
+        self.cancellation_ = nullptr;
       }
       if (self.status_ >= 0) {
         self.status_ = uv_accept(reinterpret_cast<uv_stream_t *>(&self.listener_->tcp),
@@ -296,6 +278,7 @@ public:
       self.status_ = UV_ECANCELED;
       if (self.cancellation_ != nullptr) {
         self.cancellation_->unregister(self.cancellation_registration_);
+        self.cancellation_ = nullptr;
       }
       auto continuation = std::exchange(self.continuation_, {});
       // The listener has already released its accept/delivery/cancellation
@@ -306,7 +289,7 @@ public:
 
     static void on_stop_requested(void *context) noexcept {
       auto &self = *static_cast<accept_awaiter *>(context);
-      if (self.listener_ == nullptr || self.listener_->active_accept != &self) {
+      if (self.listener_ == nullptr || !self.listener_->accept.claimed_by(&self)) {
         return;
       }
       self.listener_->quiesce_active_accept();
@@ -351,8 +334,8 @@ private:
       return;
     }
     auto *state = state_.release();
-    assert(state->active_accept == nullptr);
-    if (state->active_accept != nullptr) {
+    assert(!state->accept.claimed());
+    if (state->accept.claimed()) {
       std::terminate();
     }
     state->release_owner();

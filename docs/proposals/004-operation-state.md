@@ -104,11 +104,15 @@ connect/accept/endpoint behavior around that common stream protocol; pipe's clos
 state machine separately snapshots joined close waiters before the first user
 resumption.
 
-The TCP listener slice treats `uv_listen` as a persistent native source with one
-exclusive high-level accept waiter. On a connection notification it first releases
-that waiter claim, then calls `uv_accept` into separately stable connection storage.
-An accept error closes that initialized storage before task delivery; success
-transfers it to the resumed task as `tcp_connection`. Listener destruction while an
+TCP and pipe listeners share a private `accept_slot` for their persistent
+`uv_listen()` sources. The slot owns only the exclusive one-shot high-level claim
+and its delivery/cancellation function pointers. A notification or cleanup first
+detaches all three slot pointers, then invokes family-specific delivery or
+cancellation; a resumed coroutine may therefore destroy listener state without a
+later slot dereference. Each listener still constructs its own provisional child,
+calls `uv_accept()`, and owns its child-close path. An accept error closes that
+initialized storage before task delivery; success transfers it to the resumed
+task as the family-specific connection owner. Listener destruction while an
 accept is active is an explicit experimental contract violation until scopes and
 cancellation can complete the operation safely. A notification with no active
 waiter is deliberately ignored in this one-shot slice: it neither accepts nor

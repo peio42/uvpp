@@ -17,6 +17,7 @@
 #include "uvpp/co/task.hpp"
 #include "uvpp/core/error.hpp"
 #include "uvpp/core/version.hpp"
+#include "uvpp/detail/accept_slot.hpp"
 #include "uvpp/detail/async_close_state.hpp"
 #include "uvpp/net/pipe_connection.hpp"
 
@@ -36,9 +37,7 @@ class pipe_listener_close_completion;
 struct pipe_listener_state {
   uv_pipe_t pipe{};
   uv::loop *loop = nullptr;
-  void *active_accept = nullptr;
-  void (*deliver_accept)(void *, int) noexcept = nullptr;
-  void (*cancel_accept)(void *) noexcept = nullptr;
+  accept_slot accept{};
   bool ipc = false;
   async_close_state close{};
 
@@ -52,26 +51,14 @@ struct pipe_listener_state {
 
   // A listener owns the one-shot accept slot, so scope cleanup may quiesce it.
   // The awaiter closes its initialized, untransferred child before task delivery.
-  void quiesce_active_accept() noexcept {
-    auto *accept = std::exchange(active_accept, nullptr);
-    auto cancel = std::exchange(cancel_accept, nullptr);
-    deliver_accept = nullptr;
-    if (cancel != nullptr) {
-      assert(accept != nullptr);
-      cancel(accept);
-    } else {
-      assert(accept == nullptr);
-    }
-  }
+  void quiesce_active_accept() noexcept { accept.quiesce(); }
 
   bool request_close() noexcept {
     if (!close.begin()) {
       return false;
     }
     quiesce_active_accept();
-    assert(active_accept == nullptr);
-    assert(deliver_accept == nullptr);
-    assert(cancel_accept == nullptr);
+    assert(!accept.claimed());
     uv_close(reinterpret_cast<uv_handle_t *>(&pipe), &pipe_listener_state::on_close);
     return true;
   }
@@ -94,12 +81,7 @@ struct pipe_listener_state {
     if (self.close.closing()) {
       return;
     }
-    auto *accept = std::exchange(self.active_accept, nullptr);
-    auto deliver = std::exchange(self.deliver_accept, nullptr);
-    (void)std::exchange(self.cancel_accept, nullptr);
-    if (deliver != nullptr) {
-      deliver(accept, status);
-    }
+    self.accept.deliver(status);
   }
 
   static void on_close(uv_handle_t *raw) noexcept {
@@ -204,7 +186,7 @@ public:
         status_ = UV_ECANCELED;
         return false;
       }
-      if (listener_->active_accept != nullptr) {
+      if (listener_->accept.claimed()) {
         status_ = UV_EBUSY;
         return false;
       }
@@ -217,9 +199,8 @@ public:
         return false;
       }
       continuation_ = continuation;
-      listener_->active_accept = this;
-      listener_->deliver_accept = &accept_awaiter::on_connection;
-      listener_->cancel_accept = &accept_awaiter::on_listener_close_requested;
+      listener_->accept.claim(
+          this, &accept_awaiter::on_connection, &accept_awaiter::on_listener_close_requested);
       cancellation_ = continuation.promise().cancellation();
       if (cancellation_ != nullptr && !cancellation_->register_callback(
           cancellation_registration_, &accept_awaiter::on_stop_requested, this)) {
@@ -282,7 +263,7 @@ public:
 
     static void on_stop_requested(void *context) noexcept {
       auto &self = *static_cast<accept_awaiter *>(context);
-      if (self.listener_ == nullptr || self.listener_->active_accept != &self) {
+      if (self.listener_ == nullptr || !self.listener_->accept.claimed_by(&self)) {
         return;
       }
       self.listener_->quiesce_active_accept();
@@ -334,8 +315,8 @@ private:
     auto *state = state_.release();
     // Direct close/destruction retains the experimental guard. resource_scope
     // uses close_completion(), which is allowed to quiesce one active accept.
-    assert(state->active_accept == nullptr);
-    if (state->active_accept != nullptr) {
+    assert(!state->accept.claimed());
+    if (state->accept.claimed()) {
       std::terminate();
     }
     state->release_owner();
