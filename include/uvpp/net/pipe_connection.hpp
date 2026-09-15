@@ -54,8 +54,11 @@ public:
     if (tcp_.empty()) {
       throw std::logic_error{"received IPC handle is not TCP"};
     }
-    auto result = std::move(tcp_.back());
-    tcp_.pop_back();
+    // Keep libuv's native pending-handle order observable. Moving a
+    // tcp_connection transfers its address-stable state, so erasing from this
+    // small high-level result queue cannot relocate a native uv_tcp_t.
+    auto result = std::move(tcp_.front());
+    tcp_.erase(tcp_.begin());
     return result;
   }
 

@@ -2033,6 +2033,159 @@ TEST(UvppV3Coroutine, pipeWriteWithHandleRejectsATcpFromAnotherLoop) {
   source_pair.close();
 }
 
+TEST(UvppV3Coroutine, pipeWriteWithHandleUsesTheTcpExportSlotAcrossPipes) {
+  if (!local_pipe_is_permitted() || !loopback_tcp_is_permitted()) {
+    GTEST_SKIP() << "local pipe or loopback TCP is not permitted in this environment";
+  }
+  const auto path = v3_pipe_path() + "-concurrent-handle-export";
+  std::filesystem::remove(path);
+  uv::loop loop;
+  uv::pipe_listener listener(loop, path, true);
+  uv::tcp tcp_listener(loop);
+  tcp_listener.bind(uv::ipv4{"127.0.0.1", 0});
+  const uv::ipv4 address{"127.0.0.1", tcp_listener.sockname().port()};
+  std::unique_ptr<uv::tcp> peer;
+  tcp_listener.listen([&](uv::tcp &server, uv::result status) {
+    EXPECT_TRUE(status);
+    peer = std::make_unique<uv::tcp>(loop);
+    EXPECT_NO_THROW(server.accept(*peer));
+  });
+  bool first_completed = false;
+  int second_status = 0;
+
+  auto server = [&]() -> uv::co::task<void> {
+    auto first = co_await listener.accept();
+    auto second = co_await listener.accept();
+    co_await uv::co::sleep_for(1ms);
+    (void)first;
+    (void)second;
+  };
+  auto client = [&]() -> uv::co::task<void> {
+    auto first_pipe = co_await uv::pipe_connection::connect(path, true);
+    auto second_pipe = co_await uv::pipe_connection::connect(path, true);
+    auto source = co_await uv::tcp_connection::connect(address);
+    uv::co::task_scope writers(loop);
+    auto first = [&]() -> uv::co::task<void> {
+      co_await first_pipe.write_with_handle("A", source);
+      first_completed = true;
+    };
+    auto second = [&]() -> uv::co::task<void> {
+      try {
+        co_await second_pipe.write_with_handle("B", source);
+      } catch (const uv::error &error) {
+        second_status = error.code().value();
+      }
+    };
+    writers.spawn(first());
+    writers.spawn(second());
+    co_await writers.join();
+    if (peer && !peer->closing()) {
+      peer->close();
+    }
+    tcp_listener.close();
+    listener.close();
+  };
+
+  auto server_execution = uv::co::spawn(loop, server());
+  auto client_execution = uv::co::spawn(loop, client());
+  loop.run();
+
+  EXPECT_NO_THROW(server_execution.rethrow_if_failed());
+  EXPECT_NO_THROW(client_execution.rethrow_if_failed());
+  EXPECT_TRUE(first_completed);
+  EXPECT_EQ(second_status, UV_EBUSY);
+  EXPECT_NO_THROW(loop.close());
+  std::filesystem::remove(path);
+}
+
+TEST(UvppV3Coroutine, ipcPipeBackToBackHandleWritesPreserveBytesAndOwners) {
+#if defined(__linux__)
+  if (!local_pipe_is_permitted() || !loopback_tcp_is_permitted()) {
+    GTEST_SKIP() << "local pipe or loopback TCP is not permitted in this environment";
+  }
+  const auto path = v3_pipe_path() + "-back-to-back-handles";
+  std::filesystem::remove(path);
+  uv::loop loop;
+  uv::pipe_listener listener(loop, path, true);
+  uv::tcp tcp_listener(loop);
+  tcp_listener.bind(uv::ipv4{"127.0.0.1", 0});
+  const uv::ipv4 address{"127.0.0.1", tcp_listener.sockname().port()};
+  std::vector<std::unique_ptr<uv::tcp>> peers;
+  tcp_listener.listen([&](uv::tcp &server, uv::result status) {
+    EXPECT_TRUE(status);
+    auto peer = std::make_unique<uv::tcp>(loop);
+    EXPECT_NO_THROW(server.accept(*peer));
+    peers.push_back(std::move(peer));
+  });
+  int received_count = 0;
+  int valid_owners = 0;
+  std::string received_bytes;
+  std::vector<int> expected_local_ports;
+  std::vector<int> received_local_ports;
+  bool receiver_done = false;
+  auto local_port = [](uv_tcp_t *handle) {
+    sockaddr_storage storage{};
+    int length = sizeof(storage);
+    EXPECT_EQ(uv_tcp_getsockname(handle, reinterpret_cast<sockaddr *>(&storage), &length), 0);
+    EXPECT_EQ(storage.ss_family, AF_INET);
+    return uv::ipv4{*reinterpret_cast<sockaddr_in *>(&storage)}.port();
+  };
+
+  auto receiver = [&]() -> uv::co::task<void> {
+    auto control = co_await listener.accept();
+    while (received_count != 2) {
+      std::array<std::byte, 8> buffer{};
+      auto result = co_await control.receive_handle(buffer);
+      received_bytes.append(reinterpret_cast<const char *>(buffer.data()),
+          result.bytes_transferred());
+      while (result.tcp_count() != 0) {
+        auto connection = result.take_tcp();
+        if (connection.native_handle() != nullptr) {
+          ++valid_owners;
+          received_local_ports.push_back(local_port(connection.native_handle()));
+        }
+        ++received_count;
+      }
+    }
+    receiver_done = true;
+    for (auto &peer : peers) {
+      if (!peer->closing()) {
+        peer->close();
+      }
+    }
+    tcp_listener.close();
+    listener.close();
+  };
+  auto sender = [&]() -> uv::co::task<void> {
+    auto control = co_await uv::pipe_connection::connect(path, true);
+    auto first = co_await uv::tcp_connection::connect(address);
+    auto second = co_await uv::tcp_connection::connect(address);
+    expected_local_ports.push_back(local_port(first.native_handle()));
+    expected_local_ports.push_back(local_port(second.native_handle()));
+    co_await control.write_with_handle("A", first);
+    co_await control.write_with_handle("B", second);
+    while (!receiver_done) {
+      co_await uv::co::sleep_for(1ms);
+    }
+  };
+
+  auto receiver_execution = uv::co::spawn(loop, receiver());
+  auto sender_execution = uv::co::spawn(loop, sender());
+  loop.run();
+
+  EXPECT_NO_THROW(receiver_execution.rethrow_if_failed());
+  EXPECT_NO_THROW(sender_execution.rethrow_if_failed());
+  EXPECT_EQ(received_count, 2);
+  EXPECT_EQ(valid_owners, 2);
+  EXPECT_EQ(received_bytes, "AB");
+  EXPECT_EQ(received_local_ports, expected_local_ports);
+  EXPECT_NO_THROW(loop.close());
+  std::filesystem::remove(path);
+#else
+  GTEST_SKIP() << "this IPC queue observation is Linux-specific";
+#endif
+}
+
 TEST(UvppV3Coroutine, internalPipeCloseCompletionJoinsAndChecksAffinity) {
   if (!local_pipe_is_permitted()) {
     GTEST_SKIP() << "local pipe bind is not permitted in this environment";
@@ -2565,6 +2718,48 @@ TEST(UvppV3CoroutineDeathTest, tcpConnectionDestructionWithActiveWriteTerminates
     auto execution = uv::co::spawn(pair.loop, writer());
     pair.client.reset();
   }()), "");
+}
+
+TEST(UvppV3CoroutineDeathTest, tcpConnectionDestructionWithActivePipeHandleExportTerminates) {
+  if (!local_pipe_is_permitted() || !loopback_tcp_is_permitted()) {
+    GTEST_SKIP() << "local pipe or loopback TCP is not permitted in this environment";
+  }
+  const auto path = v3_pipe_path() + "-handle-export-death";
+  std::filesystem::remove(path);
+
+  EXPECT_DEATH(([&] {
+    uv::loop loop;
+    uv::pipe_listener listener(loop, path, true);
+    uv::tcp tcp_listener(loop);
+    tcp_listener.bind(uv::ipv4{"127.0.0.1", 0});
+    const uv::ipv4 address{"127.0.0.1", tcp_listener.sockname().port()};
+    std::unique_ptr<uv::tcp> peer;
+    tcp_listener.listen([&](uv::tcp &server, uv::result status) {
+      if (!status) {
+        std::terminate();
+      }
+      peer = std::make_unique<uv::tcp>(loop);
+      server.accept(*peer);
+    });
+    std::optional<uv::pipe_connection> pipe;
+    std::optional<uv::tcp_connection> source;
+    auto establish = [&]() -> uv::co::task<void> {
+      pipe.emplace(co_await uv::pipe_connection::connect(path, true));
+      source.emplace(co_await uv::tcp_connection::connect(address));
+      loop.stop();
+    };
+    auto setup = uv::co::spawn(loop, establish());
+    loop.run();
+    setup.rethrow_if_failed();
+    auto writer = [&]() -> uv::co::task<void> {
+      co_await pipe->write_with_handle("x", *source);
+    };
+    auto execution = uv::co::spawn(loop, writer());
+    (void)execution;
+    source.reset();
+  }()), "");
+
+  std::filesystem::remove(path);
 }
 
 TEST(UvppV3CoroutineDeathTest, tcpListenerCloseWithActiveAcceptTerminates) {
