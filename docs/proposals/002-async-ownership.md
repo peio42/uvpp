@@ -174,7 +174,11 @@ families now expose the public member awaiter and `request_close()`; the matchin
 results, active-read rejection by both `close()` and `request_close()`, stop
 requested before or during close, and both listener families with an active
 accept. Generic
-registration and cleanup-error aggregation remain unimplemented.
+registration and cleanup-error aggregation remain unimplemented. Scope cleanup
+failure is now retryable: successful records are retired, remaining ownership is
+retained, and callers settle borrowed work before retrying. Destruction with
+remaining resources still terminates. See [011](011-resource-scopes.md) for the
+selected state and error contract.
 
 The experimental `uv::tcp_listener` adds separate stable listener storage and a
 one-shot accept owner transfer. Its internal close completion has the same

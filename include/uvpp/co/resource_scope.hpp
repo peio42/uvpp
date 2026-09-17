@@ -139,7 +139,7 @@ public:
   // creating its access token before the move give allocation failure a strong
   // rollback: caller ownership has not yet changed.
   [[nodiscard]] tcp_connection_registration own(tcp_connection &&connection) {
-    if (finish_started_) {
+    if (state_ != cleanup_state::open) {
       throw std::logic_error{"uv::co::resource_scope cannot own after finish"};
     }
     if (!connection.has_execution_loop(*loop_)) {
@@ -158,7 +158,7 @@ public:
   // registrations, the returned capability exposes accept() because the server
   // root retains listener control while handlers receive connection views.
   [[nodiscard]] tcp_listener_registration own(tcp_listener &&listener) {
-    if (finish_started_) {
+    if (state_ != cleanup_state::open) {
       throw std::logic_error{"uv::co::resource_scope cannot own after finish"};
     }
     if (!listener.has_execution_loop(*loop_)) {
@@ -174,7 +174,7 @@ public:
   }
 
   [[nodiscard]] udp_socket_registration own(udp_socket &&socket) {
-    if (finish_started_) {
+    if (state_ != cleanup_state::open) {
       throw std::logic_error{"uv::co::resource_scope cannot own after finish"};
     }
     if (!socket.has_execution_loop(*loop_)) {
@@ -192,7 +192,7 @@ public:
   // task receives only a borrowed view and must settle borrowed stream I/O
   // before this scope can start close completion.
   [[nodiscard]] pipe_connection_registration own(pipe_connection &&connection) {
-    if (finish_started_) {
+    if (state_ != cleanup_state::open) {
       throw std::logic_error{"uv::co::resource_scope cannot own after finish"};
     }
     if (!connection.has_execution_loop(*loop_)) {
@@ -211,7 +211,7 @@ public:
   // The listener registration retains no owner and exposes only one-shot
   // accept(). resource_scope may quiesce that accept during finish().
   [[nodiscard]] pipe_listener_registration own(pipe_listener &&listener) {
-    if (finish_started_) {
+    if (state_ != cleanup_state::open) {
       throw std::logic_error{"uv::co::resource_scope cannot own after finish"};
     }
     if (!listener.has_execution_loop(*loop_)) {
@@ -229,16 +229,16 @@ public:
 
   // finish() is deliberately a task rather than a public socket close API. It
   // serializes internal close completion and destroys each owner only after its
-  // actual uv_close callback has released all close callback ownership.
+  // actual uv_close callback has released all close callback ownership. The cold
+  // task borrows this scope; starting it seals adoption. Failure retains only
+  // unfinished records for a later attempt; successful finish is idempotent.
   [[nodiscard]] task<void> finish() {
-    if (finish_started_) {
-      throw std::logic_error{"uv::co::resource_scope can be finished only once"};
-    }
-    finish_started_ = true;
     return finish_impl();
   }
 
 private:
+  enum class cleanup_state { open, active, interrupted, finished };
+
   // Ordering is a scope policy, not a claim that every resource shares one
   // cleanup protocol. A listener first stops admission so it cannot admit new
   // dependents; established TCP, pipe, and UDP owners close afterwards.
@@ -409,25 +409,39 @@ private:
 
   task<void> finish_impl() {
     co_await loop_check_awaiter{*this};
-    // Current resource cleanup is serial by policy. The records decide their
-    // own lifecycle semantics; this loop decides only the phase ordering.
-    static constexpr std::array cleanup_order{
-        cleanup_phase::stop_admission,
-        cleanup_phase::close_resources,
-    };
-    for (const auto phase : cleanup_order) {
-      for (auto &resource : resources_) {
-        if (resource->phase() == phase) {
-          co_await resource->finish();
+    if (state_ == cleanup_state::active) {
+      throw std::logic_error{"uv::co::resource_scope cleanup already active"};
+    }
+    if (state_ == cleanup_state::finished) {
+      co_return;
+    }
+    state_ = cleanup_state::active;
+    try {
+      // Retire each completed record immediately. Empty slots preserve ordering
+      // without vector erasure costs and are skipped when resuming after failure.
+      static constexpr std::array cleanup_order{
+          cleanup_phase::stop_admission,
+          cleanup_phase::close_resources,
+      };
+      for (const auto phase : cleanup_order) {
+        for (auto &resource : resources_) {
+          if (resource && resource->phase() == phase) {
+            co_await resource->finish();
+            resource.reset();
+          }
         }
       }
+      resources_.clear();
+      state_ = cleanup_state::finished;
+    } catch (...) {
+      state_ = cleanup_state::interrupted;
+      throw;
     }
-    resources_.clear();
   }
 
   uv::loop *loop_ = nullptr;
   std::vector<std::unique_ptr<resource_record_base>> resources_{};
-  bool finish_started_ = false;
+  cleanup_state state_ = cleanup_state::open;
 };
 
 } // namespace uv::co

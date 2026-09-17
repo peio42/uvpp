@@ -273,3 +273,35 @@ client.close([](tcp& client) {
 Higher-level owners and asynchronous cleanup are described in the
 [ownership proposal](../proposals/002-async-ownership.md). They are not part of the
 current low-level handle API.
+
+
+## Experimental v3 resource-scope cleanup
+
+`uv::co::resource_scope` owns TCP/pipe connections and listeners and UDP sockets.
+Its cold `finish()` task borrows the scope. Construction has no state effect;
+startup checks loop affinity before transitioning from `open` or `interrupted`
+to `active`. Starting cleanup seals adoption permanently. An overlapping attempt
+throws without changing the active attempt; `finished` is idempotent after the
+same affinity check.
+
+Cleanup runs serially, listeners before dependent resources. Each successful
+record invalidates borrowed access after native close completion, releases owner
+storage, and is immediately retired. Empty slots in the record vector preserve
+ordering without repeated vector erasure and are skipped on retry. The vector is
+cleared on full success (`finished`). Any exception during the cleanup pass,
+including record-task or waiter allocation failure, sets `interrupted` and is
+propagated. Remaining records retain ownership; completed cleanup is not rolled
+back. A retry joins an already-started native close through the existing close
+protocol rather than submitting it twice.
+
+Active incompatible borrowed I/O is a recoverable `std::logic_error`: the caller
+must settle/join that work before retrying. Listener accept retains its distinct
+quiescence protocol. No blanket cancellation, background cleanup, or nested loop
+is introduced. Destruction with remaining resources terminates, including after
+an observed cleanup failure. Merely creating an unstarted finish task does not
+satisfy asynchronous exit, and that task must not outlive the scope it borrows.
+
+Current handle close has no native completion error. Cleanup is fail-fast, with
+no aggregate-error type; callers preserve primary task failures separately.
+Generic cleanup-error aggregation and request-based resource policies remain
+proposed in [011](../proposals/011-resource-scopes.md).
