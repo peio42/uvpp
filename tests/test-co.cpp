@@ -594,6 +594,94 @@ TEST(UvppV3Coroutine, publicTcpCloseIsColdJoinsAndHasAnExplicitResultSurface) {
   pair.close();
 }
 
+TEST(UvppV3Coroutine, publicTcpCloseCompletesWhenStopWasAlreadyRequested) {
+  if (!loopback_tcp_is_permitted()) {
+    GTEST_SKIP() << "loopback TCP is not permitted in this environment";
+  }
+
+  connected_tcp_pair pair;
+  pair.connect();
+  uv::co::task_scope scope(pair.loop);
+  bool stop_observed_before_close = false;
+  bool native_close_callback_delivered = false;
+  bool close_completed = false;
+  bool close_completed_after_native_callback = false;
+  bool close_started = false;
+
+  auto closer = [&]() -> uv::co::task<void> {
+    stop_observed_before_close = co_await uv::co::stop_requested();
+    co_await pair.client->close();
+    close_completed_after_native_callback = native_close_callback_delivered;
+    close_completed = true;
+  };
+  auto parent = [&]() -> uv::co::task<void> {
+    auto &state = uv::detail::tcp_connection_state::from_handle(pair.client->native_handle());
+    state.close_completion_destination = &native_close_callback_delivered;
+    scope.request_stop();
+    scope.spawn(closer());
+    close_started = pair.client->closing();
+    EXPECT_FALSE(close_completed);
+    co_await scope.join();
+    pair.loop.stop();
+  };
+
+  auto execution = uv::co::spawn(pair.loop, parent());
+  pair.loop.run();
+
+  EXPECT_NO_THROW(execution.rethrow_if_failed());
+  EXPECT_TRUE(stop_observed_before_close);
+  EXPECT_TRUE(close_started);
+  EXPECT_TRUE(native_close_callback_delivered);
+  EXPECT_TRUE(close_completed);
+  EXPECT_TRUE(close_completed_after_native_callback);
+  pair.close();
+}
+
+TEST(UvppV3Coroutine, publicTcpCloseWaitsForNativeCallbackAfterStop) {
+  if (!loopback_tcp_is_permitted()) {
+    GTEST_SKIP() << "loopback TCP is not permitted in this environment";
+  }
+
+  connected_tcp_pair pair;
+  pair.connect();
+  uv::co::task_scope scope(pair.loop);
+  bool native_close_callback_delivered = false;
+  bool close_completed = false;
+  bool close_completed_after_native_callback = false;
+  bool stop_observed_after_close = false;
+  bool close_started = false;
+  bool close_still_pending_after_stop = false;
+
+  auto closer = [&]() -> uv::co::task<void> {
+    co_await pair.client->close();
+    close_completed_after_native_callback = native_close_callback_delivered;
+    close_completed = true;
+    stop_observed_after_close = co_await uv::co::stop_requested();
+  };
+  auto parent = [&]() -> uv::co::task<void> {
+    auto &state = uv::detail::tcp_connection_state::from_handle(pair.client->native_handle());
+    state.close_completion_destination = &native_close_callback_delivered;
+    scope.spawn(closer());
+    close_started = pair.client->closing();
+    scope.request_stop();
+    close_still_pending_after_stop = !close_completed;
+    co_await scope.join();
+    pair.loop.stop();
+  };
+
+  auto execution = uv::co::spawn(pair.loop, parent());
+  pair.loop.run();
+
+  EXPECT_NO_THROW(execution.rethrow_if_failed());
+  EXPECT_TRUE(close_started);
+  EXPECT_TRUE(close_still_pending_after_stop);
+  EXPECT_TRUE(native_close_callback_delivered);
+  EXPECT_TRUE(close_completed);
+  EXPECT_TRUE(close_completed_after_native_callback);
+  EXPECT_TRUE(stop_observed_after_close);
+  pair.close();
+}
+
 TEST(UvppV3Coroutine, publicTcpCloseRejectsActiveReadWithoutChangingIt) {
   if (!loopback_tcp_is_permitted()) {
     GTEST_SKIP() << "loopback TCP is not permitted in this environment";
