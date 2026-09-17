@@ -105,14 +105,18 @@ public:
   udp_socket(uv::loop &loop, const ipv6 &address) { initialize(loop, address.native_sockaddr()); }
   ~udp_socket() { reset(); }
 
-  uv_udp_t *native_handle() noexcept { return state_ ? &state_->udp : nullptr; }
-  const uv_udp_t *native_handle() const noexcept { return state_ ? &state_->udp : nullptr; }
+  uv_udp_t *native() noexcept { return state_ ? &state_->udp : nullptr; }
+  const uv_udp_t *native() const noexcept { return state_ ? &state_->udp : nullptr; }
+  uv_handle_t *native_handle() noexcept { return reinterpret_cast<uv_handle_t *>(native()); }
+  const uv_handle_t *native_handle() const noexcept {
+    return reinterpret_cast<const uv_handle_t *>(native());
+  }
   bool closing() const noexcept { return state_ && state_->closing(); }
   bool has_execution_loop(const uv::loop &loop) const noexcept { return state_ && state_->loop == &loop; }
   bool has_active_operation() const noexcept {
     return state_ && (state_->send_active || state_->active_receive != nullptr);
   }
-  socket_address sockname() const {
+  socket_address local_address() const {
     if (!state_) throw_if_error(UV_EBADF);
     socket_address address;
     throw_if_error(uv_udp_getsockname(&state_->udp, address.native(), address.native_len()));
@@ -124,20 +128,18 @@ public:
   public:
     recv_from_result(std::size_t size, const sockaddr *peer, unsigned flags) noexcept
       : size_{size}, flags_{flags} {
-      if (peer != nullptr) {
-        if (peer->sa_family == AF_INET) std::memcpy(&peer_, peer, sizeof(sockaddr_in));
-        if (peer->sa_family == AF_INET6) std::memcpy(&peer_, peer, sizeof(sockaddr_in6));
+      if (peer != nullptr && peer->sa_family == AF_INET) {
+        peer_ = socket_address{*reinterpret_cast<const sockaddr_in *>(peer)};
+      } else if (peer != nullptr && peer->sa_family == AF_INET6) {
+        peer_ = socket_address{*reinterpret_cast<const sockaddr_in6 *>(peer)};
       }
     }
     std::size_t size() const noexcept { return size_; }
     bool partial() const noexcept { return (flags_ & UV_UDP_PARTIAL) != 0; }
-    bool peer_is_v4() const noexcept { return peer_.ss_family == AF_INET; }
-    bool peer_is_v6() const noexcept { return peer_.ss_family == AF_INET6; }
-    ipv4 peer_v4() const { assert(peer_is_v4()); return ipv4{*reinterpret_cast<const sockaddr_in *>(&peer_)}; }
-    ipv6 peer_v6() const { assert(peer_is_v6()); return ipv6{*reinterpret_cast<const sockaddr_in6 *>(&peer_)}; }
+    socket_address peer_address() const noexcept { return peer_; }
   private:
     std::size_t size_ = 0;
-    sockaddr_storage peer_{};
+    socket_address peer_{};
     unsigned flags_ = 0;
   };
 
@@ -303,7 +305,7 @@ private:
 
 class udp_socket_view {
 public:
-  socket_address sockname() const { return socket().sockname(); }
+  socket_address local_address() const { return socket().local_address(); }
   [[nodiscard]] udp_socket::recv_from_awaiter recv_from(std::span<std::byte> buffer) const { return socket().recv_from(buffer); }
   [[nodiscard]] udp_socket::send_to_awaiter send_to(std::span<const std::byte> data, const ipv4 &address) const { return socket().send_to(data, address); }
   [[nodiscard]] udp_socket::send_to_awaiter send_to(std::span<const std::byte> data, const ipv6 &address) const { return socket().send_to(data, address); }

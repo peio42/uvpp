@@ -66,6 +66,11 @@ not mean transferring the source C++ owner.
 
 Borrowed views use explicit `.view()` production, never implicit conversion.
 Native access is named and explicit, never an implicit pointer conversion.
+It is borrowed access: it neither transfers ownership nor permits mutation of
+libuv fields or callback/data slots managed by uvpp, unless a specific API
+documents that mutation. Public owners expose `native()` for their concrete
+native representation, `native_handle()` for `uv_handle_t*`, and
+`native_stream()` for `uv_stream_t*` where applicable.
 Public duration values use chrono; counters remain counts.
 
 ## Recommended type vocabulary
@@ -87,6 +92,11 @@ Name a high-level object after its resource or role. Do not append `_handle`,
 Keep `stream` as capability vocabulary without requiring a new concrete owning
 `stream` type or public inheritance hierarchy. TCP and pipe currently share
 internal I/O machinery; this alone does not establish a public stream concept.
+
+`*_view` never owns a native lifetime or initiates cleanup through destruction.
+It may become invalid when the underlying owner or scope finishes. Diagnostic
+tokens may retain their own bookkeeping only; they must not retain the resource
+state or extend its native lifetime.
 
 `handle` remains appropriate when it describes a meaningful capability, such as
 `spawn_handle`, or native identity, such as `handle_view`. Do not create views
@@ -156,17 +166,17 @@ Keep typed enum conventions: `*_mode` for exclusive modes, `*_flag` for masks,
 `*_type` for primary classifications, and `*_event` / `*_event_kind` for events.
 Do not rename domain classifications mechanically merely to remove `kind`.
 
-## Decisions to settle before public API freeze
+## Decisions recorded before public API freeze
 
-| Finding in current code | Recommendation / remaining decision |
+| Finding in current code | Decision / remaining scope |
 | --- | --- |
-| `received_handle` already stores a queue of TCP owners, exposes `tcp_count()`, and repeatedly extracts with `take_tcp()`. | Review the singular name now, not only when a second handle family arrives. If the aggregate stays public, consider `received_handles`; if it describes an IPC read completion including bytes, consider `receive_handle_result`. `ipc_handle` alone does not resolve cardinality. Keep the current name until that shape is chosen. |
-| New owners' `native_handle()` returns `uv_tcp_t*`, `uv_pipe_t*`, or `uv_udp_t*`; historical wrappers use it for `uv_handle_t*` and expose concrete pointers via `native()`. | Prefer concrete `native()`, base `native_handle()`, and `native_stream()` where appropriate, consistently across layers. Review allowed native mutations and callback-slot interference before expanding high-level access. |
-| TCP listener and UDP socket expose `sockname()`. UDP receive exposes `peer_is_v4/v6()` and `peer_v4/v6()`. | Prefer `local_address()` for high-level address observation; evaluate a common `peer_address()` value for received datagrams. Keep native terminology available in raw APIs. Do not invent endpoint APIs for unsupported transports. |
-| TCP/pipe connections have internal close completion but no public `close()`. Listeners and UDP have synchronous `void close()` that releases the owner and initiates deferred cleanup. | Settle initiation versus awaited completion under [002](../proposals/002-async-ownership.md) before making close names uniform. A spelling change cannot provide a completion guarantee. |
-| Scope registrations differ: connection/socket registrations produce views, listener registrations expose `accept()`. | Keep the meaningful capability difference; add listener views only for an actual borrowing use case. |
-| `spawn_handle` owns only `task<void>` and terminates on destruction while active. | Keep the name provisionally; generic results, asynchronous join, and cancellation remain work in [003](../proposals/003-cancellation-and-task-scopes.md). Do not document an implemented `spawn_handle<T>`. |
-| Historical `try_close`, request `try_cancel`, low-level `uv::tcp`, and `uv::fs::raw` remain. | Migrate with the relevant error and namespace work, not as isolated cosmetic renames. |
+| Former `received_handle` stored a queue of TCP owners and the bytes accumulated by `receive_handle()`. | Renamed to `receive_handle_result`: it is the result of an operation, has operation metadata, and permits repeated `take_tcp()` extraction. Its `receive_handle_kind` classification remains specific to the result. |
+| New owners exposed a concrete pointer as `native_handle()`. | Owners now use `native()` for `uv_tcp_t*`, `uv_pipe_t*`, or `uv_udp_t*`; `native_handle()` returns `uv_handle_t*`; stream owners additionally expose `native_stream()`. This access borrows and preserves uvpp-managed fields and callback slots. |
+| TCP listener and UDP socket exposed `sockname()`. UDP receive exposed separate IPv4/IPv6 peer accessors. | High-level owners use `local_address()`. `udp_socket::recv_from_result::peer_address()` returns the shared value type `socket_address`. The raw layer may retain libuv terminology where appropriate. Connections may add `local_address()` and `remote_address()` when those observations are implemented. |
+| TCP/pipe connections have internal close completion but no public `close()`. Listeners and UDP have synchronous `void close()` that releases the owner and initiates deferred cleanup. | Deliberately deferred to the close-semantics milestone under [002](../proposals/002-async-ownership.md). The likely split is `request_close()` for initiation and an awaitable `close()` for completion, but neither spelling is frozen. No cosmetic rename belongs in this naming change. |
+| Scope registrations differ: connection/socket registrations produce views, listener registrations expose `accept()`. | Settled: retain the capability difference and add no listener view without a concrete borrowing use case. |
+| `spawn_handle` owns only `task<void>` and terminates on destruction while active. | Keep the name provisionally. Generic results, asynchronous join, and cancellation remain work in [003](../proposals/003-cancellation-and-task-scopes.md); do not document an implemented `spawn_handle<T>`. |
+| Historical `try_close`, request `try_cancel`, low-level `uv::tcp`, and `uv::fs::raw` remain. | Settled: migrate with the relevant error, close, or namespace change, not in an isolated rename-only branch. |
 
 Future timer, signal, process, TTY, poll, DNS, and filesystem owners must be named
 from their actual contracts. Existing historical names do not establish those

@@ -116,7 +116,7 @@ message-framing API: byte callbacks and pending handles have no one-to-one
 association. The caller buffer accumulates every byte received while waiting; its
 returned count must not be interpreted as the payload belonging to an adopted
 handle. Filling that buffer before a handle arrives fails with `UV_ENOBUFS`. The callback drains
-the entire native pending queue into the move-only `received_handle` result;
+the entire native pending queue into the move-only `receive_handle_result` value;
 `take_tcp()` then extracts one high-level owner at a time. This avoids depending
 on a future byte notification to expose a queued sibling. An unsupported pending
 type, or a native adoption failure, fails closed with an error and closes the
