@@ -227,10 +227,12 @@ public:
     return pipe_listener_registration{std::move(access)};
   }
 
-  // finish() is deliberately a task rather than a public socket close API. It
-  // serializes internal close completion and destroys each owner only after its
-  // actual uv_close callback has released all close callback ownership. The cold
-  // task borrows this scope; starting it seals adoption. Failure retains only
+  // finish() is deliberately a task because it is the asynchronous cleanup
+  // boundary for all resources owned by this scope. It composes owner close
+  // completion; it does not replace the public owner close API. It serializes
+  // internal close completion and destroys each owner only after its actual
+  // uv_close callback has released all close callback ownership. The cold task
+  // borrows this scope; starting it seals adoption. Failure retains only
   // unfinished records for a later attempt; successful finish is idempotent.
   [[nodiscard]] task<void> finish() {
     return finish_impl();
