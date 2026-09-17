@@ -65,7 +65,9 @@ The native `uv_tcp_t` stays address-stable when the owner moves.
 
 Destroying the owner starts an internal asynchronous close. Keep driving its loop
 until it becomes idle, including after an exception unwinds a connected owner.
-There is not yet a public `co_await socket.close()` API.
+There is not yet a public `co_await socket.close()` API in this experimental
+slice. Its v3 target contract is recorded in the
+[asynchronous ownership proposal](../proposals/002-async-ownership.md).
 
 `co_await socket.write(data)` borrows a `std::string_view`: do not destroy,
 reallocate, or modify the characters until the await resumes, even if a stop
