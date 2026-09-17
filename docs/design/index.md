@@ -7,6 +7,7 @@ does not by itself change the current API contracts.
 
 - [Architecture](architecture.md): storage model, wrapper hierarchy, native interop, and repository layout.
 - [API principles](api-principles.md): public API shape, naming, native access, user data, and value types.
+- [Naming and API shape](naming-and-api-shape.md): current-code review, established v3 naming rules, and recommendations awaiting consolidation.
 - [API policy decisions](api-policy-decisions.md): concrete naming and result-shape policies for future API additions.
 - [Callback strategy](callback-strategy.md): runtime callbacks, static callbacks, callback slots, trampolines, and exception boundaries.
 - [Error handling strategy](error-handling-strategy.md): immediate failures, async completion results, EOF, and callback failure policy.
