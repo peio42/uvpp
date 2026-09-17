@@ -19,6 +19,7 @@
 #include "uvpp/core/version.hpp"
 #include "uvpp/detail/accept_slot.hpp"
 #include "uvpp/detail/async_close_state.hpp"
+#include "uvpp/detail/owner_close.hpp"
 #include "uvpp/net/pipe_connection.hpp"
 
 namespace uv {
@@ -31,8 +32,11 @@ struct pipe_listener_access {
   pipe_listener *listener = nullptr;
 };
 
-class pipe_listener_close_completion;
+struct pipe_listener_state;
+using pipe_listener_close_completion = owner_close_awaiter<pipe_listener_state, false>;
+using pipe_listener_close_result = owner_close_awaiter<pipe_listener_state, true>;
 [[nodiscard]] pipe_listener_close_completion close_completion(pipe_listener &) noexcept;
+[[nodiscard]] pipe_listener_close_result close_result(pipe_listener &) noexcept;
 
 struct pipe_listener_state {
   uv_pipe_t pipe{};
@@ -48,6 +52,7 @@ struct pipe_listener_state {
   }
 
   bool closing() const noexcept { return close.closing(); }
+  bool has_active_operation() const noexcept { return false; }
 
   // A listener owns the one-shot accept slot, so scope cleanup may quiesce it.
   // The awaiter closes its initialized, untransferred child before task delivery.
@@ -92,45 +97,6 @@ struct pipe_listener_state {
 
 static_assert(std::is_standard_layout_v<pipe_listener_state>);
 
-class pipe_listener_close_completion {
-public:
-  explicit pipe_listener_close_completion(pipe_listener_state *state) noexcept : state_{state} {}
-  pipe_listener_close_completion(const pipe_listener_close_completion &) = delete;
-  pipe_listener_close_completion &operator=(const pipe_listener_close_completion &) = delete;
-  pipe_listener_close_completion(pipe_listener_close_completion &&) = delete;
-  pipe_listener_close_completion &operator=(pipe_listener_close_completion &&) = delete;
-
-  bool await_ready() const noexcept { return false; }
-
-  template<class Promise>
-    requires std::derived_from<Promise, co::detail::task_promise_base>
-  bool await_suspend(std::coroutine_handle<Promise> continuation) {
-    if (state_ == nullptr) {
-      status_ = UV_EBADF;
-      return false;
-    }
-    if (&continuation.promise().execution_loop() != state_->loop) {
-      throw std::logic_error{"uv internal pipe listener close used from a different loop"};
-    }
-    if (state_->close.closed()) {
-      return false;
-    }
-    if (!state_->close.add_waiter(continuation)) {
-      return false;
-    }
-    initiated_ = state_->request_close();
-    return true;
-  }
-
-  void await_resume() { throw_if_error(status_); }
-  bool initiated_close() const noexcept { return initiated_; }
-
-private:
-  pipe_listener_state *state_ = nullptr;
-  int status_ = 0;
-  bool initiated_ = false;
-};
-
 } // namespace detail
 
 // Experimental v3 local-pipe listener. It owns stable uv_pipe_t storage and
@@ -172,7 +138,17 @@ public:
     return state_ != nullptr && state_->loop == &execution_loop;
   }
 
-  void close() noexcept { reset(); }
+  [[nodiscard]] detail::pipe_listener_close_completion close() & noexcept {
+    return detail::pipe_listener_close_completion{state_.get(), true};
+  }
+  detail::pipe_listener_close_completion close() && = delete;
+
+  void request_close() {
+    if (!state_) {
+      throw_if_error(UV_EBADF);
+    }
+    (void)state_->request_close();
+  }
 
   class accept_awaiter {
   public:
@@ -337,15 +313,29 @@ private:
 
   friend detail::pipe_listener_close_completion detail::close_completion(
       pipe_listener &) noexcept;
+  friend detail::pipe_listener_close_result detail::close_result(pipe_listener &) noexcept;
 };
 
 namespace detail {
 
 [[nodiscard]] inline pipe_listener_close_completion close_completion(
     pipe_listener &listener) noexcept {
-  return pipe_listener_close_completion{listener.state_.get()};
+  return pipe_listener_close_completion{listener.state_.get(), false};
+}
+
+[[nodiscard]] inline pipe_listener_close_result close_result(
+    pipe_listener &listener) noexcept {
+  return pipe_listener_close_result{listener.state_.get(), true};
 }
 
 } // namespace detail
+
+namespace ops {
+
+[[nodiscard]] inline detail::pipe_listener_close_result close(pipe_listener &listener) noexcept {
+  return detail::close_result(listener);
+}
+
+} // namespace ops
 
 } // namespace uv

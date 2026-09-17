@@ -65,8 +65,26 @@ The native `uv_tcp_t` stays address-stable when the owner moves.
 
 Destroying the owner starts an internal asynchronous close. Keep driving its loop
 until it becomes idle, including after an exception unwinds a connected owner.
-There is not yet a public `co_await socket.close()` API in this experimental
-slice. Its v3 target contract is recorded in the
+
+## Closing experimental owners
+
+`co_await socket.close()` starts native close and resumes only after its close
+callback. Repeated close awaits join one native close. `request_close()` starts
+the same transition without waiting; keep driving the loop through completion.
+
+Connections and UDP sockets reject close with `UV_EBUSY` while their borrowed I/O
+is active. Join or stop that work first. Listeners instead quiesce one active
+`accept()`, which resumes with `UV_ECANCELED` after its provisional child has
+closed. `close()` does not shut down a stream protocol or join application tasks.
+
+```cpp
+co_await workers.join();
+co_await socket.close();
+```
+
+`uv::ops::close(socket)` awaits the same transition and returns `uv::result`
+instead of throwing `UV_EBADF` or `UV_EBUSY`. These APIs remain experimental;
+their target contract is in the
 [asynchronous ownership proposal](../proposals/002-async-ownership.md).
 
 `co_await socket.write(data)` borrows a `std::string_view`: do not destroy,
@@ -103,7 +121,7 @@ uv::co::task<void> handle(uv::tcp_connection connection) {
 uv::co::task<void> serve_one(uv::tcp_listener &listener) {
   auto connection = co_await listener.accept();
   co_await handle(std::move(connection));
-  listener.close(); // Close before the root task completes.
+  co_await listener.close();
 }
 
 int main() {
@@ -117,10 +135,9 @@ int main() {
 ```
 
 `accept()` is exclusive and affine to the listener's loop; a second pending
-`accept()` throws `UV_EBUSY`. Destroying or calling `close()` on a listener with
-an active accept is, like pending connection I/O, an unsupported contract
-violation. `close()` only initiates native close, so the loop must continue to be
-driven through close completion.
+`accept()` throws `UV_EBUSY`. `co_await close()` quiesces one active accept, then
+waits for native close completion. Destroying a listener with an active accept
+remains an unsupported contract violation.
 
 There is deliberately no `serve(handler)` or implicit handler spawning in this
 slice. `uv_listen` is a persistent native notification source, while an accept
