@@ -3,6 +3,10 @@
 For concrete naming and result-shape decisions that must stay consistent across
 future API additions, also read [API policy decisions](api-policy-decisions.md).
 
+This page primarily describes the historical v2 surface. The v3
+[naming and API shape review](naming-and-api-shape.md) distinguishes that surface
+from accepted v3 rules and recommendations still awaiting consolidation.
+
 ## API Shape
 
 uvpp v2 should feel like a C++ library that happens to use libuv, not a direct transliteration of libuv naming and memory conventions.

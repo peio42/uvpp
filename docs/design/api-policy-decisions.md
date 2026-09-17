@@ -4,6 +4,12 @@ This file records small but important API policy decisions that should stay
 consistent as uvpp grows. It is intentionally more concrete than the general
 API principles.
 
+The policies below describe the historical API unless stated otherwise. For v3
+consolidation, see [Naming and API shape](naming-and-api-shape.md), which separates
+accepted architectural rules from proposed conventions and remaining decisions.
+In particular, the v3 target reserves `try_*` for attempt semantics, not error
+policy selection.
+
 ## `try_*` Names
 
 Reserve `try_*` for non-throwing variants of APIs that would otherwise throw on
