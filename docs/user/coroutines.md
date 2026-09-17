@@ -196,8 +196,25 @@ execution, while `resources.finish()` starts internal close and waits for the
 actual `uv_close` callback before destroying owner storage. A view retained after
 `finish()` diagnoses use instead of accessing released native state. The caller
 must join tasks before calling `finish()`; cleanup with active borrowed I/O is
-rejected in this prototype. `resource_scope` and `task_scope` both terminate when
-destroyed with outstanding work.
+rejected with `std::logic_error`. This rejection is recoverable: keep the scope
+alive, settle/join the borrowing tasks, then await a new `resources.finish()` task.
+Earlier successful closes are not rolled back; their views are already invalid.
+The retry closes only the remaining resources.
+
+`finish()` returns a cold task borrowing the scope. Merely constructing or
+abandoning that task does not seal adoption. Starting it on the associated loop
+seals `own()` permanently, including after a cleanup failure. A wrong-loop await
+throws before changing scope state. Overlapping cleanup attempts throw
+`std::logic_error`; after successful cleanup, another await succeeds immediately
+on the associated loop. Keep the scope alive through all tasks that borrow it.
+
+Cleanup stops at the first failure and propagates that exception; it does not
+aggregate errors or join application tasks. Setup/allocation failures may also
+throw, and completed cleanup remains committed. Preserve any primary task failure
+separately while handling cleanup errors and retrying. Cancellation does not
+shorten native close completion. `resource_scope` destruction with remaining
+resources is a terminating contract violation, even after a caught cleanup error;
+`task_scope` likewise requires its outstanding work to be settled.
 
 ### Cooperative stop
 

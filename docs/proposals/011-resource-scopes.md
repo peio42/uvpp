@@ -66,8 +66,9 @@ returns a scope-bound registration whose `.view()` produces `tcp_connection_view
 `own(tcp_listener&&)` returns a non-owning listener registration exposing
 `accept()`, `own(pipe_listener&&)` does the same for local pipes, and
 `own(pipe_connection&&)`/`own(udp_socket&&)` return equivalent
-borrowed-view registrations. Neither registration owns its adopted resource. Invoking `finish()`
-consumes the scope's registration phase even before its returned cold task starts.
+borrowed-view registrations. Neither registration owns its adopted resource.
+Starting the cold task returned by `finish()` on the associated loop seals the
+scope's registration phase; constructing or abandoning it has no state effect.
 The current TCP/pipe/UDP `finish()` serializes listener then dependent-owner close
 completion before destroying owner storage; concurrent or batched cleanup is a
 later optimization and policy question.
@@ -101,6 +102,27 @@ registration is rejected deterministically. Resource-scope destruction before
 asynchronous exit is an explicit contract violation until a retention fallback has
 been designed and validated.
 
+## Selected cleanup-failure contract
+
+The TCP/pipe/UDP slice implements retryable cleanup failure. Incompatible active
+I/O raises `std::logic_error`, retains remaining owners, and allows a new attempt
+after the caller settles/joins the borrowing tasks. Cleanup stops at the first
+exception. Successful records are retired immediately and never revisited; there
+is no global rollback. Setup/allocation exceptions also leave remaining records
+available for retry. Adoption stays sealed after cleanup starts.
+
+The state machine is `open → active → finished`, with `active → interrupted`
+on failure and `interrupted → active` on retry. Loop-affinity validation precedes
+state mutation, concurrent attempts are rejected without disturbing the active
+attempt, and successful finish is idempotent. Destruction with remaining resources
+is the terminal contract violation; a cleanup refusal itself is recoverable.
+
+This does not settle generic error aggregation. Native handle close has no
+completion error, and this slice propagates the first cleanup exception. A caller
+must preserve any primary task exception separately while recovering from cleanup
+failure. Future request-based resource families need their own retry and terminal
+failure contracts before registration is supported.
+
 ## Implementation progress and validation gates
 
 TCP connections, pipe connections, and UDP sockets prototype the required `open → closing → closed` primitive
@@ -125,8 +147,11 @@ listener and accepted-connection ownership, listener close with a pending accept
 fail-fast task failure followed by cleanup, a submitted borrowed write joined
 before cleanup, cross-loop registration rejection, late-view diagnosis, and
 destruction before `finish()` as a terminating contract violation. Validate
-cleanup failure with and without a primary task failure and all paths under address
-and undefined-behavior sanitizers.
+all paths under address and undefined-behavior sanitizers. Regression tests cover
+partial cleanup followed by active-I/O rejection and successful retry, both with
+and without a separately preserved primary failure; cold-task abandonment,
+wrong-loop rejection, concurrent attempts, sealed adoption, and idempotent success
+are also covered.
 
 TCP/pipe/UDP structured task/resource lifecycle validated by prototype. This proposal
 remains partially implemented while `resource_scope` covers only these families

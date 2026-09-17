@@ -1152,6 +1152,101 @@ TEST(UvppV3Coroutine, udpSocketStopCancelsReceiveBeforeScopedCleanup) {
   EXPECT_NO_THROW(loop.close());
 }
 
+TEST(UvppV3Coroutine, resourceScopeRetriesPartialCleanup) {
+  if (!loopback_tcp_is_permitted()) {
+    GTEST_SKIP() << "loopback networking is not permitted in this environment";
+  }
+
+  for (bool with_primary_failure : {false, true}) {
+    uv::loop loop;
+    uv::co::resource_scope resources(loop);
+    auto first = resources.own(uv::udp_socket{loop, uv::ipv4{"127.0.0.1", 0}});
+    auto busy = resources.own(uv::udp_socket{loop, uv::ipv4{"127.0.0.1", 0}});
+    auto last = resources.own(uv::udp_socket{loop, uv::ipv4{"127.0.0.1", 0}});
+    std::array<std::byte, 32> buffer{};
+    bool canceled = false;
+    bool recovered = false;
+    auto receive = [&]() -> uv::co::task<void> {
+      try {
+        (void)co_await busy.view().recv_from(buffer);
+      } catch (const uv::error &error) {
+        canceled = error.code().value() == UV_ECANCELED;
+      }
+    };
+    uv::co::task_scope readers(loop);
+    readers.spawn(receive());
+    auto parent = [&]() -> uv::co::task<void> {
+      std::exception_ptr primary;
+      if (with_primary_failure) {
+        try {
+          throw std::runtime_error{"primary failure"};
+        } catch (...) {
+          primary = std::current_exception();
+        }
+      }
+      bool rejected = false;
+      try {
+        co_await resources.finish();
+      } catch (const std::logic_error &) {
+        rejected = true;
+      }
+      EXPECT_TRUE(rejected);
+      EXPECT_THROW((void)first.view().local_address(), std::logic_error);
+      EXPECT_NO_THROW((void)busy.view().local_address());
+      EXPECT_NO_THROW((void)last.view().local_address());
+      uv::udp_socket extra{loop, uv::ipv4{"127.0.0.1", 0}};
+      EXPECT_THROW((void)resources.own(std::move(extra)), std::logic_error);
+      co_await extra.close();
+      readers.request_stop();
+      co_await readers.join();
+      co_await resources.finish();
+      co_await resources.finish();
+      EXPECT_THROW((void)busy.view().local_address(), std::logic_error);
+      EXPECT_THROW((void)last.view().local_address(), std::logic_error);
+      recovered = true;
+      if (primary) {
+        std::rethrow_exception(primary);
+      }
+    };
+    auto execution = uv::co::spawn(loop, parent());
+    loop.run();
+    EXPECT_TRUE(recovered);
+    EXPECT_TRUE(canceled);
+    if (with_primary_failure) {
+      EXPECT_THROW(execution.rethrow_if_failed(), std::runtime_error);
+    } else {
+      EXPECT_NO_THROW(execution.rethrow_if_failed());
+    }
+    EXPECT_NO_THROW(loop.close());
+  }
+}
+
+TEST(UvppV3Coroutine, resourceScopeFinishIsColdAndRejectsConcurrentAndWrongLoopUse) {
+  if (!loopback_tcp_is_permitted()) {
+    GTEST_SKIP() << "loopback networking is not permitted in this environment";
+  }
+  uv::loop loop;
+  uv::loop other_loop;
+  uv::co::resource_scope resources(loop);
+  { auto abandoned = resources.finish(); }
+  auto wrong = uv::co::spawn(other_loop, resources.finish());
+  EXPECT_THROW(wrong.rethrow_if_failed(), std::logic_error);
+  (void)resources.own(uv::udp_socket{loop, uv::ipv4{"127.0.0.1", 0}});
+  auto first = uv::co::spawn(loop, resources.finish());
+  EXPECT_FALSE(first.done());
+  auto concurrent = uv::co::spawn(loop, resources.finish());
+  EXPECT_THROW(concurrent.rethrow_if_failed(), std::logic_error);
+  loop.run();
+  EXPECT_NO_THROW(first.rethrow_if_failed());
+  auto again = uv::co::spawn(loop, resources.finish());
+  EXPECT_TRUE(again.done());
+  EXPECT_NO_THROW(again.rethrow_if_failed());
+  auto wrong_after_success = uv::co::spawn(other_loop, resources.finish());
+  EXPECT_THROW(wrong_after_success.rethrow_if_failed(), std::logic_error);
+  EXPECT_NO_THROW(loop.close());
+  EXPECT_NO_THROW(other_loop.close());
+}
+
 TEST(UvppV3Coroutine, resourceScopeClosesAfterFailFastTaskJoin) {
   if (!loopback_tcp_is_permitted()) {
     GTEST_SKIP() << "loopback TCP is not permitted in this environment";
