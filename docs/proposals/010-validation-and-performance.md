@@ -51,8 +51,8 @@ binding, inherited child context, single consumption, and rejection of cross-loo
 joins and resource-affinity mismatches. Destroy active spawn handles while native
 work cannot be cancelled, then verify retained state, actual completion, cleanup,
 and unobserved-failure routing. Scope joins must precede destruction of external
-borrowed data. Exercise the internal close-completion primitive and exceptional
-scope exit without requiring a generic public coroutine close API.
+borrowed data. Exercise the internal close-completion primitive, exceptional
+scope exit, and the public coroutine close contract.
 
 For each subscription family, test slot release before terminal user delivery on
 EOF where applicable, terminal error, completed cancellation, and explicit stop.

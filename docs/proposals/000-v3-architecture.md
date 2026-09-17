@@ -110,7 +110,8 @@ the fallback contract for destruction without it. No layer may equate requested
 cancellation with completed work or permission to release buffers.
 
 Ownership and resource scopes require an awaitable internal close-completion
-primitive. Generic public coroutine close is a separate decision. A lexical C++
+primitive. High-level owners will expose the corresponding public `close()`
+operation under the contract in [002](002-async-ownership.md). A lexical C++
 destructor cannot join asynchronous cleanup; an asynchronous scope boundary must
 provide that guarantee. Terminal operations and subscriptions release callback-slot
 ownership before delivering completion to user code, after quiescing their native

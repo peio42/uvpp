@@ -41,6 +41,20 @@ back into a caller whose submission call has already returned.
 Both surfaces use the shared protocol in [004](004-operation-state.md), preserving
 the same ownership, native effects, cleanup, and completion guarantees.
 
+The selected public owner-close API follows this split:
+
+```cpp
+co_await owner.close();
+co_await uv::ops::close(owner);
+```
+
+The member await throws an operational `UV_EBADF` or `UV_EBUSY`; the `uv::ops`
+operation reports the same conditions in its explicit result. Loop-affinity
+violations remain programmer misuse outside that result channel, and allocation
+while registering a joining close waiter may still throw. Native handle close has
+no completion status to adapt. The operation remains non-cancellable once it has
+started; see [002](002-async-ownership.md) for its state and lifetime contract.
+
 ## Unified Operation Results
 
 Beyond naming, v3 should offer a common value/error vocabulary while retaining

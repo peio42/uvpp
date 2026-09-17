@@ -77,8 +77,8 @@ operation. Specify continuation placement with the
 Adapt one-shot operations using the [shared operation protocol](004-operation-state.md):
 filesystem operations, DNS, random, work queue, TCP/pipe connect, stream write and
 shutdown, UDP send, and timer sleep. Ownership and scope cleanup additionally
-require an awaitable internal close-completion primitive; a generic public close
-await is a separate API decision.
+require an awaitable internal close-completion primitive. The public owner
+`close()` contract is selected in [002](002-async-ownership.md).
 
 The awaitable owns request and completion state or borrows it explicitly. Stable
 coroutine-frame storage may avoid a separate request allocation, but the frame
@@ -150,10 +150,11 @@ and scope cleanup: start close, call `uv_close()`, receive the native callback,
 then permit storage reclamation once no remaining references require it. It must
 not replace unrelated close ownership. Cancellation cannot undo close.
 
-Decide separately whether a generic explicit `co_await socket.close()` is public.
-Cleanup must cover exceptional exits without relying on a final explicit close.
-A normal C++ destructor cannot await: lexical exit may initiate cleanup under a
-surviving resource scope, while joining it requires an asynchronous scope boundary.
+High-level owners will expose `co_await socket.close()` as a native-close completion
+barrier; it does not replace coordinated task shutdown or scope cleanup. Cleanup
+must cover exceptional exits without relying on a final explicit close. A normal
+C++ destructor cannot await: lexical exit may initiate cleanup under a surviving
+resource scope, while joining it requires an asynchronous scope boundary.
 [Asynchronous owners](002-async-ownership.md) define that boundary; its syntax is open.
 
 ## Cancellation and composition

@@ -20,10 +20,10 @@ path does not protect earlier exits.
 
 Place caller-controlled wrappers in `uv::raw` and recommended owners in `uv`.
 Add a unique owner for stable handle storage, an awaitable internal
-close-completion primitive, and a resource scope. Generic public coroutine close
-is a separate decision. A movable owner may transfer its pointer; the native handle
-and low-level wrapper remain non-copyable and non-movable. Ownership transfer
-must be named or represented by an owning type, never by an implicit borrowed view.
+close-completion primitive, a public close operation, and a resource scope. A
+movable owner may transfer its pointer; the native handle and low-level wrapper
+remain non-copyable and non-movable. Ownership transfer must be named or
+represented by an owning type, never by an implicit borrowed view.
 
 Adoption must transfer an owning resource whose stable storage can actually be
 retained. An arbitrary raw reference, particularly a stack wrapper, cannot transfer
@@ -60,6 +60,71 @@ delivery. It does not store a native handle or call `uv_close()`. Each family
 retains its own `request_close()` transition, pre-close quiescence, and native
 close callback entry point.
 
+## Public owner close
+
+The target v3 high-level owner API exposes an awaitable `close()` on
+`tcp_connection`, `pipe_connection`, `udp_socket`, `tcp_listener`, and
+`pipe_listener`:
+
+```cpp
+co_await connection.close();
+co_await listener.close();
+co_await socket.close();
+```
+
+`close()` is a cold, idempotent native-close completion barrier. Constructing its
+awaiter has no effect. Its first await on an open owner starts the family-specific
+close transition; later awaiters join that same transition. It completes only
+after libuv has delivered the native close callback and the close callback has
+released its internal waiter ownership. Awaiting a closed owner completes
+immediately after its loop-affinity check. An empty or moved-from owner reports
+`UV_EBADF`.
+
+The ergonomic member await throws operational failures at the await expression.
+`uv::ops::close(owner)` provides the corresponding explicit-result operation,
+following the error-policy boundary in [006](006-errors-and-results.md). The
+native close path for these handle families has no completion status of its own;
+the initial result vocabulary need only represent precondition and setup failures.
+Neither surface promises `noexcept`: joining an in-progress close may allocate
+continuation storage.
+
+`request_close()` is the explicit non-awaiting form. It requests the same close
+transition but gives no completion guarantee. It is intended for code that has a
+separate lifetime or scope boundary to await the completion. Views and raw/native
+accessors never acquire independent close authority.
+
+Close is non-cancellable once requested. A pending stop request does not permit
+the close waiter to resume early or storage to be released early; the waiter
+resumes only after the close completion protocol. Close also does not perform a
+protocol shutdown, deliver queued stream writes, or join application tasks.
+Those actions remain explicit composition above the owner:
+
+```cpp
+co_await workers.join();
+co_await connection.close();
+```
+
+Close preserves the loop-thread-affinity rule. Awaiting it from a task bound to a
+different loop is a contract failure before it changes the owner state. A public
+close awaiter borrows its owner until it is awaited: it may not be retained across
+the owner's destruction or move. Once registered, the existing close-completion
+protocol retains the stable state through callback delivery, including if owner
+destruction releases that state.
+
+### Active operations
+
+The initial public contract is limited to quiescence that has been demonstrated
+by the owner family. A TCP or pipe connection rejects close with `UV_EBUSY` while
+a read, write, or IPC-handle-export operation is active. A UDP socket rejects
+close with `UV_EBUSY` while a send or receive is active. These rejections do not
+start native close or alter the active operation.
+
+A TCP or pipe listener may close with one active `accept()`. Its family-specific
+transition first quiesces that accept and releases its callback ownership, then
+starts native close. The accept's own provisional-child cleanup completes before
+it reports cancellation. Closing a listener therefore stops admission but does
+not join handler tasks or close connections that were already accepted.
+
 ## Implementation and costs
 
 Start with one explicit allocation for stable owned handle state. Avoid universal
@@ -81,9 +146,6 @@ composition is specified in
 - Caller-owned raw storage preserves the direct path without owner allocations.
   Existing wrapper-specific storage costs must still be documented.
 - Decide owner construction, release, adoption, and borrowing vocabulary.
-- Decide how multiple close waiters and cleanup errors are represented.
-- Decide separately whether generic explicit close is a public coroutine operation
-  (for example, `co_await socket.close()`); the internal primitive is required either way.
 - Choose asynchronous scope-exit syntax and the destruction fallback above.
 - Define registration, exceptional exit, and error aggregation for a resource
   scope composed with a task scope.
@@ -105,8 +167,8 @@ the same no-allocation callback path. The first `resource_scope` now
 adopts connections and listeners, hands tasks a non-owning `tcp_connection_view`,
 and awaits internal close completion before destroying owner storage. It rejects
 cross-loop adoption and requires task join before cleanup while borrowed I/O is
-active. A public close awaitable, generic registration, and cleanup-error
-aggregation remain unimplemented.
+active. The public close contract is selected above but its awaitable facade,
+generic registration, and cleanup-error aggregation remain unimplemented.
 
 The experimental `uv::tcp_listener` adds separate stable listener storage and a
 one-shot accept owner transfer. Its internal close completion has the same
@@ -164,8 +226,12 @@ stop/retention contract can keep operation state alive through actual completion
 
 Tests cover one close initiation with multiple joining waiters, release of the
 close waiter list before resumption, wrong-loop rejection, and owner destruction
-while close completion remains awaited. Validate normal exit, exception before the
-final close, failed initialization, failed close submission for request-based
+while close completion remains awaited. Public-close validation additionally
+requires cold construction, closed-owner completion, a stop request before and
+during close, and `UV_EBUSY` rejection without mutating active connection or UDP
+I/O. It must exercise listener close with a pending accept, including provisional
+child cleanup before cancellation delivery. Validate normal exit, exception before
+the final close, failed initialization, failed close submission for request-based
 resources, cancellation during cleanup, owner moves, callback-slot conflicts, and
 loop shutdown with outstanding cleanup. Use sanitizers to verify that storage
 survives every native completion.
