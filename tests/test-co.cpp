@@ -1221,6 +1221,59 @@ TEST(UvppV3Coroutine, resourceScopeRetriesPartialCleanup) {
   }
 }
 
+TEST(UvppV3Coroutine, resourceScopeJoinsAnExternallyStartedCloseBeforeRetry) {
+  if (!loopback_tcp_is_permitted()) {
+    GTEST_SKIP() << "loopback networking is not permitted in this environment";
+  }
+
+  uv::loop loop;
+  uv::co::resource_scope resources(loop);
+  auto first = resources.own(uv::udp_socket{loop, uv::ipv4{"127.0.0.1", 0}});
+  uv::udp_socket externally_closing{loop, uv::ipv4{"127.0.0.1", 0}};
+  externally_closing.request_close();
+  auto joined = resources.own(std::move(externally_closing));
+  auto busy = resources.own(uv::udp_socket{loop, uv::ipv4{"127.0.0.1", 0}});
+  std::array<std::byte, 32> buffer{};
+  bool receive_canceled = false;
+  bool first_attempt_rejected = false;
+  bool retry_completed = false;
+
+  auto receive = [&]() -> uv::co::task<void> {
+    try {
+      (void)co_await busy.view().recv_from(buffer);
+    } catch (const uv::error &error) {
+      receive_canceled = error.code().value() == UV_ECANCELED;
+    }
+  };
+  uv::co::task_scope readers(loop);
+  readers.spawn(receive());
+
+  auto parent = [&]() -> uv::co::task<void> {
+    try {
+      co_await resources.finish();
+    } catch (const std::logic_error &) {
+      first_attempt_rejected = true;
+    }
+    EXPECT_THROW((void)first.view().local_address(), std::logic_error);
+    EXPECT_THROW((void)joined.view().local_address(), std::logic_error);
+    EXPECT_NO_THROW((void)busy.view().local_address());
+
+    readers.request_stop();
+    co_await readers.join();
+    co_await resources.finish();
+    EXPECT_THROW((void)busy.view().local_address(), std::logic_error);
+    retry_completed = true;
+  };
+
+  auto execution = uv::co::spawn(loop, parent());
+  loop.run();
+  EXPECT_NO_THROW(execution.rethrow_if_failed());
+  EXPECT_TRUE(first_attempt_rejected);
+  EXPECT_TRUE(receive_canceled);
+  EXPECT_TRUE(retry_completed);
+  EXPECT_NO_THROW(loop.close());
+}
+
 TEST(UvppV3Coroutine, resourceScopeFinishIsColdAndRejectsConcurrentAndWrongLoopUse) {
   if (!loopback_tcp_is_permitted()) {
     GTEST_SKIP() << "loopback networking is not permitted in this environment";
