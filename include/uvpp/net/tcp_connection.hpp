@@ -13,6 +13,7 @@
 
 #include "uvpp/core/error.hpp"
 #include "uvpp/detail/async_close_state.hpp"
+#include "uvpp/detail/owner_close.hpp"
 #include "uvpp/detail/stream_io.hpp"
 #include "uvpp/net/address.hpp"
 #include "uvpp/net/buffer.hpp"
@@ -65,6 +66,10 @@ struct tcp_connection_state {
   }
 
   bool closing() const noexcept { return close.closing(); }
+
+  bool has_active_operation() const noexcept {
+    return io.write_active || io.active_read != nullptr || handle_export_active;
+  }
 
   uv_stream_t *stream_handle() noexcept {
     return reinterpret_cast<uv_stream_t *>(&tcp);
@@ -156,52 +161,11 @@ struct tcp_connection_state {
 
 static_assert(std::is_standard_layout_v<tcp_connection_state>);
 
-// Internal close-completion primitive. Its state pointer is borrowed from an
-// owner that must remain alive through completion (or release ownership through
-// tcp_connection_state::release_owner()). It is intentionally not a public
-// tcp_connection::close() API.
-class tcp_close_completion {
-public:
-  explicit tcp_close_completion(tcp_connection_state *state) noexcept : state_{state} {}
-  tcp_close_completion(const tcp_close_completion &) = delete;
-  tcp_close_completion &operator=(const tcp_close_completion &) = delete;
-  tcp_close_completion(tcp_close_completion &&) = delete;
-  tcp_close_completion &operator=(tcp_close_completion &&) = delete;
-
-  // Affinity must be checked even when close completed before this request.
-  bool await_ready() const noexcept { return false; }
-
-  template<class Promise>
-    requires std::derived_from<Promise, co::detail::task_promise_base>
-  bool await_suspend(std::coroutine_handle<Promise> continuation) {
-    if (state_ == nullptr) {
-      status_ = UV_EBADF;
-      return false;
-    }
-    if (&continuation.promise().execution_loop() != state_->loop) {
-      throw std::logic_error{"uv internal tcp close used from a different loop"};
-    }
-    if (state_->close.closed()) {
-      return false;
-    }
-    if (!state_->close.add_waiter(continuation)) {
-      return false;
-    }
-    initiated_ = state_->request_close();
-    return true;
-  }
-
-  void await_resume() { throw_if_error(status_); }
-
-  bool initiated_close() const noexcept { return initiated_; }
-
-private:
-  tcp_connection_state *state_ = nullptr;
-  int status_ = 0;
-  bool initiated_ = false;
-};
+using tcp_close_completion = owner_close_awaiter<tcp_connection_state, false>;
+using tcp_close_result = owner_close_awaiter<tcp_connection_state, true>;
 
 [[nodiscard]] tcp_close_completion close_completion(tcp_connection &) noexcept;
+[[nodiscard]] tcp_close_result close_result(tcp_connection &) noexcept;
 
 } // namespace detail
 
@@ -240,8 +204,22 @@ public:
     return state_ != nullptr && state_->loop == &execution_loop;
   }
   bool has_active_operation() const noexcept {
-    return state_ != nullptr && (state_->io.write_active || state_->io.active_read != nullptr ||
-        state_->handle_export_active);
+    return state_ != nullptr && state_->has_active_operation();
+  }
+
+  [[nodiscard]] detail::tcp_close_completion close() & noexcept {
+    return detail::tcp_close_completion{state_.get(), true};
+  }
+  detail::tcp_close_completion close() && = delete;
+
+  void request_close() {
+    if (!state_) {
+      throw_if_error(UV_EBADF);
+    }
+    if (!state_->close.closed() && state_->has_active_operation()) {
+      throw_if_error(UV_EBUSY);
+    }
+    (void)state_->request_close();
   }
 
   using read_some_result = detail::stream_read_some_result;
@@ -352,6 +330,7 @@ private:
   friend class tcp_connection_view;
   friend class pipe_connection;
   friend detail::tcp_close_completion detail::close_completion(tcp_connection &) noexcept;
+  friend detail::tcp_close_result detail::close_result(tcp_connection &) noexcept;
 };
 
 // A non-owning TCP facade produced by resource_scope. It retains only an access
@@ -392,14 +371,24 @@ namespace detail {
   return tcp_connection_view{std::move(access)};
 }
 
-// Internal boundary for resource_scope. It borrows the owner; it does not
-// transfer ownership or make public co_await socket.close() available.
 [[nodiscard]] inline tcp_close_completion close_completion(
     tcp_connection &connection) noexcept {
-  return tcp_close_completion{connection.state_.get()};
+  return tcp_close_completion{connection.state_.get(), false};
+}
+
+[[nodiscard]] inline tcp_close_result close_result(tcp_connection &connection) noexcept {
+  return tcp_close_result{connection.state_.get(), true};
 }
 
 } // namespace detail
+
+namespace ops {
+
+[[nodiscard]] inline detail::tcp_close_result close(tcp_connection &connection) noexcept {
+  return detail::close_result(connection);
+}
+
+} // namespace ops
 
 static_assert(std::is_standard_layout_v<tcp_connection::write_awaiter>);
 

@@ -168,8 +168,8 @@ then resumes from the snapshot. It therefore neither allocates nor follows links
 in another coroutine frame after the first user resumption, and only then releases
 state whose owner was destroyed. The family still owns native storage, pre-close
 quiescence, and the actual `uv_close()` call. Internal completion entry points
-check loop affinity. The selected public owner `close()` operation will be a
-separate facade over this mechanism, with its contract specified in
+check loop affinity. The public owner `close()` operation is a separate facade
+over this mechanism, with its contract specified in
 [002](002-async-ownership.md).
 
 Validate failure at each setup stage, native submission failure, absent callbacks,

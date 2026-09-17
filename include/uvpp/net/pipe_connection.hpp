@@ -18,6 +18,7 @@
 #include "uvpp/core/error.hpp"
 #include "uvpp/core/version.hpp"
 #include "uvpp/detail/async_close_state.hpp"
+#include "uvpp/detail/owner_close.hpp"
 #include "uvpp/detail/stream_io.hpp"
 #include "uvpp/net/buffer.hpp"
 #include "uvpp/net/tcp_connection.hpp"
@@ -113,6 +114,10 @@ struct pipe_connection_state {
 
   bool closing() const noexcept { return close.closing(); }
 
+  bool has_active_operation() const noexcept {
+    return io.write_active || io.active_read != nullptr;
+  }
+
   uv_stream_t *stream_handle() noexcept {
     return reinterpret_cast<uv_stream_t *>(&pipe);
   }
@@ -179,46 +184,11 @@ struct pipe_connection_state {
 
 static_assert(std::is_standard_layout_v<pipe_connection_state>);
 
-class pipe_close_completion {
-public:
-  explicit pipe_close_completion(pipe_connection_state *state) noexcept : state_{state} {}
-  pipe_close_completion(const pipe_close_completion &) = delete;
-  pipe_close_completion &operator=(const pipe_close_completion &) = delete;
-  pipe_close_completion(pipe_close_completion &&) = delete;
-  pipe_close_completion &operator=(pipe_close_completion &&) = delete;
-
-  bool await_ready() const noexcept { return false; }
-
-  template<class Promise>
-    requires std::derived_from<Promise, co::detail::task_promise_base>
-  bool await_suspend(std::coroutine_handle<Promise> continuation) {
-    if (state_ == nullptr) {
-      status_ = UV_EBADF;
-      return false;
-    }
-    if (&continuation.promise().execution_loop() != state_->loop) {
-      throw std::logic_error{"uv internal pipe close used from a different loop"};
-    }
-    if (state_->close.closed()) {
-      return false;
-    }
-    if (!state_->close.add_waiter(continuation)) {
-      return false;
-    }
-    initiated_ = state_->request_close();
-    return true;
-  }
-
-  void await_resume() { throw_if_error(status_); }
-  bool initiated_close() const noexcept { return initiated_; }
-
-private:
-  pipe_connection_state *state_ = nullptr;
-  int status_ = 0;
-  bool initiated_ = false;
-};
+using pipe_close_completion = owner_close_awaiter<pipe_connection_state, false>;
+using pipe_close_result = owner_close_awaiter<pipe_connection_state, true>;
 
 [[nodiscard]] pipe_close_completion close_completion(pipe_connection &) noexcept;
+[[nodiscard]] pipe_close_result close_result(pipe_connection &) noexcept;
 
 } // namespace detail
 
@@ -257,7 +227,22 @@ public:
     return state_ != nullptr && state_->loop == &execution_loop;
   }
   bool has_active_operation() const noexcept {
-    return state_ != nullptr && (state_->io.write_active || state_->io.active_read != nullptr);
+    return state_ != nullptr && state_->has_active_operation();
+  }
+
+  [[nodiscard]] detail::pipe_close_completion close() & noexcept {
+    return detail::pipe_close_completion{state_.get(), true};
+  }
+  detail::pipe_close_completion close() && = delete;
+
+  void request_close() {
+    if (!state_) {
+      throw_if_error(UV_EBADF);
+    }
+    if (!state_->close.closed() && state_->has_active_operation()) {
+      throw_if_error(UV_EBUSY);
+    }
+    (void)state_->request_close();
   }
 
   using read_some_result = detail::stream_read_some_result;
@@ -656,6 +641,7 @@ private:
   friend class pipe_connection_view;
   friend class pipe_listener;
   friend detail::pipe_close_completion detail::close_completion(pipe_connection &) noexcept;
+  friend detail::pipe_close_result detail::close_result(pipe_connection &) noexcept;
 };
 
 // A non-owning pipe facade produced by resource_scope. It retains only an
@@ -704,14 +690,24 @@ namespace detail {
   return pipe_connection_view{std::move(access)};
 }
 
-// Internal boundary for resource_scope; no public co_await close() decision is
-// made by this experimental owner.
 [[nodiscard]] inline pipe_close_completion close_completion(
     pipe_connection &connection) noexcept {
-  return pipe_close_completion{connection.state_.get()};
+  return pipe_close_completion{connection.state_.get(), false};
+}
+
+[[nodiscard]] inline pipe_close_result close_result(pipe_connection &connection) noexcept {
+  return pipe_close_result{connection.state_.get(), true};
 }
 
 } // namespace detail
+
+namespace ops {
+
+[[nodiscard]] inline detail::pipe_close_result close(pipe_connection &connection) noexcept {
+  return detail::close_result(connection);
+}
+
+} // namespace ops
 
 static_assert(std::is_standard_layout_v<pipe_connection::write_awaiter>);
 

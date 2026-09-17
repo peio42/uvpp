@@ -557,6 +557,141 @@ TEST(UvppV3Coroutine, internalTcpCloseCompletionJoinsAndReleasesBeforeResumption
   pair.close();
 }
 
+TEST(UvppV3Coroutine, publicTcpCloseIsColdJoinsAndHasAnExplicitResultSurface) {
+  if (!loopback_tcp_is_permitted()) {
+    GTEST_SKIP() << "loopback TCP is not permitted in this environment";
+  }
+
+  connected_tcp_pair pair;
+  pair.connect();
+  auto close = pair.client->close();
+  EXPECT_FALSE(pair.client->closing());
+
+  bool first_resumed = false;
+  bool second_resumed = false;
+  bool result_ok = false;
+  auto first = [&]() -> uv::co::task<void> {
+    co_await close;
+    first_resumed = true;
+    const auto result = co_await uv::ops::close(*pair.client);
+    result_ok = result.ok();
+    pair.loop.stop();
+  };
+  auto second = [&]() -> uv::co::task<void> {
+    co_await pair.client->close();
+    second_resumed = true;
+  };
+
+  auto first_execution = uv::co::spawn(pair.loop, first());
+  auto second_execution = uv::co::spawn(pair.loop, second());
+  pair.loop.run();
+
+  EXPECT_NO_THROW(first_execution.rethrow_if_failed());
+  EXPECT_NO_THROW(second_execution.rethrow_if_failed());
+  EXPECT_TRUE(first_resumed);
+  EXPECT_TRUE(second_resumed);
+  EXPECT_TRUE(result_ok);
+  pair.close();
+}
+
+TEST(UvppV3Coroutine, publicTcpCloseRejectsActiveReadWithoutChangingIt) {
+  if (!loopback_tcp_is_permitted()) {
+    GTEST_SKIP() << "loopback TCP is not permitted in this environment";
+  }
+
+  connected_tcp_pair pair;
+  pair.connect();
+  uv::co::task_scope reads(pair.loop);
+  std::array<std::byte, 8> buffer{};
+  bool read_canceled = false;
+  bool close_rejected = false;
+  bool close_completed = false;
+
+  auto reader = [&]() -> uv::co::task<void> {
+    try {
+      (void)co_await pair.client->read_some(buffer);
+    } catch (const uv::error &error) {
+      read_canceled = error.code().value() == UV_ECANCELED;
+    }
+  };
+  auto closer = [&]() -> uv::co::task<void> {
+    reads.spawn(reader());
+    try {
+      co_await pair.client->close();
+    } catch (const uv::error &error) {
+      close_rejected = error.code().value() == UV_EBUSY;
+    }
+    reads.request_stop();
+    co_await reads.join();
+    co_await pair.client->close();
+    close_completed = true;
+    pair.loop.stop();
+  };
+
+  auto execution = uv::co::spawn(pair.loop, closer());
+  pair.loop.run();
+
+  EXPECT_NO_THROW(execution.rethrow_if_failed());
+  EXPECT_TRUE(close_rejected);
+  EXPECT_TRUE(read_canceled);
+  EXPECT_TRUE(close_completed);
+  pair.close();
+}
+
+TEST(UvppV3Coroutine, publicUdpCloseReportsCompletionThroughOps) {
+  if (!loopback_tcp_is_permitted()) {
+    GTEST_SKIP() << "loopback networking is not permitted in this environment";
+  }
+
+  uv::loop loop;
+  uv::udp_socket socket(loop, uv::ipv4{"127.0.0.1", 0});
+  bool explicit_result_ok = false;
+  bool joined_closed_owner = false;
+
+  auto closer = [&]() -> uv::co::task<void> {
+    const auto result = co_await uv::ops::close(socket);
+    explicit_result_ok = result.ok();
+    co_await socket.close();
+    joined_closed_owner = true;
+    loop.stop();
+  };
+
+  auto execution = uv::co::spawn(loop, closer());
+  loop.run();
+
+  EXPECT_NO_THROW(execution.rethrow_if_failed());
+  EXPECT_TRUE(explicit_result_ok);
+  EXPECT_TRUE(joined_closed_owner);
+  EXPECT_NO_THROW(loop.close());
+}
+
+TEST(UvppV3Coroutine, publicPipeCloseJoinsAndHasAnExplicitResultSurface) {
+  if (!local_pipe_is_permitted()) {
+    GTEST_SKIP() << "local pipe bind is not permitted in this environment";
+  }
+
+  connected_pipe_pair pair;
+  pair.connect();
+  bool member_completed = false;
+  bool explicit_result_ok = false;
+
+  auto closer = [&]() -> uv::co::task<void> {
+    co_await pair.client->close();
+    member_completed = true;
+    const auto result = co_await uv::ops::close(*pair.client);
+    explicit_result_ok = result.ok();
+    pair.loop.stop();
+  };
+
+  auto execution = uv::co::spawn(pair.loop, closer());
+  pair.loop.run();
+
+  EXPECT_NO_THROW(execution.rethrow_if_failed());
+  EXPECT_TRUE(member_completed);
+  EXPECT_TRUE(explicit_result_ok);
+  pair.close();
+}
+
 TEST(UvppV3Coroutine, internalTcpCloseCompletionRetainsStateAfterOwnerDestruction) {
   if (!loopback_tcp_is_permitted()) {
     GTEST_SKIP() << "loopback TCP is not permitted in this environment";
@@ -1035,6 +1170,79 @@ TEST(UvppV3Coroutine, internalTcpListenerCloseCompletionJoinsAndChecksAffinity) 
   EXPECT_NO_THROW(loop.close());
 }
 
+TEST(UvppV3Coroutine, publicTcpListenerCloseQuiescesAnActiveAccept) {
+  if (!loopback_tcp_is_permitted()) {
+    GTEST_SKIP() << "loopback TCP is not permitted in this environment";
+  }
+
+  uv::loop loop;
+  uv::tcp_listener listener(loop, uv::ipv4{"127.0.0.1", 0});
+  uv::co::task_scope tasks(loop);
+  bool accept_canceled = false;
+  bool close_completed = false;
+
+  auto accepter = [&]() -> uv::co::task<void> {
+    try {
+      (void)co_await listener.accept();
+    } catch (const uv::error &error) {
+      accept_canceled = error.code().value() == UV_ECANCELED;
+    }
+  };
+  auto closer = [&]() -> uv::co::task<void> {
+    tasks.spawn(accepter());
+    co_await listener.close();
+    close_completed = true;
+    co_await tasks.join();
+    loop.stop();
+  };
+
+  auto execution = uv::co::spawn(loop, closer());
+  loop.run();
+
+  EXPECT_NO_THROW(execution.rethrow_if_failed());
+  EXPECT_TRUE(close_completed);
+  EXPECT_TRUE(accept_canceled);
+  EXPECT_NO_THROW(loop.close());
+}
+
+TEST(UvppV3Coroutine, publicPipeListenerCloseQuiescesAnActiveAccept) {
+  if (!local_pipe_is_permitted()) {
+    GTEST_SKIP() << "local pipe bind is not permitted in this environment";
+  }
+
+  const auto path = v3_pipe_path() + "-public-close";
+  std::filesystem::remove(path);
+  uv::loop loop;
+  uv::pipe_listener listener(loop, path);
+  uv::co::task_scope tasks(loop);
+  bool accept_canceled = false;
+  bool close_completed = false;
+
+  auto accepter = [&]() -> uv::co::task<void> {
+    try {
+      (void)co_await listener.accept();
+    } catch (const uv::error &error) {
+      accept_canceled = error.code().value() == UV_ECANCELED;
+    }
+  };
+  auto closer = [&]() -> uv::co::task<void> {
+    tasks.spawn(accepter());
+    co_await listener.close();
+    close_completed = true;
+    co_await tasks.join();
+    loop.stop();
+  };
+
+  auto execution = uv::co::spawn(loop, closer());
+  loop.run();
+
+  EXPECT_NO_THROW(execution.rethrow_if_failed());
+  EXPECT_TRUE(close_completed);
+  EXPECT_TRUE(accept_canceled);
+  EXPECT_NO_THROW(loop.close());
+  std::filesystem::remove(path);
+}
+
 TEST(UvppV3Coroutine, resourceScopeQuiescesActiveAcceptBeforeListenerClose) {
   if (!loopback_tcp_is_permitted()) {
     GTEST_SKIP() << "loopback TCP is not permitted in this environment";
@@ -1181,7 +1389,7 @@ TEST(UvppV3Coroutine, resourceScopeRejectsListenerFromAnotherLoop) {
   EXPECT_THROW((void)resources.own(std::move(listener)), std::logic_error);
 
   other_loop.close();
-  listener.close();
+  listener.request_close();
   listener_loop.run();
   EXPECT_NO_THROW(listener_loop.close());
 }
@@ -1335,7 +1543,7 @@ TEST(UvppV3Coroutine, tcpListenerAcceptsIntoAnIndependentMovableConnectionOwner)
     auto moved = std::move(connection);
     accepted_owner_was_stable = moved.native() == before_move;
     accepted = true;
-    listener->close();
+    listener->request_close();
   };
   auto client = [&]() -> uv::co::task<void> {
     auto connection = co_await uv::tcp_connection::connect(address);
@@ -1849,7 +2057,7 @@ TEST(UvppV3Coroutine, ipcPipeTransfersTcpIntoAStableReceivedOwner) {
       }
     }
     tcp_listener.close();
-    control_listener.close();
+    control_listener.request_close();
   };
   auto sender = [&]() -> uv::co::task<void> {
     {
@@ -1891,7 +2099,7 @@ TEST(UvppV3Coroutine, ipcReceiveHandleAccumulatesBytesUntilItsBufferFills) {
     } catch (const uv::error &error) {
       receive_status = error.code().value();
     }
-    listener.close();
+    listener.request_close();
   };
   auto sender = [&]() -> uv::co::task<void> {
     auto control = co_await uv::pipe_connection::connect(path, true);
@@ -1938,7 +2146,7 @@ TEST(UvppV3Coroutine, ipcReceiveHandleCancellationReleasesTheReadSlot) {
     const auto read = co_await control.read_some(read_buffer);
     reused_read_slot = !read.eof() && read.count() == 1 &&
         read_buffer.front() == static_cast<std::byte>('x');
-    listener.close();
+    listener.request_close();
   };
   auto sender = [&]() -> uv::co::task<void> {
     auto control = co_await uv::pipe_connection::connect(path, true);
@@ -1989,7 +2197,7 @@ TEST(UvppV3Coroutine, pipeWriteWithHandleRejectsANonIpcPipe) {
       peer->close();
     }
     tcp_listener.close();
-    pipe_listener.close();
+    pipe_listener.request_close();
   };
 
   auto execution = uv::co::spawn(loop, run());
@@ -2020,7 +2228,7 @@ TEST(UvppV3Coroutine, pipeWriteWithHandleRejectsATcpFromAnotherLoop) {
     } catch (const std::logic_error &) {
       rejected = true;
     }
-    listener.close();
+    listener.request_close();
   };
 
   auto execution = uv::co::spawn(loop, run());
@@ -2083,7 +2291,7 @@ TEST(UvppV3Coroutine, pipeWriteWithHandleUsesTheTcpExportSlotAcrossPipes) {
       peer->close();
     }
     tcp_listener.close();
-    listener.close();
+    listener.request_close();
   };
 
   auto server_execution = uv::co::spawn(loop, server());
@@ -2154,7 +2362,7 @@ TEST(UvppV3Coroutine, ipcPipeBackToBackHandleWritesPreserveBytesAndOwners) {
       }
     }
     tcp_listener.close();
-    listener.close();
+    listener.request_close();
   };
   auto sender = [&]() -> uv::co::task<void> {
     auto control = co_await uv::pipe_connection::connect(path, true);
@@ -2262,7 +2470,7 @@ TEST(UvppV3Coroutine, pipeListenerAcceptsIntoAnIndependentMovableConnectionOwner
     auto moved = std::move(connection);
     accepted_owner_was_stable = moved.native() == before_move;
     accepted = true;
-    listener.close();
+    listener.request_close();
   };
   auto client = [&]() -> uv::co::task<void> {
     auto connection = co_await uv::pipe_connection::connect(path);
@@ -2295,7 +2503,7 @@ TEST(UvppV3Coroutine, pipeListenerRejectsSecondConcurrentAccept) {
   auto first = [&]() -> uv::co::task<void> {
     auto connection = co_await listener.accept();
     first_accepted = connection.native() != nullptr;
-    listener.close();
+    listener.request_close();
   };
   auto second = [&]() -> uv::co::task<void> {
     try {
@@ -2347,7 +2555,7 @@ TEST(UvppV3Coroutine, pipeListenerRejectsAcceptFromAnotherLoop) {
   EXPECT_TRUE(rejected);
 
   other_loop.close();
-  listener.close();
+  listener.request_close();
   listener_loop.run();
   EXPECT_NO_THROW(listener_loop.close());
   std::filesystem::remove(path);
@@ -2374,7 +2582,7 @@ TEST(UvppV3Coroutine, taskScopeStopCancelsPipeAcceptBeforeResumption) {
     scope.spawn(accepter());
     scope.request_stop();
     co_await scope.join();
-    listener.close();
+    listener.request_close();
   };
 
   auto execution = uv::co::spawn(loop, parent());
@@ -2444,7 +2652,7 @@ TEST(UvppV3Coroutine, tcpListenerRejectsSecondConcurrentAccept) {
   auto first = [&]() -> uv::co::task<void> {
     auto connection = co_await listener->accept();
     first_accepted = connection.native() != nullptr;
-    listener->close();
+    listener->request_close();
   };
   auto second = [&]() -> uv::co::task<void> {
     try {
@@ -2501,7 +2709,7 @@ TEST(UvppV3Coroutine, tcpListenerRejectsAcceptFromAnotherLoop) {
   EXPECT_TRUE(rejected);
 
   other_loop.close();
-  listener->close();
+  listener->request_close();
   listener_loop.run();
   EXPECT_NO_THROW(listener_loop.close());
 }
@@ -2533,7 +2741,7 @@ TEST(UvppV3Coroutine, taskScopeStopCancelsAcceptBeforeResumption) {
     scope.spawn(accepter());
     scope.request_stop();
     co_await scope.join();
-    listener->close();
+    listener->request_close();
   };
 
   auto execution = uv::co::spawn(loop, parent());
@@ -2565,7 +2773,7 @@ TEST(UvppV3Coroutine, tcpListenerAcceptsPeerThatImmediatelyCloses) {
     accepted = connection.native() != nullptr;
     std::array<std::byte, 8> buffer{};
     saw_eof = (co_await connection.read_some(buffer)).eof();
-    listener->close();
+    listener->request_close();
   };
   auto client = [&]() -> uv::co::task<void> {
     auto connection = co_await uv::tcp_connection::connect(address);
@@ -2613,7 +2821,7 @@ TEST(UvppV3Coroutine, taskScopeOwnsConcurrentAcceptedConnectionHandlers) {
       scope.spawn(handle(std::move(connection)));
     }
     co_await scope.join();
-    listener->close();
+    listener->request_close();
   };
   auto client = [&]() -> uv::co::task<void> {
     auto first = co_await uv::tcp_connection::connect(address);
@@ -2648,27 +2856,6 @@ TEST(UvppV3CoroutineDeathTest, tcpConnectionDestructionWithActiveReadTerminates)
     auto execution = uv::co::spawn(pair.loop, reader());
     pair.client.reset();
   }()), "");
-}
-
-TEST(UvppV3CoroutineDeathTest, pipeListenerCloseWithActiveAcceptTerminates) {
-  if (!local_pipe_is_permitted()) {
-    GTEST_SKIP() << "local pipe bind is not permitted in this environment";
-  }
-  const auto path = v3_pipe_path() + "-listener-death";
-  std::filesystem::remove(path);
-
-  EXPECT_DEATH(([&] {
-    uv::loop loop;
-    uv::pipe_listener listener(loop, path);
-    auto accept = [&]() -> uv::co::task<void> {
-      (void)co_await listener.accept();
-    };
-    auto execution = uv::co::spawn(loop, accept());
-    (void)execution;
-    listener.close();
-  }()), "");
-
-  std::filesystem::remove(path);
 }
 
 TEST(UvppV3CoroutineDeathTest, taskScopeDestructionWithoutJoinTerminates) {
@@ -2760,22 +2947,6 @@ TEST(UvppV3CoroutineDeathTest, tcpConnectionDestructionWithActivePipeHandleExpor
   }()), "");
 
   std::filesystem::remove(path);
-}
-
-TEST(UvppV3CoroutineDeathTest, tcpListenerCloseWithActiveAcceptTerminates) {
-  if (!loopback_tcp_is_permitted()) {
-    GTEST_SKIP() << "loopback TCP is not permitted in this environment";
-  }
-
-  EXPECT_DEATH(([&] {
-    uv::loop loop;
-    uv::tcp_listener listener(loop, uv::ipv4{"127.0.0.1", 0});
-    auto waiter = [&]() -> uv::co::task<void> {
-      (void)co_await listener.accept();
-    };
-    auto execution = uv::co::spawn(loop, waiter());
-    listener.close();
-  }()), "");
 }
 
 TEST(UvppV3CoroutineDeathTest, tcpListenerDestructionWithActiveAcceptTerminates) {

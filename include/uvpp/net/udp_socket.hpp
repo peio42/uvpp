@@ -18,6 +18,7 @@
 #include "uvpp/co/task.hpp"
 #include "uvpp/core/error.hpp"
 #include "uvpp/detail/async_close_state.hpp"
+#include "uvpp/detail/owner_close.hpp"
 #include "uvpp/net/address.hpp"
 #include "uvpp/net/buffer.hpp"
 #include "uvpp/net/socket_address.hpp"
@@ -45,6 +46,9 @@ struct udp_socket_state {
     return *reinterpret_cast<udp_socket_state *>(bytes - offsetof(udp_socket_state, udp));
   }
   bool closing() const noexcept { return close.closing(); }
+  bool has_active_operation() const noexcept {
+    return send_active || active_receive != nullptr;
+  }
   bool request_close() noexcept {
     if (!close.begin()) return false;
     uv_close(reinterpret_cast<uv_handle_t *>(&udp), &udp_socket_state::on_close);
@@ -64,31 +68,11 @@ struct udp_socket_state {
   }
 };
 
-class udp_close_completion {
-public:
-  explicit udp_close_completion(udp_socket_state *state) noexcept : state_{state} {}
-  bool await_ready() const noexcept { return false; }
-  template<class Promise>
-    requires std::derived_from<Promise, co::detail::task_promise_base>
-  bool await_suspend(std::coroutine_handle<Promise> continuation) {
-    if (state_ == nullptr) { status_ = UV_EBADF; return false; }
-    if (&continuation.promise().execution_loop() != state_->loop) {
-      throw std::logic_error{"uv internal udp close used from a different loop"};
-    }
-    if (state_->close.closed()) return false;
-    if (!state_->close.add_waiter(continuation)) return false;
-    initiated_ = state_->request_close();
-    return true;
-  }
-  void await_resume() { throw_if_error(status_); }
-  bool initiated_close() const noexcept { return initiated_; }
-private:
-  udp_socket_state *state_ = nullptr;
-  int status_ = 0;
-  bool initiated_ = false;
-};
+using udp_close_completion = owner_close_awaiter<udp_socket_state, false>;
+using udp_close_result = owner_close_awaiter<udp_socket_state, true>;
 
 [[nodiscard]] udp_close_completion close_completion(udp_socket &) noexcept;
+[[nodiscard]] udp_close_result close_result(udp_socket &) noexcept;
 
 } // namespace detail
 
@@ -114,7 +98,7 @@ public:
   bool closing() const noexcept { return state_ && state_->closing(); }
   bool has_execution_loop(const uv::loop &loop) const noexcept { return state_ && state_->loop == &loop; }
   bool has_active_operation() const noexcept {
-    return state_ && (state_->send_active || state_->active_receive != nullptr);
+    return state_ && state_->has_active_operation();
   }
   socket_address local_address() const {
     if (!state_) throw_if_error(UV_EBADF);
@@ -122,7 +106,20 @@ public:
     throw_if_error(uv_udp_getsockname(&state_->udp, address.native(), address.native_len()));
     return address;
   }
-  void close() noexcept { reset(); }
+  [[nodiscard]] detail::udp_close_completion close() & noexcept {
+    return detail::udp_close_completion{state_.get(), true};
+  }
+  detail::udp_close_completion close() && = delete;
+
+  void request_close() {
+    if (!state_) {
+      throw_if_error(UV_EBADF);
+    }
+    if (!state_->close.closed() && state_->has_active_operation()) {
+      throw_if_error(UV_EBUSY);
+    }
+    (void)state_->request_close();
+  }
 
   class recv_from_result {
   public:
@@ -301,6 +298,7 @@ private:
   std::unique_ptr<detail::udp_socket_state> state_{};
   friend class udp_socket_view;
   friend detail::udp_close_completion detail::close_completion(udp_socket &) noexcept;
+  friend detail::udp_close_result detail::close_result(udp_socket &) noexcept;
 };
 
 class udp_socket_view {
@@ -322,7 +320,20 @@ private:
 
 namespace detail {
 inline udp_socket_view make_udp_socket_view(std::shared_ptr<udp_socket_access> access) noexcept { return udp_socket_view{std::move(access)}; }
-inline udp_close_completion close_completion(udp_socket &socket) noexcept { return udp_close_completion{socket.state_.get()}; }
+inline udp_close_completion close_completion(udp_socket &socket) noexcept {
+  return udp_close_completion{socket.state_.get(), false};
+}
+inline udp_close_result close_result(udp_socket &socket) noexcept {
+  return udp_close_result{socket.state_.get(), true};
+}
 } // namespace detail
+
+namespace ops {
+
+[[nodiscard]] inline detail::udp_close_result close(udp_socket &socket) noexcept {
+  return detail::close_result(socket);
+}
+
+} // namespace ops
 
 } // namespace uv

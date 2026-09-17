@@ -150,7 +150,7 @@ and scope cleanup: start close, call `uv_close()`, receive the native callback,
 then permit storage reclamation once no remaining references require it. It must
 not replace unrelated close ownership. Cancellation cannot undo close.
 
-High-level owners will expose `co_await socket.close()` as a native-close completion
+High-level owners expose `co_await socket.close()` as a native-close completion
 barrier; it does not replace coordinated task shutdown or scope cleanup. Cleanup
 must cover exceptional exits without relying on a final explicit close. A normal
 C++ destructor cannot await: lexical exit may initiate cleanup under a surviving

@@ -62,7 +62,7 @@ close callback entry point.
 
 ## Public owner close
 
-The target v3 high-level owner API exposes an awaitable `close()` on
+The experimental v3 high-level owner API exposes an awaitable `close()` on
 `tcp_connection`, `pipe_connection`, `udp_socket`, `tcp_listener`, and
 `pipe_listener`:
 
@@ -167,8 +167,12 @@ the same no-allocation callback path. The first `resource_scope` now
 adopts connections and listeners, hands tasks a non-owning `tcp_connection_view`,
 and awaits internal close completion before destroying owner storage. It rejects
 cross-loop adoption and requires task join before cleanup while borrowed I/O is
-active. The public close contract is selected above but its awaitable facade,
-generic registration, and cleanup-error aggregation remain unimplemented.
+active. `tcp_connection`, `pipe_connection`, `udp_socket`, and both listener
+families now expose the public member awaiter and `request_close()`; the matching
+`uv::ops::close` overloads return the current `uv::result` status value. Tests in
+`tests/test-co.cpp` cover TCP and pipe close, concurrent joining, explicit
+results, active-read rejection, and both listener families with an active accept. Generic
+registration and cleanup-error aggregation remain unimplemented.
 
 The experimental `uv::tcp_listener` adds separate stable listener storage and a
 one-shot accept owner transfer. Its internal close completion has the same

@@ -16,6 +16,7 @@
 #include "uvpp/core/error.hpp"
 #include "uvpp/detail/accept_slot.hpp"
 #include "uvpp/detail/async_close_state.hpp"
+#include "uvpp/detail/owner_close.hpp"
 #include "uvpp/net/address.hpp"
 #include "uvpp/net/socket_address.hpp"
 #include "uvpp/net/tcp_connection.hpp"
@@ -30,8 +31,11 @@ struct tcp_listener_access {
   tcp_listener *listener = nullptr;
 };
 
-class tcp_listener_close_completion;
+struct tcp_listener_state;
+using tcp_listener_close_completion = owner_close_awaiter<tcp_listener_state, false>;
+using tcp_listener_close_result = owner_close_awaiter<tcp_listener_state, true>;
 [[nodiscard]] tcp_listener_close_completion close_completion(tcp_listener &) noexcept;
+[[nodiscard]] tcp_listener_close_result close_result(tcp_listener &) noexcept;
 
 struct tcp_listener_state {
   uv_tcp_t tcp{};
@@ -46,6 +50,7 @@ struct tcp_listener_state {
   }
 
   bool closing() const noexcept { return close.closing(); }
+  bool has_active_operation() const noexcept { return false; }
 
   // Cancelling the one-shot accept releases the listener callback slot before
   // it starts close. The awaiter closes its initialized, untransferred child
@@ -97,47 +102,6 @@ struct tcp_listener_state {
 };
 
 static_assert(std::is_standard_layout_v<tcp_listener_state>);
-
-// Internal listener close-completion primitive. It is intentionally separate
-// from the public synchronous close() decision and is used by resource_scope.
-class tcp_listener_close_completion {
-public:
-  explicit tcp_listener_close_completion(tcp_listener_state *state) noexcept : state_{state} {}
-  tcp_listener_close_completion(const tcp_listener_close_completion &) = delete;
-  tcp_listener_close_completion &operator=(const tcp_listener_close_completion &) = delete;
-  tcp_listener_close_completion(tcp_listener_close_completion &&) = delete;
-  tcp_listener_close_completion &operator=(tcp_listener_close_completion &&) = delete;
-
-  bool await_ready() const noexcept { return false; }
-
-  template<class Promise>
-    requires std::derived_from<Promise, co::detail::task_promise_base>
-  bool await_suspend(std::coroutine_handle<Promise> continuation) {
-    if (state_ == nullptr) {
-      status_ = UV_EBADF;
-      return false;
-    }
-    if (&continuation.promise().execution_loop() != state_->loop) {
-      throw std::logic_error{"uv internal tcp listener close used from a different loop"};
-    }
-    if (state_->close.closed()) {
-      return false;
-    }
-    if (!state_->close.add_waiter(continuation)) {
-      return false;
-    }
-    initiated_ = state_->request_close();
-    return true;
-  }
-
-  void await_resume() { throw_if_error(status_); }
-  bool initiated_close() const noexcept { return initiated_; }
-
-private:
-  tcp_listener_state *state_ = nullptr;
-  int status_ = 0;
-  bool initiated_ = false;
-};
 
 } // namespace detail
 
@@ -193,9 +157,17 @@ public:
     return address;
   }
 
-  // Starts asynchronous close. The loop must continue running until its close
-  // callback has released the listener's stable state.
-  void close() noexcept { reset(); }
+  [[nodiscard]] detail::tcp_listener_close_completion close() & noexcept {
+    return detail::tcp_listener_close_completion{state_.get(), true};
+  }
+  detail::tcp_listener_close_completion close() && = delete;
+
+  void request_close() {
+    if (!state_) {
+      throw_if_error(UV_EBADF);
+    }
+    (void)state_->request_close();
+  }
 
   class accept_awaiter {
   public:
@@ -353,15 +325,29 @@ private:
 
   friend detail::tcp_listener_close_completion detail::close_completion(
       tcp_listener &) noexcept;
+  friend detail::tcp_listener_close_result detail::close_result(tcp_listener &) noexcept;
 };
 
 namespace detail {
 
 [[nodiscard]] inline tcp_listener_close_completion close_completion(
     tcp_listener &listener) noexcept {
-  return tcp_listener_close_completion{listener.state_.get()};
+  return tcp_listener_close_completion{listener.state_.get(), false};
+}
+
+[[nodiscard]] inline tcp_listener_close_result close_result(
+    tcp_listener &listener) noexcept {
+  return tcp_listener_close_result{listener.state_.get(), true};
 }
 
 } // namespace detail
+
+namespace ops {
+
+[[nodiscard]] inline detail::tcp_listener_close_result close(tcp_listener &listener) noexcept {
+  return detail::close_result(listener);
+}
+
+} // namespace ops
 
 } // namespace uv
