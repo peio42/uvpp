@@ -28,7 +28,7 @@ class pipe_connection;
 class pipe_connection_view;
 class pipe_listener;
 
-enum class received_handle_kind {
+enum class receive_handle_kind {
   empty,
   tcp,
 };
@@ -36,15 +36,15 @@ enum class received_handle_kind {
 // Stable high-level TCP owners constructed directly from one native pending
 // handle queue. The result deliberately does not expose its representation so
 // pipe/UDP support can be added later.
-class received_handle {
+class receive_handle_result {
 public:
-  received_handle(const received_handle &) = delete;
-  received_handle &operator=(const received_handle &) = delete;
-  received_handle(received_handle &&) noexcept = default;
-  received_handle &operator=(received_handle &&) noexcept = default;
+  receive_handle_result(const receive_handle_result &) = delete;
+  receive_handle_result &operator=(const receive_handle_result &) = delete;
+  receive_handle_result(receive_handle_result &&) noexcept = default;
+  receive_handle_result &operator=(receive_handle_result &&) noexcept = default;
 
-  received_handle_kind kind() const noexcept {
-    return tcp_.empty() ? received_handle_kind::empty : received_handle_kind::tcp;
+  receive_handle_kind kind() const noexcept {
+    return tcp_.empty() ? receive_handle_kind::empty : receive_handle_kind::tcp;
   }
 
   std::size_t bytes_transferred() const noexcept { return bytes_transferred_; }
@@ -63,7 +63,7 @@ public:
   }
 
 private:
-  explicit received_handle(std::vector<tcp_connection> &&tcp,
+  explicit receive_handle_result(std::vector<tcp_connection> &&tcp,
       std::size_t bytes_transferred) noexcept
     : tcp_{std::move(tcp)},
       bytes_transferred_{bytes_transferred} {}
@@ -242,8 +242,16 @@ public:
 
   ~pipe_connection() { reset(); }
 
-  uv_pipe_t *native_handle() noexcept { return state_ ? &state_->pipe : nullptr; }
-  const uv_pipe_t *native_handle() const noexcept { return state_ ? &state_->pipe : nullptr; }
+  uv_pipe_t *native() noexcept { return state_ ? &state_->pipe : nullptr; }
+  const uv_pipe_t *native() const noexcept { return state_ ? &state_->pipe : nullptr; }
+  uv_handle_t *native_handle() noexcept { return reinterpret_cast<uv_handle_t *>(native()); }
+  const uv_handle_t *native_handle() const noexcept {
+    return reinterpret_cast<const uv_handle_t *>(native());
+  }
+  uv_stream_t *native_stream() noexcept { return reinterpret_cast<uv_stream_t *>(native()); }
+  const uv_stream_t *native_stream() const noexcept {
+    return reinterpret_cast<const uv_stream_t *>(native());
+  }
   bool closing() const noexcept { return state_ && state_->closing(); }
   bool has_execution_loop(const uv::loop &execution_loop) const noexcept {
     return state_ != nullptr && state_->loop == &execution_loop;
@@ -350,11 +358,11 @@ public:
       return true;
     }
 
-    received_handle await_resume() {
+    receive_handle_result await_resume() {
       assert(!provisional_close_required_ || provisional_close_completed_);
       assert(!received_.empty() || status_ < 0);
       throw_if_error(status_);
-      return received_handle{std::move(received_), bytes_transferred_};
+      return receive_handle_result{std::move(received_), bytes_transferred_};
     }
 
   private:

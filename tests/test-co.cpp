@@ -472,9 +472,9 @@ TEST(UvppV3Coroutine, tcpConnectionConnectsMovesAndCloses) {
   bool submission_failure_delivered = false;
   auto client = [&]() -> uv::co::task<void> {
     auto socket = co_await uv::tcp_connection::connect(address);
-    auto *before_move = socket.native_handle();
+    auto *before_move = socket.native();
     auto moved = std::move(socket);
-    EXPECT_EQ(moved.native_handle(), before_move);
+    EXPECT_EQ(moved.native(), before_move);
     try {
       co_await socket.write("submission failure");
     } catch (const uv::error &error) {
@@ -725,7 +725,7 @@ TEST(UvppV3Coroutine, resourceScopeStressClosesManyConnectionsAndQuiescesPending
     uv::co::task_scope tasks(loop);
     uv::co::resource_scope resources(loop);
     uv::tcp_listener raw_listener(loop, uv::ipv4{"127.0.0.1", 0});
-    const auto address = raw_listener.sockname().to_v4();
+    const auto address = raw_listener.local_address().to_v4();
     std::size_t accepted_connections = 0;
     std::size_t completed_handlers = 0;
     std::size_t pending_accept_deliveries = 0;
@@ -802,11 +802,11 @@ TEST(UvppV3Coroutine, udpSocketSendReceiveAndScopedCleanup) {
   auto parent = [&]() -> uv::co::task<void> {
     auto receiver = resources.own(uv::udp_socket{loop, uv::ipv4{"127.0.0.1", 0}});
     auto sender = resources.own(uv::udp_socket{loop, uv::ipv4{"127.0.0.1", 0}});
-    const auto receiver_address = receiver.view().sockname().to_v4();
+    const auto receiver_address = receiver.view().local_address().to_v4();
     auto receive = [&]() -> uv::co::task<void> {
       auto result = co_await receiver.view().recv_from(buffer);
       received = result.size();
-      peer_is_v4 = result.peer_is_v4();
+      peer_is_v4 = result.peer_address().is_v4();
     };
     auto send = [&]() -> uv::co::task<void> {
       // Destination is copied into the awaiter; payload remains borrowed until
@@ -844,7 +844,7 @@ TEST(UvppV3Coroutine, udpSocketStopCancelsReceiveBeforeScopedCleanup) {
 
   auto parent = [&]() -> uv::co::task<void> {
     auto receiver = resources.own(uv::udp_socket{loop, uv::ipv4{"127.0.0.1", 0}});
-    const auto receiver_address = receiver.view().sockname().to_v4();
+    const auto receiver_address = receiver.view().local_address().to_v4();
     auto receive = [&]() -> uv::co::task<void> {
       try {
         (void)co_await receiver.view().recv_from(buffer);
@@ -1112,7 +1112,7 @@ TEST(UvppV3Coroutine, tcpListenerLateNotificationCannotReachQuiescedAccept) {
     // remains alive so this only exercises terminal slot handling; no libuv
     // function is called. It must not reach the completed accept frame.
     uv::detail::tcp_listener_state::on_connection(
-        reinterpret_cast<uv_stream_t *>(listener.native_handle()), 0);
+        listener.native_stream(), 0);
     loop.stop();
   };
 
@@ -1142,7 +1142,7 @@ TEST(UvppV3Coroutine, resourceScopeOwnsListenerAndAcceptedConnection) {
     co_return;
   };
   uv::tcp_listener raw_listener(loop, uv::ipv4{"127.0.0.1", 0});
-  const auto listener_address = raw_listener.sockname().to_v4();
+  const auto listener_address = raw_listener.local_address().to_v4();
   auto scoped_server = [&]() -> uv::co::task<void> {
     auto listener = resources.own(std::move(raw_listener));
     auto connection = resources.own(co_await listener.accept());
@@ -1324,22 +1324,22 @@ TEST(UvppV3Coroutine, tcpListenerAcceptsIntoAnIndependentMovableConnectionOwner)
     }
     throw;
   }
-  const auto address = listener->sockname().to_v4();
+  const auto address = listener->local_address().to_v4();
   bool accepted = false;
   bool accepted_owner_was_stable = false;
   bool client_connected = false;
 
   auto server = [&]() -> uv::co::task<void> {
     auto connection = co_await listener->accept();
-    auto *before_move = connection.native_handle();
+    auto *before_move = connection.native();
     auto moved = std::move(connection);
-    accepted_owner_was_stable = moved.native_handle() == before_move;
+    accepted_owner_was_stable = moved.native() == before_move;
     accepted = true;
     listener->close();
   };
   auto client = [&]() -> uv::co::task<void> {
     auto connection = co_await uv::tcp_connection::connect(address);
-    client_connected = connection.native_handle() != nullptr;
+    client_connected = connection.native() != nullptr;
   };
 
   auto server_execution = uv::co::spawn(loop, server());
@@ -1839,11 +1839,11 @@ TEST(UvppV3Coroutine, ipcPipeTransfersTcpIntoAStableReceivedOwner) {
       std::array<std::byte, 8> buffer{};
       auto incoming = co_await control.receive_handle(buffer);
       EXPECT_EQ(incoming.tcp_count(), 1);
-      received_tcp = incoming.kind() == uv::received_handle_kind::tcp;
+      received_tcp = incoming.kind() == uv::receive_handle_kind::tcp;
       auto transferred = incoming.take_tcp();
-      auto *before_move = transferred.native_handle();
+      auto *before_move = transferred.native();
       auto moved = std::move(transferred);
-      received_owner_was_stable = moved.native_handle() == before_move;
+      received_owner_was_stable = moved.native() == before_move;
       if (tcp_peer && !tcp_peer->closing()) {
         tcp_peer->close();
       }
@@ -2140,9 +2140,9 @@ TEST(UvppV3Coroutine, ipcPipeBackToBackHandleWritesPreserveBytesAndOwners) {
           result.bytes_transferred());
       while (result.tcp_count() != 0) {
         auto connection = result.take_tcp();
-        if (connection.native_handle() != nullptr) {
+        if (connection.native() != nullptr) {
           ++valid_owners;
-          received_local_ports.push_back(local_port(connection.native_handle()));
+          received_local_ports.push_back(local_port(connection.native()));
         }
         ++received_count;
       }
@@ -2160,8 +2160,8 @@ TEST(UvppV3Coroutine, ipcPipeBackToBackHandleWritesPreserveBytesAndOwners) {
     auto control = co_await uv::pipe_connection::connect(path, true);
     auto first = co_await uv::tcp_connection::connect(address);
     auto second = co_await uv::tcp_connection::connect(address);
-    expected_local_ports.push_back(local_port(first.native_handle()));
-    expected_local_ports.push_back(local_port(second.native_handle()));
+    expected_local_ports.push_back(local_port(first.native()));
+    expected_local_ports.push_back(local_port(second.native()));
     co_await control.write_with_handle("A", first);
     co_await control.write_with_handle("B", second);
     while (!receiver_done) {
@@ -2258,15 +2258,15 @@ TEST(UvppV3Coroutine, pipeListenerAcceptsIntoAnIndependentMovableConnectionOwner
 
   auto server = [&]() -> uv::co::task<void> {
     auto connection = co_await listener.accept();
-    auto *before_move = connection.native_handle();
+    auto *before_move = connection.native();
     auto moved = std::move(connection);
-    accepted_owner_was_stable = moved.native_handle() == before_move;
+    accepted_owner_was_stable = moved.native() == before_move;
     accepted = true;
     listener.close();
   };
   auto client = [&]() -> uv::co::task<void> {
     auto connection = co_await uv::pipe_connection::connect(path);
-    client_connected = connection.native_handle() != nullptr;
+    client_connected = connection.native() != nullptr;
   };
 
   auto server_execution = uv::co::spawn(loop, server());
@@ -2294,7 +2294,7 @@ TEST(UvppV3Coroutine, pipeListenerRejectsSecondConcurrentAccept) {
   int second_status = 0;
   auto first = [&]() -> uv::co::task<void> {
     auto connection = co_await listener.accept();
-    first_accepted = connection.native_handle() != nullptr;
+    first_accepted = connection.native() != nullptr;
     listener.close();
   };
   auto second = [&]() -> uv::co::task<void> {
@@ -2438,12 +2438,12 @@ TEST(UvppV3Coroutine, tcpListenerRejectsSecondConcurrentAccept) {
     }
     throw;
   }
-  const auto address = listener->sockname().to_v4();
+  const auto address = listener->local_address().to_v4();
   bool first_accepted = false;
   int second_status = 0;
   auto first = [&]() -> uv::co::task<void> {
     auto connection = co_await listener->accept();
-    first_accepted = connection.native_handle() != nullptr;
+    first_accepted = connection.native() != nullptr;
     listener->close();
   };
   auto second = [&]() -> uv::co::task<void> {
@@ -2557,12 +2557,12 @@ TEST(UvppV3Coroutine, tcpListenerAcceptsPeerThatImmediatelyCloses) {
     }
     throw;
   }
-  const auto address = listener->sockname().to_v4();
+  const auto address = listener->local_address().to_v4();
   bool accepted = false;
   bool saw_eof = false;
   auto server = [&]() -> uv::co::task<void> {
     auto connection = co_await listener->accept();
-    accepted = connection.native_handle() != nullptr;
+    accepted = connection.native() != nullptr;
     std::array<std::byte, 8> buffer{};
     saw_eof = (co_await connection.read_some(buffer)).eof();
     listener->close();
@@ -2596,13 +2596,13 @@ TEST(UvppV3Coroutine, taskScopeOwnsConcurrentAcceptedConnectionHandlers) {
     }
     throw;
   }
-  const auto address = listener->sockname().to_v4();
+  const auto address = listener->local_address().to_v4();
   uv::co::task_scope scope(loop);
   int handlers_started = 0;
   int handlers_completed = 0;
 
   auto handle = [&](uv::tcp_connection connection) -> uv::co::task<void> {
-    EXPECT_NE(connection.native_handle(), nullptr);
+    EXPECT_NE(connection.native(), nullptr);
     ++handlers_started;
     co_await uv::co::sleep_for(1ms);
     ++handlers_completed;

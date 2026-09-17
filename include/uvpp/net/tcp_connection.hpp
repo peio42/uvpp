@@ -225,8 +225,16 @@ public:
 
   ~tcp_connection() { reset(); }
 
-  uv_tcp_t *native_handle() noexcept { return state_ ? &state_->tcp : nullptr; }
-  const uv_tcp_t *native_handle() const noexcept { return state_ ? &state_->tcp : nullptr; }
+  uv_tcp_t *native() noexcept { return state_ ? &state_->tcp : nullptr; }
+  const uv_tcp_t *native() const noexcept { return state_ ? &state_->tcp : nullptr; }
+  uv_handle_t *native_handle() noexcept { return reinterpret_cast<uv_handle_t *>(native()); }
+  const uv_handle_t *native_handle() const noexcept {
+    return reinterpret_cast<const uv_handle_t *>(native());
+  }
+  uv_stream_t *native_stream() noexcept { return reinterpret_cast<uv_stream_t *>(native()); }
+  const uv_stream_t *native_stream() const noexcept {
+    return reinterpret_cast<const uv_stream_t *>(native());
+  }
   bool closing() const noexcept { return state_ && state_->closing(); }
   bool has_execution_loop(const uv::loop &execution_loop) const noexcept {
     return state_ != nullptr && state_->loop == &execution_loop;

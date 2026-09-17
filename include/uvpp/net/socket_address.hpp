@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cassert>
+#include <cstring>
 #include <string>
 
 #include <uv.h>
@@ -12,6 +13,15 @@ namespace uv {
   class socket_address {
   public:
     socket_address() : len_{static_cast<int>(sizeof(storage_))} {}
+    explicit socket_address(const sockaddr_in &address) noexcept : len_{sizeof(address)} {
+      storage_ = {};
+      std::memcpy(&storage_, &address, sizeof(address));
+    }
+
+    explicit socket_address(const sockaddr_in6 &address) noexcept : len_{sizeof(address)} {
+      storage_ = {};
+      std::memcpy(&storage_, &address, sizeof(address));
+    }
 
     bool is_v4() const noexcept { return storage_.ss_family == AF_INET; }
     bool is_v6() const noexcept { return storage_.ss_family == AF_INET6; }
