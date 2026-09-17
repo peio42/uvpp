@@ -726,6 +726,60 @@ TEST(UvppV3Coroutine, publicTcpCloseRejectsActiveReadWithoutChangingIt) {
   pair.close();
 }
 
+TEST(UvppV3Coroutine, publicTcpRequestCloseRejectsActiveReadWithoutChangingIt) {
+  if (!loopback_tcp_is_permitted()) {
+    GTEST_SKIP() << "loopback TCP is not permitted in this environment";
+  }
+
+  connected_tcp_pair pair;
+  pair.connect();
+  uv::co::task_scope reads(pair.loop);
+  std::array<std::byte, 8> buffer{};
+  bool read_started = false;
+  bool read_completed = false;
+  bool read_canceled = false;
+  bool request_rejected = false;
+  bool operation_still_alive = false;
+  bool owner_still_open = false;
+  bool close_completed = false;
+
+  auto reader = [&]() -> uv::co::task<void> {
+    read_started = true;
+    try {
+      (void)co_await pair.client->read_some(buffer);
+    } catch (const uv::error &error) {
+      read_canceled = error.code().value() == UV_ECANCELED;
+    }
+    read_completed = true;
+  };
+  auto closer = [&]() -> uv::co::task<void> {
+    reads.spawn(reader());
+    try {
+      pair.client->request_close();
+    } catch (const uv::error &error) {
+      request_rejected = error.code().value() == UV_EBUSY;
+    }
+    operation_still_alive = read_started && !read_completed;
+    owner_still_open = !pair.client->closing();
+    reads.request_stop();
+    co_await reads.join();
+    co_await pair.client->close();
+    close_completed = true;
+    pair.loop.stop();
+  };
+
+  auto execution = uv::co::spawn(pair.loop, closer());
+  pair.loop.run();
+
+  EXPECT_NO_THROW(execution.rethrow_if_failed());
+  EXPECT_TRUE(request_rejected);
+  EXPECT_TRUE(operation_still_alive);
+  EXPECT_TRUE(owner_still_open);
+  EXPECT_TRUE(read_canceled);
+  EXPECT_TRUE(close_completed);
+  pair.close();
+}
+
 TEST(UvppV3Coroutine, publicUdpCloseReportsCompletionThroughOps) {
   if (!loopback_tcp_is_permitted()) {
     GTEST_SKIP() << "loopback networking is not permitted in this environment";
