@@ -180,20 +180,24 @@ unsupported cases and their lifetime behavior are explicit.
 
 The existing callbacks, request wrappers, filesystem owners, and coroutine strategy
 are foundations. An experimental focused-header slice now provides `task<T>`, root
-`spawn(loop, task<void>)`, move-only child-task await, `spawn_handle::rethrow_if_failed()`,
-`sleep_for(duration)`, one-shot `uv::tcp_listener::accept()`, and a same-loop
+`spawn(loop, task<T>)`, move-only child-task await, `spawn_handle<T>::join()`,
+`request_stop()`, non-void `take_result()`, `sleep_for(duration)`, one-shot `uv::tcp_listener::accept()`, and a same-loop
 `task_scope` for `task<void>` children; see [the coroutine guide](../user/coroutines.md) and
-[`tests/test-co.cpp`](../../tests/test-co.cpp). It validates cold root startup,
-inherited child loop binding, timer completion/close before resumption, move-only
-result delivery, task failure propagation, and accepted TCP ownership. The listener
+[`tests/test-co.cpp`](../../tests/test-co.cpp). Root `join()` is a multiple-observer
+same-loop completion barrier; result extraction is separate and single-consumer.
+The root holds a dedicated cancellation state inherited by nested children. It
+validates cold root startup, inherited child loop binding, timer completion/close
+before resumption, move-only result delivery, task failure propagation, and accepted TCP ownership. The listener
 has one exclusive accept waiter and transfers each accepted connection into its own
 movable owner before resuming the task. `task_scope::join()` waits for every child
 and reports its first captured failure only after that join. A first child failure
 requests cooperative stop of its siblings; submitted non-cancellable work still
 retains its storage until actual completion. `task.hpp`, `cancellation.hpp`, and
 `task_scope.hpp` keep the task core, stop state, and structured owner separately
-in focused headers. It deliberately has no resource-close join or asynchronous
-root join, so it does not settle the public task contract. Because `uv_listen` is persistent but one `accept()`
+in focused headers. Active root-handle destruction remains a termination diagnostic:
+the handle must be explicitly stopped and joined (or retained) before destruction.
+It deliberately has no resource-close join, detach, or post-handle-destruction
+retention, so it does not settle the full public task contract. Because `uv_listen` is persistent but one `accept()`
 consumes one notification, it also deliberately has no queue or long-running
 handler policy before scopes define backpressure and shutdown.
 

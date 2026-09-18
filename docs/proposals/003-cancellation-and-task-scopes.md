@@ -90,6 +90,16 @@ ordinary loop-thread task transitions.
 
 ## Implementation progress and validation
 
+The experimental `uv::co::spawn_handle<T>` now owns one immediately-started root
+on an explicit loop. It binds a dedicated cancellation state inherited by child
+tasks, supports loop-thread-only `request_stop()`, and permits multiple same-loop
+`join()` observers. Completion and result consumption remain separate: non-void
+`take_result()` moves the value once and rethrows a stored root failure; void roots
+retain `rethrow_if_failed()`. Destroying an active root handle remains a termination
+diagnostic rather than an implicit cancellation/retention policy. The state has one
+explicit heap allocation so it remains address-stable across handle moves and while
+join awaiters are suspended.
+
 The experimental `uv::co::task_scope` now owns immediately-started `task<void>`
 children on one explicit `uv::loop`. `spawn()` consumes and binds a cold child,
 and `join()` resumes only after every child has completed, destroys their frames,

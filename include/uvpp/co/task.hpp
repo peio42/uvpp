@@ -3,9 +3,12 @@
 #include <concepts>
 #include <coroutine>
 #include <exception>
+#include <memory>
 #include <optional>
 #include <stdexcept>
+#include <type_traits>
 #include <utility>
+#include <vector>
 
 #include "uvpp/co/cancellation.hpp"
 #include "uvpp/core/loop.hpp"
@@ -81,10 +84,12 @@ struct task_final_awaiter {
 template<class T = void>
 class task;
 
+template<class T = void>
 class spawn_handle;
 class task_scope;
 
-[[nodiscard]] spawn_handle spawn(uv::loop &, task<void> &&);
+template<class T>
+[[nodiscard]] spawn_handle<T> spawn(uv::loop &, task<T> &&);
 
 template<class T>
 class [[nodiscard]] task {
@@ -107,14 +112,22 @@ public:
 
     void unhandled_exception() noexcept { exception_ = std::current_exception(); }
 
-    T take_result() {
+    void rethrow_if_failed() const {
       if (exception_ != nullptr) {
         std::rethrow_exception(exception_);
       }
+    }
+
+    bool has_result() const noexcept { return value_.has_value(); }
+
+    T take_result() {
+      rethrow_if_failed();
       if (!value_) {
         throw std::logic_error{"uv::co task completed without a value"};
       }
-      return std::move(*value_);
+      auto result = std::move(*value_);
+      value_.reset();
+      return result;
     }
 
   private:
@@ -124,6 +137,8 @@ public:
     std::exception_ptr exception_{};
 
     friend class task;
+    template<class U>
+    friend class spawn_handle;
   };
 
   using handle_type = std::coroutine_handle<promise_type>;
@@ -214,6 +229,9 @@ private:
   }
 
   handle_type handle_{};
+
+  template<class U>
+  friend spawn_handle<U> spawn(uv::loop &, task<U> &&);
 };
 
 template<>
@@ -241,6 +259,7 @@ public:
     std::exception_ptr exception_{};
 
     friend class task;
+    template<class U>
     friend class spawn_handle;
   };
 
@@ -332,9 +351,11 @@ private:
 
   handle_type handle_{};
 
+  template<class U>
   friend class spawn_handle;
   friend class task_scope;
-  friend spawn_handle spawn(uv::loop &, task &&);
+  template<class U>
+  friend spawn_handle<U> spawn(uv::loop &, task<U> &&);
 };
 
 class stop_requested_awaiter {
@@ -357,68 +378,200 @@ private:
 // Observes the cooperative stop state inherited by the current task.
 [[nodiscard]] inline stop_requested_awaiter stop_requested() noexcept { return {}; }
 
-// Experimental root-execution owner. It must outlive outstanding native work.
-// Cancellation and asynchronous joining are deliberately not part of this first
-// slice, so destroying an active handle terminates rather than invalidating a
-// coroutine frame still referenced by libuv.
+// Experimental root-execution owner. It owns one root frame, supplies the root
+// cancellation state inherited by descendants, and keeps completion observation
+// separate from single-consumer value extraction. It must outlive outstanding
+// native work: destroying an active handle terminates rather than invalidating
+// a coroutine frame still referenced by libuv.
+template<class T>
 class [[nodiscard]] spawn_handle {
+private:
+  struct state;
+
 public:
   spawn_handle() = delete;
   spawn_handle(const spawn_handle &) = delete;
   spawn_handle &operator=(const spawn_handle &) = delete;
 
   spawn_handle(spawn_handle &&other) noexcept
-    : handle_{std::exchange(other.handle_, {})} {}
+    : state_{std::move(other.state_)} {}
 
   spawn_handle &operator=(spawn_handle &&other) noexcept {
     if (this != &other) {
-      destroy_finished();
-      handle_ = std::exchange(other.handle_, {});
+      release();
+      state_ = std::move(other.state_);
     }
     return *this;
   }
 
-  ~spawn_handle() { destroy_finished(); }
+  ~spawn_handle() { release(); }
 
-  bool done() const noexcept { return handle_.done(); }
+  bool done() const noexcept { return state_ != nullptr && state_->completed; }
 
   void rethrow_if_failed() const {
-    if (!done()) {
-      throw std::logic_error{"uv::co::spawn_handle result observed before completion"};
+    completed_state().handle.promise().rethrow_if_failed();
+  }
+
+  // Requests cooperative stop for this root and all nested children. It is
+  // loop-thread-only and does not mean submitted native work has completed.
+  void request_stop() { require_state().cancellation.request_stop(); }
+
+  bool stop_requested() const { return require_state().cancellation.stop_requested(); }
+
+  class join_awaiter {
+  public:
+    explicit join_awaiter(std::shared_ptr<state> state) noexcept
+      : state_{std::move(state)} {}
+
+    bool await_ready() const noexcept { return false; }
+
+    template<class Promise>
+      requires std::derived_from<Promise, detail::task_promise_base>
+    bool await_suspend(std::coroutine_handle<Promise> continuation) {
+      if (&continuation.promise().execution_loop() != state_->loop) {
+        throw std::logic_error{"uv::co::spawn_handle joined from a different loop"};
+      }
+      if (state_->completed) {
+        return false;
+      }
+      state_->joiners.push_back(continuation);
+      return true;
     }
-    handle_.promise().rethrow_if_failed();
+
+    void await_resume() const noexcept {}
+
+  private:
+    std::shared_ptr<state> state_;
+  };
+
+  // Completion is observable by multiple same-loop tasks. Constructing this
+  // awaiter has no effect; it registers only when actually awaited.
+  [[nodiscard]] join_awaiter join() const {
+    return join_awaiter{require_state_ptr()};
   }
 
 private:
-  using handle_type = task<void>::handle_type;
+  using handle_type = task<T>::handle_type;
 
-  explicit spawn_handle(handle_type handle) noexcept : handle_{handle} {}
+  struct state {
+    explicit state(handle_type root, uv::loop &execution_loop) noexcept
+      : handle{root}, loop{&execution_loop} {}
 
-  void destroy_finished() noexcept {
-    if (!handle_) {
-      return;
+    ~state() {
+      if (!handle) {
+        return;
+      }
+      if (!handle.done()) {
+        std::terminate();
+      }
+      handle.destroy();
     }
-    if (!handle_.done()) {
-      std::terminate();
+
+    static std::coroutine_handle<> on_completed(void *context) noexcept {
+      auto &self = *static_cast<state *>(context);
+      self.completed = true;
+      auto first = self.take_next_joiner();
+      // Return one continuation by symmetric transfer. The remaining waiters
+      // are already suspended root tasks, so they can safely be resumed now;
+      // this avoids building a recursive await_resume chain for many joiners.
+      while (!self.joiners.empty()) {
+        auto continuation = self.take_next_joiner();
+        continuation.resume();
+      }
+      return first;
     }
-    handle_.destroy();
-    handle_ = {};
+
+    std::coroutine_handle<> take_next_joiner() noexcept {
+      if (joiners.empty()) {
+        return std::noop_coroutine();
+      }
+      auto continuation = joiners.front();
+      joiners.erase(joiners.begin());
+      return continuation;
+    }
+
+    handle_type handle{};
+    uv::loop *loop = nullptr;
+    detail::cancellation_state cancellation{};
+    std::vector<std::coroutine_handle<>> joiners{};
+    bool completed = false;
+  };
+
+public:
+  template<class U = T>
+    requires (!std::is_void_v<U>)
+  bool has_result() const noexcept {
+    return state_ != nullptr && state_->completed && state_->handle.promise().has_result();
   }
 
-  handle_type handle_{};
+  template<class U = T>
+    requires (!std::is_void_v<U>)
+  U take_result() {
+    return completed_state().handle.promise().take_result();
+  }
 
-  friend spawn_handle spawn(uv::loop &, task<void> &&);
+private:
+  explicit spawn_handle(std::shared_ptr<state> state) noexcept : state_{std::move(state)} {}
+
+  state &require_state() const {
+    if (state_ == nullptr) {
+      throw std::logic_error{"uv::co::spawn_handle is empty"};
+    }
+    return *state_;
+  }
+
+  std::shared_ptr<state> require_state_ptr() const {
+    (void)require_state();
+    return state_;
+  }
+
+  state &completed_state() const {
+    auto &result = require_state();
+    if (!result.completed) {
+      throw std::logic_error{"uv::co::spawn_handle result observed before completion"};
+    }
+    return result;
+  }
+
+  void release() noexcept {
+    if (state_ == nullptr) {
+      return;
+    }
+    if (!state_->completed) {
+      std::terminate();
+    }
+    state_.reset();
+  }
+
+  std::shared_ptr<state> state_{};
+
+  template<class U>
+  friend spawn_handle<U> spawn(uv::loop &, task<U> &&);
 };
 
-[[nodiscard]] inline spawn_handle spawn(uv::loop &execution_loop, task<void> &&root) {
+template<class T>
+[[nodiscard]] inline spawn_handle<T> spawn(uv::loop &execution_loop, task<T> &&root) {
   auto handle = root.release();
   if (!handle) {
     throw std::logic_error{"uv::co::spawn requires a valid task"};
   }
 
-  handle.promise().bind(execution_loop);
+  std::shared_ptr<typename spawn_handle<T>::state> state;
+  try {
+    state = std::make_shared<typename spawn_handle<T>::state>(handle, execution_loop);
+    handle.promise().bind(execution_loop, &state->cancellation);
+    handle.promise().set_completion(state.get(), &spawn_handle<T>::state::on_completed);
+  } catch (...) {
+    if (state != nullptr) {
+      state->handle.destroy();
+      state->handle = {};
+    } else {
+      handle.destroy();
+    }
+    throw;
+  }
   handle.resume();
-  return spawn_handle{handle};
+  return spawn_handle<T>{std::move(state)};
 }
 
 } // namespace uv::co

@@ -29,31 +29,35 @@ uv::co::task<void> parent() {
 
 int main() {
   uv::loop loop;
-  auto execution = uv::co::spawn(loop, wait_once());
+  auto execution = uv::co::spawn(loop, answer());
 
   loop.run();
-  execution.rethrow_if_failed();
+  auto value = execution.take_result(); // 42
   loop.close();
 }
 ```
 
 `task<T>` is cold: constructing `wait_once()` does not execute its body or bind
-it to a loop. The experimental root entry point currently accepts `task<void>`:
-`spawn(loop, task<void>)` consumes it, binds its execution context to that loop,
-and starts it. `sleep_for` uses an event-loop timer on that inherited loop; it does
-not call the blocking `uv_sleep()`. Positive durations below a millisecond round
-up to one millisecond.
+it to a loop. `spawn(loop, task<T>)` consumes it, binds its execution context to
+that loop, and starts it, returning a move-only `spawn_handle<T>`. `sleep_for`
+uses an event-loop timer on that inherited loop; it does not call the blocking
+`uv_sleep()`. Positive durations below a millisecond round up to one millisecond.
 
 Awaiting a temporary child task consumes it, binds it to its parent loop, and
 delivers its value by move. A child exception is thrown at the parent `co_await`;
 an uncaught one is observable through the root `spawn_handle`.
 
-Keep the returned `spawn_handle` alive while the task is running, drive the loop
-until it completes, then call `rethrow_if_failed()` to observe a task exception.
-The root `spawn_handle` still has no cancellation or asynchronous join;
-`task_scope` below supplies structured joining and cooperative stop for children.
-Destroying an active `spawn_handle` terminates the process
-instead of releasing a coroutine frame that libuv may still reference.
+Keep the returned `spawn_handle<T>` alive while the task is running, and drive
+the loop until it completes. `co_await execution.join()` is a same-loop completion
+barrier and may be used by multiple tasks. It does not consume the result. For a
+non-void root, `take_result()` moves the value exactly once; it rethrows a stored
+task exception. `has_result()` reports whether that value remains available.
+For a void root, use `rethrow_if_failed()` after completion.
+
+`request_stop()` requests cooperative cancellation for the root and nested child
+tasks; it is loop-thread-only and does not imply completion. Destroying an active
+`spawn_handle<T>` terminates the process instead of releasing a coroutine frame
+that libuv may still reference. There is no implicit detach.
 
 ## Experimental TCP connect
 
