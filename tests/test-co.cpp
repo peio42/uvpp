@@ -283,6 +283,23 @@ TEST(UvppV3Coroutine, spawnHandleMovesMoveOnlyResult) {
   EXPECT_NO_THROW(loop.close());
 }
 
+TEST(UvppV3Coroutine, spawnHandleMoveAssignmentReleasesCompletedDestination) {
+  uv::loop loop;
+
+  auto first_root = []() -> uv::co::task<int> { co_return 1; };
+  auto second_root = []() -> uv::co::task<int> { co_return 2; };
+  auto destination = uv::co::spawn(loop, first_root());
+  auto source = uv::co::spawn(loop, second_root());
+  ASSERT_TRUE(destination.done());
+  ASSERT_TRUE(source.done());
+
+  destination = std::move(source);
+
+  EXPECT_TRUE(destination.done());
+  EXPECT_EQ(destination.take_result(), 2);
+  EXPECT_NO_THROW(loop.close());
+}
+
 TEST(UvppV3Coroutine, spawnHandleRetainsFailureForJoinAndObservation) {
   uv::loop loop;
   bool joined = false;
