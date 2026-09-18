@@ -24,6 +24,13 @@ using namespace std::chrono_literals;
 
 namespace {
 
+template<class Handle>
+concept spawn_handle_rebinds_result = requires(Handle &execution) {
+  execution.template take_result<long>();
+};
+
+static_assert(!spawn_handle_rebinds_result<uv::co::spawn_handle<int>>);
+
 bool loopback_tcp_is_permitted() {
   uv::loop loop;
   uv::tcp probe(loop);
