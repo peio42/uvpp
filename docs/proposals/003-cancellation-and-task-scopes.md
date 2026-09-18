@@ -98,7 +98,9 @@ tasks, supports loop-thread-only `request_stop()`, and permits multiple same-loo
 retain `rethrow_if_failed()`. Destroying an active root handle remains a termination
 diagnostic rather than an implicit cancellation/retention policy. The state has one
 explicit heap allocation so it remains address-stable across handle moves and while
-join awaiters are suspended.
+join awaiters are suspended. Tests also verify that a root stop request after a
+submitted borrowed TCP write leaves the write and its payload alive until the
+native completion callback, and that `join()` completes only afterwards.
 
 The experimental `uv::co::task_scope` now owns immediately-started `task<void>`
 children on one explicit `uv::loop`. `spawn()` consumes and binds a cold child,
