@@ -498,15 +498,13 @@ private:
   };
 
 public:
-  template<class U = T>
-    requires (!std::is_void_v<U>)
-  bool has_result() const noexcept {
+  bool has_result() const noexcept
+    requires (!std::is_void_v<T>) {
     return state_ != nullptr && state_->completed && state_->handle.promise().has_result();
   }
 
-  template<class U = T>
-    requires (!std::is_void_v<U>)
-  U take_result() {
+  T take_result()
+    requires (!std::is_void_v<T>) {
     return completed_state().handle.promise().take_result();
   }
 
