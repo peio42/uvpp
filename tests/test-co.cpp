@@ -49,7 +49,7 @@ struct connected_tcp_pair {
   uv::tcp listener{loop};
   std::unique_ptr<uv::tcp> peer;
   std::optional<uv::tcp_connection> client;
-  std::optional<uv::co::spawn_handle> connect_execution;
+  std::optional<uv::co::spawn_handle<>> connect_execution;
 
   void connect() {
     listener.bind(uv::ipv4{"127.0.0.1", 0});
@@ -115,7 +115,7 @@ struct connected_pipe_pair {
   uv::pipe listener{loop};
   std::unique_ptr<uv::pipe> peer;
   std::optional<uv::pipe_connection> client;
-  std::optional<uv::co::spawn_handle> connect_execution;
+  std::optional<uv::co::spawn_handle<>> connect_execution;
   std::string path{v3_pipe_path()};
 
   connected_pipe_pair() { std::filesystem::remove(path); }
@@ -225,6 +225,155 @@ TEST(UvppV3Coroutine, sleepForDeliversTaskFailureToTheSpawnHandle) {
   EXPECT_TRUE(execution.done());
   EXPECT_THROW(execution.rethrow_if_failed(), std::runtime_error);
   loop.close();
+}
+
+TEST(UvppV3Coroutine, spawnHandleJoinsMultipleTasksAndConsumesValueOnce) {
+  uv::loop loop;
+  int joiners_completed = 0;
+
+  auto worker = []() -> uv::co::task<int> {
+    co_await uv::co::sleep_for(1ms);
+    co_return 42;
+  };
+  auto execution = uv::co::spawn(loop, worker());
+
+  auto joiner = [&]() -> uv::co::task<void> {
+    co_await execution.join();
+    ++joiners_completed;
+  };
+  auto first_joiner = uv::co::spawn(loop, joiner());
+  auto second_joiner = uv::co::spawn(loop, joiner());
+
+  loop.run();
+
+  EXPECT_TRUE(execution.done());
+  EXPECT_TRUE(execution.has_result());
+  EXPECT_EQ(joiners_completed, 2);
+  EXPECT_NO_THROW(first_joiner.rethrow_if_failed());
+  EXPECT_NO_THROW(second_joiner.rethrow_if_failed());
+  EXPECT_EQ(execution.take_result(), 42);
+  EXPECT_FALSE(execution.has_result());
+  EXPECT_THROW(execution.take_result(), std::logic_error);
+  EXPECT_NO_THROW(loop.close());
+}
+
+TEST(UvppV3Coroutine, spawnHandleMovesMoveOnlyResult) {
+  uv::loop loop;
+
+  auto worker = []() -> uv::co::task<std::unique_ptr<int>> {
+    co_await uv::co::sleep_for(0ms);
+    co_return std::make_unique<int>(42);
+  };
+  auto initial = uv::co::spawn(loop, worker());
+  auto execution = std::move(initial);
+
+  loop.run();
+
+  ASSERT_TRUE(execution.has_result());
+  auto result = execution.take_result();
+  ASSERT_NE(result, nullptr);
+  EXPECT_EQ(*result, 42);
+  EXPECT_NO_THROW(loop.close());
+}
+
+TEST(UvppV3Coroutine, spawnHandleRetainsFailureForJoinAndObservation) {
+  uv::loop loop;
+  bool joined = false;
+
+  auto worker = []() -> uv::co::task<int> {
+    co_await uv::co::sleep_for(0ms);
+    throw std::runtime_error{"expected root failure"};
+  };
+  auto execution = uv::co::spawn(loop, worker());
+  auto joiner = [&]() -> uv::co::task<void> {
+    co_await execution.join();
+    joined = true;
+  };
+  auto joiner_execution = uv::co::spawn(loop, joiner());
+
+  loop.run();
+
+  EXPECT_TRUE(joined);
+  EXPECT_NO_THROW(joiner_execution.rethrow_if_failed());
+  EXPECT_FALSE(execution.has_result());
+  EXPECT_THROW(execution.rethrow_if_failed(), std::runtime_error);
+  EXPECT_THROW(execution.take_result(), std::runtime_error);
+  EXPECT_NO_THROW(loop.close());
+}
+
+TEST(UvppV3Coroutine, spawnHandleJoinsAfterCompletion) {
+  uv::loop loop;
+  bool joined = false;
+
+  auto worker = []() -> uv::co::task<void> { co_return; };
+  auto execution = uv::co::spawn(loop, worker());
+  ASSERT_TRUE(execution.done());
+
+  auto joiner = [&]() -> uv::co::task<void> {
+    co_await execution.join();
+    joined = true;
+  };
+  auto joiner_execution = uv::co::spawn(loop, joiner());
+
+  EXPECT_TRUE(joined);
+  EXPECT_TRUE(joiner_execution.done());
+  EXPECT_NO_THROW(joiner_execution.rethrow_if_failed());
+  EXPECT_NO_THROW(loop.close());
+}
+
+TEST(UvppV3Coroutine, spawnHandleRejectsJoinFromAnotherLoop) {
+  uv::loop loop;
+  uv::loop other_loop;
+  bool rejected = false;
+
+  auto worker = []() -> uv::co::task<void> {
+    co_await uv::co::sleep_for(1ms);
+  };
+  auto execution = uv::co::spawn(loop, worker());
+  auto joiner = [&]() -> uv::co::task<void> {
+    try {
+      co_await execution.join();
+    } catch (const std::logic_error &) {
+      rejected = true;
+    }
+  };
+  auto wrong_execution = uv::co::spawn(other_loop, joiner());
+
+  EXPECT_TRUE(wrong_execution.done());
+  EXPECT_TRUE(rejected);
+  loop.run();
+  EXPECT_TRUE(execution.done());
+  EXPECT_NO_THROW(loop.close());
+  EXPECT_NO_THROW(other_loop.close());
+}
+
+TEST(UvppV3Coroutine, spawnHandleStopCancelsRootAndNestedChildren) {
+  uv::loop loop;
+  bool canceled = false;
+  bool observed_stop = false;
+
+  auto child = [&]() -> uv::co::task<void> {
+    try {
+      co_await uv::co::sleep_for(1h);
+    } catch (const uv::error &error) {
+      canceled = error.code().value() == UV_ECANCELED;
+    }
+    observed_stop = co_await uv::co::stop_requested();
+  };
+  auto worker = [&]() -> uv::co::task<void> {
+    co_await child();
+  };
+  auto execution = uv::co::spawn(loop, worker());
+  execution.request_stop();
+  EXPECT_TRUE(execution.stop_requested());
+
+  loop.run();
+
+  EXPECT_TRUE(execution.done());
+  EXPECT_TRUE(canceled);
+  EXPECT_TRUE(observed_stop);
+  EXPECT_NO_THROW(execution.rethrow_if_failed());
+  EXPECT_NO_THROW(loop.close());
 }
 
 TEST(UvppV3Coroutine, childTaskInheritsItsParentsLoopAndReturnsItsValue) {
@@ -3160,6 +3309,17 @@ TEST(UvppV3CoroutineDeathTest, taskScopeDestructionWithoutJoinTerminates) {
       co_return;
     };
     auto execution = uv::co::spawn(loop, parent());
+  }()), "");
+}
+
+TEST(UvppV3CoroutineDeathTest, spawnHandleDestructionWhileActiveTerminates) {
+  EXPECT_DEATH(([&] {
+    uv::loop loop;
+    auto worker = []() -> uv::co::task<void> {
+      co_await uv::co::sleep_for(1ms);
+    };
+    auto execution = uv::co::spawn(loop, worker());
+    (void)execution;
   }()), "");
 }
 
