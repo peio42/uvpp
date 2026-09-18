@@ -383,6 +383,59 @@ TEST(UvppV3Coroutine, spawnHandleStopCancelsRootAndNestedChildren) {
   EXPECT_NO_THROW(loop.close());
 }
 
+TEST(UvppV3Coroutine, spawnHandleStopWaitsForSubmittedBorrowedWrite) {
+  if (!loopback_tcp_is_permitted()) {
+    GTEST_SKIP() << "loopback TCP is not permitted in this environment";
+  }
+
+  connected_tcp_pair pair;
+  pair.connect();
+  std::string data{"borrowed root write survives stop"};
+  bool write_completed = false;
+  bool observed_stop = false;
+  bool joined = false;
+
+  auto root = [&]() -> uv::co::task<void> {
+    co_await pair.client->write(data);
+    write_completed = true;
+    observed_stop = co_await uv::co::stop_requested();
+  };
+  auto execution = uv::co::spawn(pair.loop, root());
+  execution.request_stop();
+
+  // The submitted write remains active after stop. It still borrows data and
+  // prevents close until its actual native completion callback runs.
+  int close_status = 0;
+  try {
+    pair.client->request_close();
+  } catch (const uv::error &error) {
+    close_status = error.code().value();
+  }
+  EXPECT_EQ(close_status, UV_EBUSY);
+  EXPECT_FALSE(execution.done());
+  EXPECT_FALSE(write_completed);
+
+  auto joiner = [&]() -> uv::co::task<void> {
+    co_await execution.join();
+    joined = true;
+    pair.loop.stop();
+  };
+  auto joiner_execution = uv::co::spawn(pair.loop, joiner());
+  EXPECT_FALSE(joined);
+
+  pair.loop.run();
+
+  EXPECT_TRUE(write_completed);
+  EXPECT_TRUE(observed_stop);
+  EXPECT_TRUE(execution.done());
+  EXPECT_TRUE(joined);
+  EXPECT_NO_THROW(execution.rethrow_if_failed());
+  EXPECT_NO_THROW(joiner_execution.rethrow_if_failed());
+  data.front() = 'B'; // The borrow has ended only after root completion/join.
+  EXPECT_EQ(data.front(), 'B');
+  pair.close();
+}
+
 TEST(UvppV3Coroutine, childTaskInheritsItsParentsLoopAndReturnsItsValue) {
   uv::loop loop;
   int result = 0;
