@@ -470,24 +470,24 @@ private:
     static std::coroutine_handle<> on_completed(void *context) noexcept {
       auto &self = *static_cast<state *>(context);
       self.completed = true;
-      auto first = self.take_next_joiner();
-      // Return one continuation by symmetric transfer. The remaining waiters
-      // are already suspended root tasks, so they can safely be resumed now;
-      // this avoids building a recursive await_resume chain for many joiners.
-      while (!self.joiners.empty()) {
-        auto continuation = self.take_next_joiner();
-        continuation.resume();
-      }
-      return first;
-    }
 
-    std::coroutine_handle<> take_next_joiner() noexcept {
+      // Detach every user continuation before resuming any of them. A resumed
+      // joiner may otherwise observe callback-frame references still owned by
+      // this completion delivery.
+      auto joiners = std::move(self.joiners);
+      self.joiners.clear();
       if (joiners.empty()) {
         return std::noop_coroutine();
       }
-      auto continuation = joiners.front();
-      joiners.erase(joiners.begin());
-      return continuation;
+
+      // Return one continuation by symmetric transfer. The remaining waiters
+      // are already detached, so resuming them cannot expose this state with
+      // callback-frame references still installed.
+      auto first = joiners.front();
+      for (std::size_t index = 1; index < joiners.size(); ++index) {
+        joiners[index].resume();
+      }
+      return first;
     }
 
     handle_type handle{};
