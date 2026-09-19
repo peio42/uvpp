@@ -61,7 +61,7 @@ namespace uv {
     throw_if_error(uv_random(nullptr, nullptr, buffer.data(), buffer.size(), 0, nullptr));
   }
 
-  inline std::error_code try_random_fill(std::span<std::byte> buffer) noexcept {
+  inline error_code try_random_fill(std::span<std::byte> buffer) noexcept {
     return make_error_code(uv_random(nullptr, nullptr, buffer.data(), buffer.size(), 0, nullptr));
   }
 

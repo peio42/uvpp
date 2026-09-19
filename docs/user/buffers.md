@@ -25,7 +25,7 @@ std::memcpy(payload.data(), "ping", 4);
 
 uv::write_request request;
 stream.write(request, payload.view(),
-  [](uv::write_request&, uv::result result) {
+  [](uv::write_request&, uv::result<void> result) {
     if (!result) {
       return;
     }

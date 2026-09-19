@@ -65,7 +65,7 @@ TEST(Uvpp2Network, getaddrinfoCancelAfterCompletionFails) {
   EXPECT_THROW(request.cancel(), uv::error);
   auto ec = request.try_cancel();
   ASSERT_TRUE(ec);
-  EXPECT_EQ(ec.value(), UV_EBUSY);
+  EXPECT_EQ(ec.native(), UV_EBUSY);
 
   loop.close();
 }
@@ -153,7 +153,7 @@ TEST(Uvpp2Network, getnameinfoCancelAfterCompletionFails) {
   EXPECT_THROW(request.cancel(), uv::error);
   auto ec = request.try_cancel();
   ASSERT_TRUE(ec);
-  EXPECT_EQ(ec.value(), UV_EBUSY);
+  EXPECT_EQ(ec.native(), UV_EBUSY);
 
   loop.close();
 }

@@ -55,7 +55,7 @@ namespace uv {
 
     bool ok() const noexcept { return status_ >= 0; }
     explicit operator bool() const noexcept { return ok(); }
-    result status() const noexcept { return result{status_}; }
+    result<void> status() const noexcept { return result<void>{status_}; }
     std::string_view filename() const noexcept { return filename_; }
     int events() const noexcept { return events_; }
 

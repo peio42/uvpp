@@ -14,7 +14,7 @@ uv::queue_work(loop, req,
   [&value](uv::work_request&) {         // only value crosses the thread boundary
     value = expensive_blocking_call();
   },
-  [&](uv::work_request&, uv::result status) {
+  [&](uv::work_request&, uv::result<void> status) {
     if (!status) {
       return;
     }
@@ -43,7 +43,7 @@ The work callback runs outside the loop thread. It must not access `uv::loop`,
 handles, or requests except through APIs documented as cross-thread safe by
 libuv and uvpp. Use normal synchronization for shared application data.
 
-The after-work callback runs on the loop thread and receives `uv::result`.
+The after-work callback runs on the loop thread and receives `uv::result<void>`.
 
 ```cpp
 uv::queue_work(loop, req,
@@ -51,15 +51,15 @@ uv::queue_work(loop, req,
     auto* state = req.user_data<job_state>();
     state->run_in_worker();
   },
-  [](uv::work_request& req, uv::result status) {
+  [](uv::work_request& req, uv::result<void> status) {
     auto* state = req.user_data<job_state>();
 
-    if (status.canceled()) {
+    if (status.error() == uv::make_error_code(UV_ECANCELED)) {
       state->canceled = true;
       return;
     }
 
-    state->done = status.ok();
+    state->done = status.has_value();
   });
 ```
 
@@ -75,8 +75,8 @@ static void do_work(uv::work_request& req) {
   req.user_data<job_state>()->run_in_worker();
 }
 
-static void after_work(uv::work_request& req, uv::result status) {
-  req.user_data<job_state>()->done = status.ok();
+static void after_work(uv::work_request& req, uv::result<void> status) {
+  req.user_data<job_state>()->done = status.has_value();
 }
 
 uv::work_request req;
@@ -92,7 +92,7 @@ after-work callback still runs on the loop thread.
 ## Cancellation
 
 `work_request::cancel()` throws `uv::error` if libuv cannot cancel the pending
-request. `work_request::try_cancel()` returns `std::error_code` instead.
+request. `work_request::try_cancel()` returns `uv::error_code` instead.
 
 Cancellation only succeeds before libuv starts executing the work callback. A
 request that has started or already completed cannot be canceled by libuv.

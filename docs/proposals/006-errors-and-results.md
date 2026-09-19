@@ -1,10 +1,11 @@
 # Errors, Results, and Operation Surfaces
 
-Status: draft.
+Status: partially implemented.
 
 Architecture: [000 — V3 architecture](000-v3-architecture.md).
 
-Target: v3; names and result shapes are provisional.
+Target: v3. The common vocabulary below is implemented; operation adaptation
+remains incremental.
 
 This proposal incorporates the former v3 naming notes and extends them to
 composable operation results. It is not an implementation or a release commitment.
@@ -57,11 +58,49 @@ started; see [002](002-async-ownership.md) for its state and lifetime contract.
 
 ## Unified Operation Results
 
-Beyond naming, v3 should offer a common value/error vocabulary while retaining
-specialized payload types for reads, datagrams, DNS, and filesystem results. A
-`result<T>`-like vocabulary is an option, not a decision to replace all domain
-results mechanically. Keep EOF, partial progress, and borrowed versus owned results
-visible. Avoid exposing a successful value when only an error is present.
+V3 uses `uv::result<T>` and `uv::result<void>` as its common value/error
+vocabulary. A result contains either one `T` or one `uv::error_code`; it never
+exposes a value for an error result. `result<void>` represents success or an
+operational error without a payload.
+
+```cpp
+uv::result<std::unique_ptr<connection>> connected{std::move(connection)};
+uv::result<void> closed;
+uv::result<void> refused{UV_ECONNREFUSED};
+```
+
+`result<T>` supports move-only values. It is copyable or movable exactly when
+`T` permits the corresponding operation; it does not allocate. The primary
+observation API is:
+
+```cpp
+if (result) {
+  auto& value = result.value();
+} else {
+  uv::error_code code = result.error();
+}
+```
+
+`has_value()` is equivalent to the explicit boolean conversion. `value()` has
+`&`, `const &`, `&&`, and `const &&` overloads for value results. It throws
+`uv::error` with the stored code when called on an error result; the `void`
+specialization does the same. `error()` is non-throwing and returns an empty
+`uv::error_code` for success. There are no `ok()`, `status()`, `canceled()`, or
+`error_code()` synonyms on the common result type.
+
+`uv::error_code` is a small libuv-specific value. `native()` exposes its
+normalized native integer (zero or a negative libuv error), and `name()` and
+`message()` expose libuv diagnostics; conversion to `std::error_code` is explicit.
+`make_error_code(status)` normalizes all
+non-negative statuses to an empty error code. The generic result uses this type
+rather than a naked integer or an open-ended standard error category.
+
+Specialized results remain necessary where the native completion has more state
+than success-or-error. Reads retain EOF, byte count, partial progress, and their
+borrowed buffer lifetime; immediate I/O retains would-block; datagrams, DNS, and
+filesystem retain their typed payloads. Such types may expose a
+`result<void>` status or eventually appear as `result<domain_outcome>`; this
+milestone does not mechanically flatten them.
 
 Explicit operations must cover native submission and completion failures through
 the same result channel. Prefer deferred initiation or policy-aware construction
@@ -70,11 +109,19 @@ An internal result adapter may implement the ergonomic facade, but a public
 `as_result` spelling is not a second required error-selection API alongside
 `uv::ops`. Exact callback and awaitable entry signatures remain to be prototyped.
 
-Distinguish native operational failure from allocation failure and programmer misuse.
-A result-returning API is not automatically `noexcept`; specify which setup failures
-can still throw. Truly non-throwing variants must cover all failure paths, including
-callback and input-storage setup. C++20 remains the baseline; `std::expected` must
-not become a mandatory dependency on a newer standard.
+An operational error is an expected error defined by the operation contract: a
+native submission or completion failure, including a completed cancellation, is
+reported by `uv::ops` as an error result. An input state such as a closed or busy
+owner is also an error result when that operation documents it as a supported
+state.
+
+Loop-affinity violations, invalid lifetime or ownership use, double consumption,
+and other broken API preconditions are programmer errors outside the result
+channel. Diagnosable violations terminate rather than creating a recoverable
+operational state. A result-returning API is not automatically `noexcept`:
+allocation, user-provided constructors and moves, and documented C++ setup
+failures can still throw. C++20 remains the baseline; `std::expected` is not a
+dependency.
 
 Copying-helper timing (construction versus startup) must be specified together
 with setup-failure routing and the input lifetime before copying; see
@@ -82,6 +129,13 @@ with setup-failure routing and the input lifetime before copying; see
 that timing or the payload ownership policy.
 
 ## Exception Boundaries
+
+Under `uv::ops`, native operational failures do not throw during setup,
+submission, or completion: they become the operation's result. Exceptions that
+remain are `std::bad_alloc`, exceptions from user-provided construction, move, or
+callable code, other documented C++ preparation failures, and the explicit
+`value()` access on an error result. The ergonomic facade unwraps the same
+operational error at the await expression.
 
 Keep the existing low-level callback termination policy documented until an explicit
 replacement is accepted. No exception escapes a libuv C callback. Coroutine promises
@@ -102,7 +156,6 @@ handler must not consume native `data` or silently change all callback semantics
 
 - Domain/member facade spellings and explicit operation initiation need migration
   examples before acceptance.
-- A generic value/error carrier versus a shared concept over existing domain results.
 - Internal adaptation without duplicating public error-policy variants.
 - Cleanup-error aggregation and allocation policy under the selected throwing /
   explicit-result surfaces.
@@ -111,10 +164,11 @@ handler must not consume native `data` or silently change all callback semantics
 
 ## Implementation Progress and Validation
 
-Current v2 immediate exceptions, asynchronous typed results, and `try_*` APIs are
-implemented. The layered APIs, shared result adaptation, and unified value/error vocabulary
-are proposed, not available. Target v3 because naming and result changes can break
-source compatibility; publish a migration table before adoption.
+`uv::error_code`, `result<T>`, and `result<void>` are implemented in
+[`core/error.hpp`](../../include/uvpp/core/error.hpp). Completion statuses and
+existing domain error accessors use the new error vocabulary. The paired
+throwing/explicit operation surfaces are still being adapted one domain at a
+time; target v3 because this changes source compatibility.
 
 Validate equivalent immediate/delayed native failures in both styles, allocation
 failure during setup, EOF and partial results, move-only values, error access, and
@@ -123,11 +177,11 @@ that result adaptation cannot miss failures during operation construction.
 
 ## Gaps Confirmed Against V2
 
-The previous design text described one universal result interface, but stream/UDP
-reads and filesystem watchers lack direct `raw_status()` and `error_code()` members;
-poll has direct error access but no `raw_status()`. `uv::result::status()` returns
-an integer, while domain `status()` returns `uv::result`. Filesystem success status
-is normalized to zero. Uniformity is proposed here, not an existing guarantee.
+Specialized completion types still differ in their direct convenience accessors:
+stream/UDP reads and filesystem watchers lack direct `raw_status()` and
+`error_code()` members; poll has direct error access but no `raw_status()`.
+Filesystem success status is normalized to zero. Their common nested status is now
+`uv::result<void>`, but uniform domain adaptation remains future work.
 
 The old `tcp.try_bind()` example also has no implementation. Consider non-throwing
 bind only as part of a deliberately scoped immediate-error surface using the naming

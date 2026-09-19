@@ -48,9 +48,9 @@ static_status_state *current_static_status = nullptr;
 template<class Result>
 concept fs_result_status_contract = requires(const Result &result) {
   { result.ok() } -> std::same_as<bool>;
-  { result.status() } -> std::same_as<uv::result>;
+  { result.status() } -> std::same_as<uv::result<void>>;
   { result.raw_status() } -> std::same_as<int>;
-  { result.error_code() } -> std::same_as<std::error_code>;
+  { result.error_code() } -> std::same_as<uv::error_code>;
 };
 
 void on_static_fs_close(uv::fs::raw::request &request, uv::fs::raw::status_result result) {
@@ -315,19 +315,19 @@ TEST(Uvpp2Fs, resultTypesExposeCommonStatusInterface) {
 
   uv::fs::raw::status_result failed{UV_ENOENT};
   EXPECT_FALSE(failed.status());
-  EXPECT_EQ(failed.status().status(), UV_ENOENT);
+  EXPECT_EQ(failed.status().error().native(), UV_ENOENT);
   EXPECT_EQ(failed.raw_status(), UV_ENOENT);
   EXPECT_EQ(failed.error_code(), uv::make_error_code(UV_ENOENT));
 
   uv::fs::open_result opened{7};
   EXPECT_TRUE(opened.status());
-  EXPECT_EQ(opened.status().status(), 0);
+  EXPECT_FALSE(opened.status().error());
   EXPECT_EQ(opened.raw(), 7);
   EXPECT_EQ(opened.raw_status(), 0);
 
   uv::fs::status_result ok{0};
   EXPECT_TRUE(ok.status());
-  EXPECT_EQ(ok.status().status(), 0);
+  EXPECT_FALSE(ok.status().error());
   EXPECT_EQ(ok.raw_status(), 0);
   EXPECT_FALSE(ok.error_code());
 }

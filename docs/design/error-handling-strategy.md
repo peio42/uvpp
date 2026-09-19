@@ -1,8 +1,8 @@
 # Error Handling
 
-This document describes the current contracts in
-[core/error.hpp](../../include/uvpp/core/error.hpp) and the domain result classes.
-Uniform future result adaptation is tracked in
+This document describes the implemented common contracts in
+[core/error.hpp](../../include/uvpp/core/error.hpp) and the remaining specialized
+domain results. Broader `uv::ops` adaptation is tracked in
 [proposal 006](../proposals/006-errors-and-results.md).
 
 ## Immediate Failures and Exceptions
@@ -10,7 +10,10 @@ Uniform future result adaptation is tracked in
 Primary submission APIs throw `uv::error` on a negative native submission result.
 `uv::error` derives from `std::system_error`; the libuv category formats messages
 with `uv_strerror`, while the exception constructor adds the `uv_err_name` context.
-The category's name is `libuv`. Nonnegative values map to an empty error code.
+The category's name is `libuv`. `uv::error_code` is the public operational-error
+value: `native()` returns zero or a negative libuv status, and explicit conversion
+produces the equivalent `std::error_code`. Nonnegative values map to an empty
+`uv::error_code`.
 
 `throw_if_error(int)` returns the unchanged integer on success and throws on a
 negative value. Its return value is used, for example, to preserve `uv_run()`'s
@@ -18,7 +21,7 @@ nonzero result. Submission setup can also throw standard exceptions from string,
 vector, or callback storage allocation and explicit argument validation.
 
 Non-throwing variants exist selectively: `loop.try_close()` and supported request
-`try_cancel()` methods return `std::error_code`. There is no `tcp.try_bind()` in
+`try_cancel()` methods return `uv::error_code`. There is no `tcp.try_bind()` in
 v2. Synchronization attempts such as `mutex.try_lock()` use standard attempt
 semantics and can throw on unexpected native errors; see
 [API policy](api-policy-decisions.md).
@@ -29,17 +32,19 @@ A native submission failure is reported by the initiating call; a later failure
 is reported by a completion callback. These are distinct channels in v2.
 
 ```cpp
-tcp.connect(req, addr, [](uv::connect_request&, uv::result status) {
+tcp.connect(req, addr, [](uv::connect_request&, uv::result<void> status) {
   if (!status) {
-    auto ec = status.error_code();
+    auto ec = status.error();
     (void)ec;
   }
 });
 ```
 
-The base `uv::result` is not a template. It exposes `ok()`, explicit `operator
-bool()`, `canceled()`, integer `status()`, and `error_code()`. It has no
-`raw_status()` or `error()` member.
+`uv::result<T>` stores either one `T` or one `uv::error_code`; `uv::result<void>`
+stores success or an operational error. Both expose `has_value()`, explicit
+`operator bool()`, `value()`, and `error()`. `value()` throws `uv::error` on an
+error result; `error()` is empty for success. `result<T>` has the usual lvalue and
+rvalue accessors and supports move-only `T` without an allocation.
 
 ## Result Families
 
@@ -47,12 +52,12 @@ The current result API is not uniform across all families:
 
 | Family | Status access | Error access and payload |
 | --- | --- | --- |
-| `uv::result` | `status()` returns `int` | `error_code()`, `canceled()` |
-| DNS and random results | `status()` returns `uv::result`; `raw_status()` returns `int` | Direct `error_code()` plus family payload |
-| Public and raw filesystem results | `status()` returns `uv::result`; `raw_status()` returns zero on success or a negative error | Direct `error_code()`; `raw()` retains native payload/status value |
-| Stream/UDP read results | `status()` returns `uv::result`; `count()` retains native byte count/status | `status().error_code()`; no direct `error_code()` or `raw_status()` |
-| `fs_event_result`, `fs_poll_result` | `status()` returns `uv::result` | `status().error_code()`; no direct `error_code()` or `raw_status()` |
-| `poll_result` | `status()` returns `uv::result` | Direct `error_code()`, no `raw_status()`; `raw_events()` is the event mask |
+| `uv::result<void>` | `has_value()` / boolean conversion | `error()` |
+| DNS and random results | `status()` returns `uv::result<void>`; `raw_status()` returns `int` | Direct `error_code()` plus family payload |
+| Public and raw filesystem results | `status()` returns `uv::result<void>`; `raw_status()` returns zero on success or a negative error | Direct `error_code()`; `raw()` retains native payload/status value |
+| Stream/UDP read results | `status()` returns `uv::result<void>`; `count()` retains native byte count/status | `status().error()`; no direct `error_code()` or `raw_status()` |
+| `fs_event_result`, `fs_poll_result` | `status()` returns `uv::result<void>` | `status().error()`; no direct `error_code()` or `raw_status()` |
+| `poll_result` | `status()` returns `uv::result<void>` | Direct `error_code()`, no `raw_status()`; `raw_events()` is the event mask |
 
 These families expose `ok()` and explicit boolean conversion. Use the payload
 accessor to obtain file descriptors or counts; filesystem `raw_status()` normalizes
@@ -69,7 +74,7 @@ require explicit ownership consumption/close rather than automatic resource clos
 
 Stream `read_result::eof()` recognizes `UV_EOF`, but `ok()` and boolean conversion
 are false for this negative value. Test EOF separately before treating a false
-result as an I/O failure. `status().error_code()` still maps `UV_EOF` to a code;
+result as an I/O failure. `status().error()` still maps `UV_EOF` to a code;
 v2 does not throw it automatically. Filesystem read EOF is a successful zero-byte
 read, with a different native result shape.
 

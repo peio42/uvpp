@@ -55,7 +55,7 @@ public:
 
   auto await_resume() {
     if constexpr (ExplicitResult) {
-      return uv::result{status_};
+      return uv::result<void>{status_};
     } else {
       throw_if_error(status_);
     }

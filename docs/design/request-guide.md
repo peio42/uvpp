@@ -23,7 +23,7 @@ bool ok() const noexcept;
 explicit operator bool() const noexcept;
 result status() const noexcept;
 int raw_status() const noexcept;
-std::error_code error_code() const noexcept;
+uv::error_code error_code() const noexcept;
 // payload accessors …
 ```
 

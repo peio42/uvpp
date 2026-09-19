@@ -15,13 +15,13 @@ policy selection.
 Reserve `try_*` for non-throwing variants of APIs that would otherwise throw on
 immediate libuv failure.
 
-`try_*` functions should return `std::error_code` or a similarly explicit
+`try_*` functions should return `uv::error_code` or a similarly explicit
 non-throwing status channel, and should not throw for normal immediate failure.
 
 Example:
 
 ```cpp
-std::error_code close_error = loop.try_close();
+uv::error_code close_error = loop.try_close();
 ```
 
 Do not use `try_*` just because the underlying libuv function contains `try` in
@@ -31,7 +31,7 @@ Synchronization primitives are an exception to this naming rule when they use
 standard C++ lock vocabulary. For example, `uv::mutex::try_lock()` should mean
 "attempt to acquire the lock without blocking" and return `bool`, so that
 standard utilities such as `std::unique_lock` can use it. Do not use
-`try_lock()` to mean "non-throwing lock API that returns `std::error_code`".
+`try_lock()` to mean "non-throwing lock API that returns `uv::error_code`".
 
 A future breaking release may revisit the general non-throwing naming
 convention. See [Errors and results proposal](../proposals/006-errors-and-results.md).

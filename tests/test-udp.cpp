@@ -56,7 +56,7 @@ TEST(Uvpp2Udp, sendsAndReceivesDatagrams) {
 
     static char response[] = "pong";
     uv::buffer_view out{response, 4};
-    udp.send(server_send_req, out, received.address(), [&](uv::udp_send_request &request, uv::result status) {
+    udp.send(server_send_req, out, received.address(), [&](uv::udp_send_request &request, uv::result<void> status) {
       ASSERT_TRUE(status);
       EXPECT_EQ(request.user_data<int>(), &server_send_marker);
       server_send_done = true;
@@ -88,7 +88,7 @@ TEST(Uvpp2Udp, sendsAndReceivesDatagrams) {
 
   static char payload[] = "ping";
   uv::buffer_view out{payload, 4};
-  client.send(client_send_req, out, destination, [&](uv::udp_send_request &request, uv::result status) {
+  client.send(client_send_req, out, destination, [&](uv::udp_send_request &request, uv::result<void> status) {
     ASSERT_TRUE(status);
     EXPECT_EQ(request.user_data<int>(), &client_send_marker);
     client_send_done = true;
@@ -110,7 +110,7 @@ namespace {
 
 bool static_udp_send_done = false;
 
-void on_static_udp_send(uv::udp_send_request &, uv::result status) {
+void on_static_udp_send(uv::udp_send_request &, uv::result<void> status) {
   EXPECT_TRUE(status);
   static_udp_send_done = true;
 }
@@ -512,7 +512,7 @@ TEST(Uvpp2Udp, immediateSendFailureClearsCallback) {
   std::weak_ptr<int> weak = token;
 
   EXPECT_THROW(udp.send(request, std::as_bytes(std::span{payload}), static_cast<const sockaddr *>(nullptr),
-    [token](uv::udp_send_request&, uv::result) {}), uv::error);
+    [token](uv::udp_send_request&, uv::result<void>) {}), uv::error);
 
   token.reset();
   EXPECT_TRUE(weak.expired());

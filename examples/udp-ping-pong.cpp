@@ -59,7 +59,7 @@ int main() {
     }
 
     if (!packet) {
-      std::cerr << packet.status().error_code().message() << '\n';
+      std::cerr << packet.status().error().message() << '\n';
       delete[] storage.data();
       handle.close();
       return;
@@ -81,7 +81,7 @@ int main() {
     }
 
     if (!packet) {
-      std::cerr << packet.status().error_code().message() << '\n';
+      std::cerr << packet.status().error().message() << '\n';
       delete[] storage.data();
       handle.close();
       return;
@@ -96,9 +96,9 @@ int main() {
 
       auto view = reply->view();
       handle.send(reply->request, view, reply->native_address(),
-        [&handle, reply](uv::udp_send_request &, uv::result status) {
+        [&handle, reply](uv::udp_send_request &, uv::result<void> status) {
           if (!status) {
-            std::cerr << status.error_code().message() << '\n';
+            std::cerr << status.error().message() << '\n';
           }
 
           delete reply;
@@ -115,9 +115,9 @@ int main() {
 
   auto view = ping->view();
   client.send(ping->request, view, server_address,
-    [ping](uv::udp_send_request &, uv::result status) {
+    [ping](uv::udp_send_request &, uv::result<void> status) {
       if (!status) {
-        std::cerr << status.error_code().message() << '\n';
+        std::cerr << status.error().message() << '\n';
       }
 
       delete ping;

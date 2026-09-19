@@ -25,9 +25,9 @@ namespace uv {
 
     bool ok() const noexcept { return status_ >= 0; }
     explicit operator bool() const noexcept { return ok(); }
-    result status() const noexcept { return result{status_}; }
+    result<void> status() const noexcept { return result<void>{status_}; }
     int raw_status() const noexcept { return status_; }
-    std::error_code error_code() const noexcept { return make_error_code(status_); }
+    uv::error_code error_code() const noexcept { return make_error_code(status_); }
 
     std::span<std::byte> bytes() const noexcept {
       if (!ok()) {
@@ -55,7 +55,7 @@ namespace uv {
       throw_if_error(uv_cancel(native_request()));
     }
 
-    std::error_code try_cancel() noexcept {
+    error_code try_cancel() noexcept {
       return make_error_code(uv_cancel(native_request()));
     }
 

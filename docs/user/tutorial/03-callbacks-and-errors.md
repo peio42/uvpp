@@ -29,13 +29,13 @@ failed.
 ## Completion Failure
 
 When an operation is accepted, it can still fail later. The callback then
-receives `uv::result` or a specialized result object.
+receives `uv::result<void>` or a specialized result object.
 
 ```cpp
-server.listen([](uv::tcp& listener, uv::result status) {
+server.listen([](uv::tcp& listener, uv::result<void> status) {
   if (!status) {
     std::cerr << "listen callback: "
-              << status.error_code().message()
+              << status.error().message()
               << '\n';
     return;
   }
@@ -44,7 +44,7 @@ server.listen([](uv::tcp& listener, uv::result status) {
 });
 ```
 
-`uv::result` represents a libuv status. It can be tested as a boolean: true means
+`uv::result<void>` represents a libuv status. It can be tested as a boolean: true means
 success, false means error. Use `error_code()` to obtain a standard C++ error
 code.
 
@@ -206,10 +206,10 @@ request and does not take a callback. If it cannot write right now,
 
 In uvpp, `try_*` does not mean "immediate operation". The prefix is reserved for
 variants that do not throw and return an explicit status channel, such as
-`std::error_code`.
+`uv::error_code`.
 
 ```cpp
-std::error_code ec = loop.try_close();
+uv::error_code ec = loop.try_close();
 
 if (ec) {
   std::cerr << ec.message() << '\n';
@@ -218,4 +218,3 @@ if (ec) {
 
 For immediate operations inspired by libuv functions named `try`, uvpp prefers
 the `_now` suffix, for example `write_now()`.
-

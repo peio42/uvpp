@@ -13,7 +13,7 @@ namespace uv {
 
   class udp_send_request final : public basic_request<udp_send_request, uv_udp_send_t> {
   public:
-    using callback = std::function<void(udp_send_request&, result)>;
+    using callback = std::function<void(udp_send_request&, result<void>)>;
 
     void set_callback(callback cb) {
       callback_ = std::move(cb);
@@ -24,7 +24,7 @@ namespace uv {
       callback_ = {};
 
       if (callback) {
-        detail::invoke_callback(callback, *this, result{status});
+        detail::invoke_callback(callback, *this, result<void>{status});
       }
     }
 

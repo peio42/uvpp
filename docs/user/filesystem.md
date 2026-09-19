@@ -111,7 +111,7 @@ Public result objects are safe to keep after the callback returns.
 - `scandir_result`: owns a vector of directory entries.
 
 All result types support `operator bool()`, `status()`, `raw_status()`, and
-`error_code()`. `status()` returns `uv::result`; `raw_status()` returns `0` on
+`error_code()`. `status()` returns `uv::result<void>`; `raw_status()` returns `0` on
 success or the raw negative libuv status used for error-code conversion.
 
 `uv::fs` defines its own result types, distinct from those in `uv::fs::raw`, even though they share the same names. The `uv::fs` variants own their data and are safe to copy, store, or pass out of a callback. The `uv::fs::raw` variants may hold views into request-owned memory that expire when `req.cleanup()` is called.

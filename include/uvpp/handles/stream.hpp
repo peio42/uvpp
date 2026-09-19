@@ -26,7 +26,7 @@ namespace uv {
     explicit operator bool() const noexcept { return ok(); }
     bool eof() const noexcept { return nread_ == UV_EOF; }
     ssize_t count() const noexcept { return nread_; }
-    result status() const noexcept { return result{static_cast<int>(nread_)}; }
+    result<void> status() const noexcept { return result<void>{static_cast<int>(nread_)}; }
 
     std::span<const std::byte> bytes() const noexcept {
       if (nread_ <= 0) {
@@ -58,8 +58,8 @@ namespace uv {
 
     int raw() const noexcept { return value_; }
 
-    std::error_code error_code() const noexcept {
-      return has_error() ? make_error_code(value_) : std::error_code{};
+    uv::error_code error_code() const noexcept {
+      return has_error() ? make_error_code(value_) : uv::error_code{};
     }
 
   private:
@@ -76,7 +76,7 @@ namespace uv {
   public:
     using allocate_callback = std::function<buffer_view(Derived&, std::size_t)>;
     using read_callback = std::function<void(Derived&, read_result)>;
-    using connection_callback = std::function<void(Derived&, result)>;
+    using connection_callback = std::function<void(Derived&, result<void>)>;
 
     uv_stream_t *native_stream() noexcept {
       return reinterpret_cast<uv_stream_t *>(this->native());
@@ -119,7 +119,7 @@ namespace uv {
     template<auto Callback>
     void listen_static(int backlog = 64) {
       throw_if_error(uv_listen(native_stream(), backlog, [](uv_stream_t *raw, int status) noexcept {
-        detail::invoke_static_callback<Callback>(Derived::from_native(reinterpret_cast<Raw *>(raw)), result{status});
+        detail::invoke_static_callback<Callback>(Derived::from_native(reinterpret_cast<Raw *>(raw)), result<void>{status});
       }));
     }
 
@@ -142,7 +142,7 @@ namespace uv {
     template<auto Callback>
     void shutdown_static(shutdown_request &request) {
       throw_if_error(uv_shutdown(request.native(), native_stream(), [](uv_shutdown_t *raw, int status) noexcept {
-        detail::invoke_static_callback<Callback>(shutdown_request::from_native(raw), result{status});
+        detail::invoke_static_callback<Callback>(shutdown_request::from_native(raw), result<void>{status});
       }));
     }
 
@@ -169,7 +169,7 @@ namespace uv {
     void write_static(write_request &request, std::span<const buffer_view> buffers) {
       throw_if_error(uv_write(request.native(), native_stream(), reinterpret_cast<const uv_buf_t *>(buffers.data()),
                      detail::checked_buffer_count(buffers.size()), [](uv_write_t *raw, int status) noexcept {
-        detail::invoke_static_callback<Callback>(write_request::from_native(raw), result{status});
+        detail::invoke_static_callback<Callback>(write_request::from_native(raw), result<void>{status});
       }));
     }
 
@@ -201,7 +201,7 @@ namespace uv {
       auto &base = static_cast<stream<Derived, Raw>&>(self);
 
       base.connection_callback_.invoke([&](connection_callback &callback) {
-        callback(self, result{status});
+        callback(self, result<void>{status});
       });
     }
 

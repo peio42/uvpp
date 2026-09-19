@@ -35,7 +35,7 @@ TEST(Uvpp2Tty, exposesVirtualTerminalState) {
     EXPECT_TRUE(state == uv::tty_vterm_state::supported ||
                 state == uv::tty_vterm_state::unsupported);
   } catch (const uv::error &error) {
-    EXPECT_EQ(error.code(), uv::make_error_code(UV_ENOTSUP));
+    EXPECT_EQ(error.code(), static_cast<std::error_code>(uv::make_error_code(UV_ENOTSUP)));
   }
 
   if (prior)

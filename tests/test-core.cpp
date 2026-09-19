@@ -1,3 +1,4 @@
+#include <concepts>
 #include <system_error>
 #include <memory>
 
@@ -21,9 +22,11 @@ TEST(Uvpp2Core, mapsLibuvStatusesToErrorCodes) {
 
   auto failure = uv::make_error_code(UV_EINVAL);
   EXPECT_TRUE(failure);
-  EXPECT_EQ(failure.value(), UV_EINVAL);
-  EXPECT_EQ(&failure.category(), &uv::category());
-  EXPECT_FALSE(failure.message().empty());
+  EXPECT_EQ(failure.native(), UV_EINVAL);
+  const auto standard = static_cast<std::error_code>(failure);
+  EXPECT_EQ(standard.value(), UV_EINVAL);
+  EXPECT_EQ(&standard.category(), &uv::category());
+  EXPECT_FALSE(standard.message().empty());
 }
 
 TEST(Uvpp2Core, checkThrowsUvppErrorOnLibuvFailure) {
@@ -33,31 +36,46 @@ TEST(Uvpp2Core, checkThrowsUvppErrorOnLibuvFailure) {
     uv::throw_if_error(UV_EINVAL);
     FAIL() << "uv::check should throw on negative libuv status";
   } catch (const uv::error &err) {
-    EXPECT_EQ(err.code(), uv::make_error_code(UV_EINVAL));
+    EXPECT_EQ(err.code(), static_cast<std::error_code>(uv::make_error_code(UV_EINVAL)));
   }
 }
 
-TEST(Uvpp2Core, resultUsesOneErrorGrammar) {
-  uv::result ok;
+TEST(Uvpp2Core, voidResultUsesOneErrorGrammar) {
+  uv::result<void> ok;
   EXPECT_TRUE(ok);
-  EXPECT_TRUE(ok.ok());
-  EXPECT_FALSE(ok.canceled());
-  EXPECT_EQ(ok.status(), 0);
-  EXPECT_FALSE(ok.error_code());
+  EXPECT_TRUE(ok.has_value());
+  EXPECT_FALSE(ok.error());
+  EXPECT_NO_THROW(ok.value());
 
-  uv::result failed{UV_ECONNREFUSED};
+  uv::result<void> failed{UV_ECONNREFUSED};
   EXPECT_FALSE(failed);
-  EXPECT_FALSE(failed.ok());
-  EXPECT_FALSE(failed.canceled());
-  EXPECT_EQ(failed.status(), UV_ECONNREFUSED);
-  EXPECT_EQ(failed.error_code(), uv::make_error_code(UV_ECONNREFUSED));
+  EXPECT_FALSE(failed.has_value());
+  EXPECT_EQ(failed.error(), uv::make_error_code(UV_ECONNREFUSED));
+  EXPECT_THROW(failed.value(), uv::error);
 
-  uv::result canceled{UV_ECANCELED};
+  uv::result<void> canceled{UV_ECANCELED};
   EXPECT_FALSE(canceled);
-  EXPECT_FALSE(canceled.ok());
-  EXPECT_TRUE(canceled.canceled());
-  EXPECT_EQ(canceled.status(), UV_ECANCELED);
-  EXPECT_EQ(canceled.error_code(), uv::make_error_code(UV_ECANCELED));
+  EXPECT_EQ(canceled.error(), uv::make_error_code(UV_ECANCELED));
+}
+
+TEST(Uvpp2Core, valueResultSupportsMoveOnlyValues) {
+  uv::result<std::unique_ptr<int>> ok{std::make_unique<int>(42)};
+  static_assert(!std::copy_constructible<decltype(ok)>);
+  EXPECT_TRUE(ok);
+  EXPECT_EQ(*ok.value(), 42);
+
+  auto value = std::move(ok).value();
+  ASSERT_NE(value, nullptr);
+  EXPECT_EQ(*value, 42);
+
+  uv::result<std::unique_ptr<int>> failed{uv::make_error_code(UV_ENOMEM)};
+  EXPECT_FALSE(failed);
+  EXPECT_EQ(failed.error().native(), UV_ENOMEM);
+  EXPECT_THROW((void)failed.value(), uv::error);
+
+  uv::result<uv::error_code> code_value{std::in_place, uv::make_error_code(UV_EINVAL)};
+  EXPECT_TRUE(code_value);
+  EXPECT_EQ(code_value.value(), uv::make_error_code(UV_EINVAL));
 }
 
 TEST(Uvpp2Core, loopCloseIsExplicitAndReportsBusyLoops) {
@@ -81,7 +99,7 @@ TEST(Uvpp2Core, requestCallbacksAreOneShot) {
     std::weak_ptr<int> weak = token;
     bool called = false;
 
-    request.set_callback([token, &called](uv::write_request&, uv::result) {
+    request.set_callback([token, &called](uv::write_request&, uv::result<void>) {
       called = true;
     });
     token.reset();
@@ -98,7 +116,7 @@ TEST(Uvpp2Core, requestCallbacksAreOneShot) {
     std::weak_ptr<int> weak = token;
     bool called = false;
 
-    request.set_callback([token, &called](uv::connect_request&, uv::result) {
+    request.set_callback([token, &called](uv::connect_request&, uv::result<void>) {
       called = true;
     });
     token.reset();
@@ -114,7 +132,7 @@ TEST(Uvpp2Core, requestCallbacksAreOneShot) {
     std::weak_ptr<int> weak = token;
     bool called = false;
 
-    request.set_callback([token, &called](uv::shutdown_request&, uv::result) {
+    request.set_callback([token, &called](uv::shutdown_request&, uv::result<void>) {
       called = true;
     });
     token.reset();
@@ -130,7 +148,7 @@ TEST(Uvpp2Core, requestCallbacksAreOneShot) {
     std::weak_ptr<int> weak = token;
     bool called = false;
 
-    request.set_callback([token, &called](uv::udp_send_request&, uv::result) {
+    request.set_callback([token, &called](uv::udp_send_request&, uv::result<void>) {
       called = true;
     });
     token.reset();
