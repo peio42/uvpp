@@ -41,7 +41,10 @@ if (!result) {
 ```
 
 `uv::ops` selects explicit operational results on the same owners. It does not
-introduce another ownership hierarchy. Full connect/read/write/send counterparts
+introduce another ownership hierarchy. DNS also provides paired request surfaces:
+`co_await uv::resolve(...)` throws operational failure and
+`co_await uv::ops::resolve(...)` returns
+`uv::result<uv::resolved_addresses>`. Full connect/read/write/send counterparts
 are still proposed; do not assume `uv::ops::write` or similar names exist.
 The target raw layer uses explicit operational results; its namespace and error
 policy are not yet migrated throughout the implementation.

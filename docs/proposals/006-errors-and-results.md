@@ -178,7 +178,11 @@ handler must not consume native `data` or silently change all callback semantics
 existing domain error accessors use the new error vocabulary. The paired
 throwing/explicit owner-close surface is implemented as `close()` and
 `uv::ops::close(owner)` for TCP/pipe connections and listeners and UDP sockets.
-Connect/read/write/send adaptation remains unfinished. See the
+DNS resolution now supplies the first paired request surface: `uv::resolve(...)`
+throws native submission/completion failures and `uv::ops::resolve(...)` returns
+`result<resolved_addresses>`, including completed `UV_ECANCELED`. It owns copied
+values rather than exposing libuv's address list. Connect/read/write/send
+adaptation remains unfinished. See the
 [v3 error guide](../user/errors.md) for current availability.
 
 Validate equivalent immediate/delayed native failures in both styles, allocation

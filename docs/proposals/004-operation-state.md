@@ -85,6 +85,15 @@ mechanism. The experimental TCP connect awaiter owns stable `uv_connect_t` and
 before delivering a failed connection. It is a family-specific prototype, not yet
 a common coroutine frontend.
 
+DNS resolution is a second request-family prototype. Its awaiter owns stable
+`uv_getaddrinfo_t` storage and copied node/service/scalar-hints through native
+completion without consuming `uv_req_t::data`. It releases its stop registration
+before task delivery, frees the native `addrinfo` list when the awaiter is
+destroyed, and materializes an owned `vector<address_info>` only after callback
+delivery has made the request terminal. The throwing and `uv::ops` result
+facades share this state machine; C++ allocation during input copy or value
+materialization remains outside the native operational result channel.
+
 TCP and pipe now share private stream-operation awaiters backed by a common
 `stream_io_state`. Each family provides only its native `uv_stream_t`, execution
 loop, I/O-slot state, and explicit native-handle recovery; this keeps application

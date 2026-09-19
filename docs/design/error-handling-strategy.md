@@ -9,7 +9,10 @@ domain results. Broader `uv::ops` adaptation is tracked in
 
 Implemented high-level network awaits throw native operational failures at the
 await expression, including submission failures. `uv::ops::close` reports the same
-owner-close failures as `uv::status`. Broader paired operations remain proposed.
+owner-close failures as `uv::status`. DNS resolution is the first paired request
+operation: `uv::resolve(...)` throws at the await and
+`uv::ops::resolve(...)` returns `uv::result<uv::resolved_addresses>` for the same
+submission/completion path. Broader paired operations remain proposed.
 Raw explicit operational results are the target; the low-level submission helpers
 below have not yet completed that migration. C++ setup failures need separate
 contracts and result-oriented does not imply `noexcept`.
