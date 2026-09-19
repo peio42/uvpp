@@ -42,7 +42,7 @@ Requests must outlive the asynchronous operation that uses them.
 ```cpp
 uv::write_request request;
 
-stream.write(request, view, [](uv::write_request&, uv::result result) {
+stream.write(request, view, [](uv::write_request&, uv::result<void> result) {
   if (!result) {
     return;
   }

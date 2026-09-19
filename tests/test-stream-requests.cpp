@@ -33,7 +33,7 @@ TEST(Uvpp2StreamRequests, tcpShutdownReportsCompletionAndRemoteEof) {
   bool server_closed = false;
 
   server.bind(uv::ipv4{"127.0.0.1", 0});
-  server.listen([&](uv::tcp &srv, uv::result status) {
+  server.listen([&](uv::tcp &srv, uv::result<void> status) {
     ASSERT_TRUE(status);
     accepted_connection = true;
 
@@ -58,11 +58,11 @@ TEST(Uvpp2StreamRequests, tcpShutdownReportsCompletionAndRemoteEof) {
   auto bound = server.sockname();
   uv::ipv4 connect_addr{"127.0.0.1", bound.port()};
 
-  client.connect(connect_req, connect_addr, [&](uv::connect_request &, uv::result status) {
+  client.connect(connect_req, connect_addr, [&](uv::connect_request &, uv::result<void> status) {
     ASSERT_TRUE(status);
     client_connected = true;
 
-    client.shutdown(shutdown_req, [&](uv::shutdown_request &request, uv::result shutdown_status) {
+    client.shutdown(shutdown_req, [&](uv::shutdown_request &request, uv::result<void> shutdown_status) {
       ASSERT_TRUE(shutdown_status);
       EXPECT_EQ(request.user_data<int>(), &shutdown_marker);
       shutdown_done = true;
@@ -90,7 +90,7 @@ namespace {
 uv::tcp *static_shutdown_client = nullptr;
 bool static_shutdown_done = false;
 
-void on_static_shutdown(uv::shutdown_request &, uv::result status) {
+void on_static_shutdown(uv::shutdown_request &, uv::result<void> status) {
   EXPECT_TRUE(status);
   static_shutdown_done = true;
   static_shutdown_client->close();
@@ -112,7 +112,7 @@ TEST(Uvpp2StreamRequests, tcpShutdownRunsStaticCallback) {
   static_shutdown_done = false;
 
   server.bind(uv::ipv4{"127.0.0.1", 0});
-  server.listen([&](uv::tcp &srv, uv::result status) {
+  server.listen([&](uv::tcp &srv, uv::result<void> status) {
     ASSERT_TRUE(status);
 
     auto *accepted = new uv::tcp(loop);
@@ -136,7 +136,7 @@ TEST(Uvpp2StreamRequests, tcpShutdownRunsStaticCallback) {
   auto bound2 = server.sockname();
   uv::ipv4 connect_addr{"127.0.0.1", bound2.port()};
 
-  client.connect(connect_req, connect_addr, [&](uv::connect_request &, uv::result status) {
+  client.connect(connect_req, connect_addr, [&](uv::connect_request &, uv::result<void> status) {
     ASSERT_TRUE(status);
     client.shutdown_static<on_static_shutdown>(shutdown_req);
   });
@@ -161,7 +161,7 @@ TEST(Uvpp2StreamRequests, immediateWriteFailureClearsCallback) {
   std::weak_ptr<int> weak = token;
 
   EXPECT_THROW(tcp.write(request, std::as_bytes(std::span{payload}),
-    [token](uv::write_request&, uv::result) {}), uv::error);
+    [token](uv::write_request&, uv::result<void>) {}), uv::error);
 
   token.reset();
   EXPECT_TRUE(weak.expired());
@@ -178,7 +178,7 @@ TEST(Uvpp2StreamRequests, immediateShutdownFailureClearsCallback) {
   auto token = std::make_shared<int>(1);
   std::weak_ptr<int> weak = token;
 
-  EXPECT_THROW(tcp.shutdown(request, [token](uv::shutdown_request&, uv::result) {}), uv::error);
+  EXPECT_THROW(tcp.shutdown(request, [token](uv::shutdown_request&, uv::result<void>) {}), uv::error);
 
   token.reset();
   EXPECT_TRUE(weak.expired());
@@ -204,7 +204,7 @@ TEST(Uvpp2StreamRequests, writeNowSendsBytesOnConnectedTcp) {
   };
 
   server.bind(uv::ipv4{"127.0.0.1", 0});
-  server.listen([&](uv::tcp &srv, uv::result status) {
+  server.listen([&](uv::tcp &srv, uv::result<void> status) {
     ASSERT_TRUE(status);
     auto *accepted = new uv::tcp(loop);
     srv.accept(*accepted);
@@ -221,7 +221,7 @@ TEST(Uvpp2StreamRequests, writeNowSendsBytesOnConnectedTcp) {
 
   auto bound = server.sockname();
   client.connect(connect_req, uv::ipv4{"127.0.0.1", bound.port()},
-    [&](uv::connect_request &, uv::result status) {
+    [&](uv::connect_request &, uv::result<void> status) {
       ASSERT_TRUE(status);
       static char payload[] = "hello";
       auto r = client.write_now(std::as_bytes(std::span{payload, 5}));

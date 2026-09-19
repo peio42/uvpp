@@ -43,7 +43,7 @@ TEST(Uvpp2Pipe, acceptsReadsAndWrites) {
   bool server_closed = false;
 
   server.bind(path);
-  server.listen([&](uv::pipe &srv, uv::result status) {
+  server.listen([&](uv::pipe &srv, uv::result<void> status) {
     ASSERT_TRUE(status);
 
     accepted_connection = true;
@@ -61,7 +61,7 @@ TEST(Uvpp2Pipe, acceptsReadsAndWrites) {
 
       static char response[] = "pong";
       uv::buffer_view out{response, 4};
-      stream.write(server_write_req, out, [&](uv::write_request &, uv::result write_status) {
+      stream.write(server_write_req, out, [&](uv::write_request &, uv::result<void> write_status) {
         ASSERT_TRUE(write_status);
         server_write_done = true;
         stream.close([&](uv::pipe &) {
@@ -71,13 +71,13 @@ TEST(Uvpp2Pipe, acceptsReadsAndWrites) {
     });
   });
 
-  client.connect(connect_req, path, [&](uv::connect_request &, uv::result status) {
+  client.connect(connect_req, path, [&](uv::connect_request &, uv::result<void> status) {
     ASSERT_TRUE(status);
     client_connected = true;
 
     static char payload[] = "ping";
     uv::buffer_view out{payload, 4};
-    client.write(client_write_req, out, [&](uv::write_request &, uv::result write_status) {
+    client.write(client_write_req, out, [&](uv::write_request &, uv::result<void> write_status) {
       ASSERT_TRUE(write_status);
       client_write_done = true;
 
@@ -118,7 +118,7 @@ TEST(Uvpp2Pipe, acceptsReadsAndWrites) {
 static uv::pipe *static_pipe_client = nullptr;
 static bool static_pipe_failed = false;
 
-static void on_static_pipe_connect(uv::connect_request &, uv::result status) {
+static void on_static_pipe_connect(uv::connect_request &, uv::result<void> status) {
   EXPECT_FALSE(status);
   static_pipe_failed = true;
   static_pipe_client->close();
@@ -161,7 +161,7 @@ TEST(Uvpp2Pipe, bindsAndConnectsWithPipeNameFlags) {
   bool server_closed = false;
 
   server.bind(path, uv::pipe_name_flag::no_truncate);
-  server.listen([&](uv::pipe &srv, uv::result status) {
+  server.listen([&](uv::pipe &srv, uv::result<void> status) {
     ASSERT_TRUE(status);
     accepted_connection = true;
 
@@ -177,7 +177,7 @@ TEST(Uvpp2Pipe, bindsAndConnectsWithPipeNameFlags) {
   });
 
   client.connect(connect_req, path, uv::pipe_name_flag::no_truncate,
-    [&](uv::connect_request &, uv::result status) {
+    [&](uv::connect_request &, uv::result<void> status) {
       ASSERT_TRUE(status);
       client_connected = true;
       client.close([&](uv::pipe &) {
@@ -205,7 +205,7 @@ TEST(Uvpp2Pipe, connect2ImmediateFailureClearsCallback) {
   bool callback_called = false;
 
   EXPECT_THROW(client.connect(connect_req, "uvpp-invalid-flags", 1u << 8,
-    [&](uv::connect_request &, uv::result) {
+    [&](uv::connect_request &, uv::result<void>) {
       callback_called = true;
     }), uv::error);
 
@@ -234,7 +234,7 @@ TEST(Uvpp2Pipe, writeWithHandleSendsStreamOverIpc) {
   bool handle_received = false;
 
   ipc_server.bind(path);
-  ipc_server.listen([&](uv::pipe &srv, uv::result status) {
+  ipc_server.listen([&](uv::pipe &srv, uv::result<void> status) {
     ASSERT_TRUE(status);
 
     auto *accepted = new uv::pipe(loop, true);
@@ -262,14 +262,14 @@ TEST(Uvpp2Pipe, writeWithHandleSendsStreamOverIpc) {
     });
   });
 
-  ipc_client.connect(connect_req, path, [&](uv::connect_request &, uv::result status) {
+  ipc_client.connect(connect_req, path, [&](uv::connect_request &, uv::result<void> status) {
     ASSERT_TRUE(status);
     static char msg[] = "x";
     uv::buffer_view buf{msg, 1};
     ipc_client.write_with_handle(write_req,
       std::span<const uv::buffer_view>{&buf, 1},
       tcp_to_pass,
-      [&](uv::write_request &, uv::result wr) {
+      [&](uv::write_request &, uv::result<void> wr) {
         ASSERT_TRUE(wr);
         ipc_client.close();
         tcp_to_pass.close();

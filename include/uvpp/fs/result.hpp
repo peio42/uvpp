@@ -24,10 +24,10 @@ namespace uv::fs::raw {
     bool ok() const noexcept { return result_ >= 0; }
     explicit operator bool() const noexcept { return ok(); }
     ssize_t raw() const noexcept { return result_; }
-    ::uv::result status() const noexcept { return ::uv::result{raw_status()}; }
+    ::uv::result<void> status() const noexcept { return ::uv::result<void>{raw_status()}; }
     int raw_status() const noexcept { return result_ < 0 ? static_cast<int>(result_) : 0; }
 
-    std::error_code error_code() const noexcept {
+    uv::error_code error_code() const noexcept {
       return make_error_code(raw_status());
     }
 
@@ -43,10 +43,10 @@ namespace uv::fs::raw {
     bool ok() const noexcept { return result_ >= 0; }
     explicit operator bool() const noexcept { return ok(); }
     ssize_t raw() const noexcept { return result_; }
-    ::uv::result status() const noexcept { return ::uv::result{raw_status()}; }
+    ::uv::result<void> status() const noexcept { return ::uv::result<void>{raw_status()}; }
     int raw_status() const noexcept { return result_ < 0 ? static_cast<int>(result_) : 0; }
 
-    std::error_code error_code() const noexcept {
+    uv::error_code error_code() const noexcept {
       return make_error_code(raw_status());
     }
 
@@ -66,10 +66,10 @@ namespace uv::fs::raw {
     bool ok() const noexcept { return result_ >= 0; }
     explicit operator bool() const noexcept { return ok(); }
     ssize_t raw() const noexcept { return result_; }
-    ::uv::result status() const noexcept { return ::uv::result{raw_status()}; }
+    ::uv::result<void> status() const noexcept { return ::uv::result<void>{raw_status()}; }
     int raw_status() const noexcept { return result_ < 0 ? static_cast<int>(result_) : 0; }
 
-    std::error_code error_code() const noexcept {
+    uv::error_code error_code() const noexcept {
       return make_error_code(raw_status());
     }
 
@@ -89,10 +89,10 @@ namespace uv::fs::raw {
     bool ok() const noexcept { return result_ >= 0; }
     explicit operator bool() const noexcept { return ok(); }
     ssize_t raw() const noexcept { return result_; }
-    ::uv::result status() const noexcept { return ::uv::result{raw_status()}; }
+    ::uv::result<void> status() const noexcept { return ::uv::result<void>{raw_status()}; }
     int raw_status() const noexcept { return result_ < 0 ? static_cast<int>(result_) : 0; }
 
-    std::error_code error_code() const noexcept {
+    uv::error_code error_code() const noexcept {
       return make_error_code(raw_status());
     }
 
@@ -118,10 +118,10 @@ namespace uv::fs::raw {
     bool ok() const noexcept { return result_ >= 0; }
     explicit operator bool() const noexcept { return ok(); }
     ssize_t raw() const noexcept { return result_; }
-    ::uv::result status() const noexcept { return ::uv::result{raw_status()}; }
+    ::uv::result<void> status() const noexcept { return ::uv::result<void>{raw_status()}; }
     int raw_status() const noexcept { return result_ < 0 ? static_cast<int>(result_) : 0; }
 
-    std::error_code error_code() const noexcept {
+    uv::error_code error_code() const noexcept {
       return make_error_code(raw_status());
     }
 
@@ -142,10 +142,10 @@ namespace uv::fs::raw {
     bool ok() const noexcept { return result_ >= 0; }
     explicit operator bool() const noexcept { return ok(); }
     ssize_t raw() const noexcept { return result_; }
-    ::uv::result status() const noexcept { return ::uv::result{raw_status()}; }
+    ::uv::result<void> status() const noexcept { return ::uv::result<void>{raw_status()}; }
     int raw_status() const noexcept { return result_ < 0 ? static_cast<int>(result_) : 0; }
 
-    std::error_code error_code() const noexcept {
+    uv::error_code error_code() const noexcept {
       return make_error_code(raw_status());
     }
 
@@ -170,10 +170,10 @@ namespace uv::fs::raw {
     bool ok() const noexcept { return result_ >= 0; }
     explicit operator bool() const noexcept { return ok(); }
     ssize_t raw() const noexcept { return result_; }
-    ::uv::result status() const noexcept { return ::uv::result{raw_status()}; }
+    ::uv::result<void> status() const noexcept { return ::uv::result<void>{raw_status()}; }
     int raw_status() const noexcept { return result_ < 0 ? static_cast<int>(result_) : 0; }
 
-    std::error_code error_code() const noexcept {
+    uv::error_code error_code() const noexcept {
       return make_error_code(raw_status());
     }
 
@@ -253,10 +253,10 @@ namespace uv::fs::raw {
     bool ok() const noexcept { return result_ >= 0; }
     explicit operator bool() const noexcept { return ok(); }
     ssize_t raw() const noexcept { return result_; }
-    ::uv::result status() const noexcept { return ::uv::result{raw_status()}; }
+    ::uv::result<void> status() const noexcept { return ::uv::result<void>{raw_status()}; }
     int raw_status() const noexcept { return result_ < 0 ? static_cast<int>(result_) : 0; }
 
-    std::error_code error_code() const noexcept {
+    uv::error_code error_code() const noexcept {
       return make_error_code(raw_status());
     }
 
@@ -319,10 +319,10 @@ namespace uv::fs::raw {
     bool ok() const noexcept { return result_ >= 0; }
     explicit operator bool() const noexcept { return ok(); }
     ssize_t raw() const noexcept { return result_; }
-    ::uv::result status() const noexcept { return ::uv::result{raw_status()}; }
+    ::uv::result<void> status() const noexcept { return ::uv::result<void>{raw_status()}; }
     int raw_status() const noexcept { return result_ < 0 ? static_cast<int>(result_) : 0; }
 
-    std::error_code error_code() const noexcept {
+    uv::error_code error_code() const noexcept {
       return make_error_code(raw_status());
     }
 
@@ -344,10 +344,10 @@ namespace uv::fs::raw {
     explicit operator bool() const noexcept { return ok(); }
     bool eof() const noexcept { return result_ == 0; }
     ssize_t raw() const noexcept { return result_; }
-    ::uv::result status() const noexcept { return ::uv::result{raw_status()}; }
+    ::uv::result<void> status() const noexcept { return ::uv::result<void>{raw_status()}; }
     int raw_status() const noexcept { return result_ < 0 ? static_cast<int>(result_) : 0; }
 
-    std::error_code error_code() const noexcept {
+    uv::error_code error_code() const noexcept {
       return make_error_code(raw_status());
     }
 

@@ -41,10 +41,10 @@ void static_work_callback(uv::work_request &request) {
   request.user_data<static_work_state>()->worked.store(true);
 }
 
-void static_after_work_callback(uv::work_request &request, uv::result status) {
+void static_after_work_callback(uv::work_request &request, uv::result<void> status) {
   auto *state = request.user_data<static_work_state>();
   state->after = true;
-  state->status = status.status();
+  state->status = status.error().native();
 }
 
 class threadpool_blockers {
@@ -61,7 +61,7 @@ public:
             std::this_thread::yield();
           }
         },
-        [](uv::work_request &, uv::result status) {
+        [](uv::work_request &, uv::result<void> status) {
           EXPECT_TRUE(status);
         });
       requests_.push_back(std::move(request));
@@ -118,10 +118,10 @@ TEST(Uvpp2Threadpool, queueWorkRunsWorkerAndAfterCallbacks) {
         worked.store(true);
       }
     },
-    [&](uv::work_request &callback_request, uv::result callback_status) {
+    [&](uv::work_request &callback_request, uv::result<void> callback_status) {
       EXPECT_EQ(&request, &callback_request);
       after = true;
-      status = callback_status.status();
+      status = callback_status.error().native();
     });
 
   loop.run();
@@ -140,14 +140,14 @@ TEST(Uvpp2Threadpool, queueWorkCancelAfterCompletionFails) {
 
   uv::queue_work(loop, request,
     [](uv::work_request &) {},
-    [](uv::work_request &, uv::result) {});
+    [](uv::work_request &, uv::result<void>) {});
 
   loop.run();
 
   EXPECT_THROW(request.cancel(), uv::error);
   auto ec = request.try_cancel();
   ASSERT_TRUE(ec);
-  EXPECT_EQ(ec.value(), UV_EBUSY);
+  EXPECT_EQ(ec.native(), UV_EBUSY);
 
   loop.close();
 }
@@ -177,9 +177,9 @@ TEST(Uvpp2Threadpool, queueWorkCancelPendingCompletesWithCanceledStatus) {
     [&](uv::work_request &) {
       target_started.store(true);
     },
-    [&](uv::work_request &, uv::result status) {
+    [&](uv::work_request &, uv::result<void> status) {
       target_after = true;
-      target_canceled = status.canceled();
+      target_canceled = status.error() == uv::make_error_code(UV_ECANCELED);
     });
 
   EXPECT_FALSE(target.try_cancel());
@@ -282,7 +282,7 @@ TEST(Uvpp2Random, randomFillCancelPendingCompletesWithCanceledStatus) {
   uv::random_fill(loop, target, std::span<std::byte>{bytes},
     [&](uv::random_request &, uv::random_result result) {
       target_after = true;
-      target_canceled = result.status().canceled();
+      target_canceled = result.status().error() == uv::make_error_code(UV_ECANCELED);
     });
 
   EXPECT_FALSE(target.try_cancel());
@@ -309,7 +309,7 @@ TEST(Uvpp2Random, randomFillCancelAfterCompletionFails) {
   EXPECT_THROW(request.cancel(), uv::error);
   auto ec = request.try_cancel();
   ASSERT_TRUE(ec);
-  EXPECT_EQ(ec.value(), UV_EBUSY);
+  EXPECT_EQ(ec.native(), UV_EBUSY);
 
   loop.close();
 }

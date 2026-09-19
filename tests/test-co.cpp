@@ -61,7 +61,7 @@ struct connected_tcp_pair {
   void connect() {
     listener.bind(uv::ipv4{"127.0.0.1", 0});
     const auto address = uv::ipv4{"127.0.0.1", listener.sockname().port()};
-    listener.listen([&](uv::tcp &server, uv::result status) {
+    listener.listen([&](uv::tcp &server, uv::result<void> status) {
       EXPECT_TRUE(status);
       peer = std::make_unique<uv::tcp>(loop);
       EXPECT_NO_THROW(server.accept(*peer));
@@ -129,7 +129,7 @@ struct connected_pipe_pair {
 
   void connect() {
     listener.bind(path);
-    listener.listen([&](uv::pipe &server, uv::result status) {
+    listener.listen([&](uv::pipe &server, uv::result<void> status) {
       EXPECT_TRUE(status);
       peer = std::make_unique<uv::pipe>(loop);
       EXPECT_NO_THROW(server.accept(*peer));
@@ -689,7 +689,7 @@ TEST(UvppV3Coroutine, tcpConnectionConnectsMovesAndCloses) {
     throw;
   }
   const auto address = uv::ipv4{"127.0.0.1", listener.sockname().port()};
-  listener.listen([&](uv::tcp &, uv::result status) {
+  listener.listen([&](uv::tcp &, uv::result<void> status) {
     EXPECT_TRUE(status);
   });
 
@@ -800,7 +800,7 @@ TEST(UvppV3Coroutine, publicTcpCloseIsColdJoinsAndHasAnExplicitResultSurface) {
     co_await close;
     first_resumed = true;
     const auto result = co_await uv::ops::close(*pair.client);
-    result_ok = result.ok();
+    result_ok = result.has_value();
     pair.loop.stop();
   };
   auto second = [&]() -> uv::co::task<void> {
@@ -1018,7 +1018,7 @@ TEST(UvppV3Coroutine, publicUdpCloseReportsCompletionThroughOps) {
 
   auto closer = [&]() -> uv::co::task<void> {
     const auto result = co_await uv::ops::close(socket);
-    explicit_result_ok = result.ok();
+    explicit_result_ok = result.has_value();
     co_await socket.close();
     joined_closed_owner = true;
     loop.stop();
@@ -1047,7 +1047,7 @@ TEST(UvppV3Coroutine, publicPipeCloseJoinsAndHasAnExplicitResultSurface) {
     co_await pair.client->close();
     member_completed = true;
     const auto result = co_await uv::ops::close(*pair.client);
-    explicit_result_ok = result.ok();
+    explicit_result_ok = result.has_value();
     pair.loop.stop();
   };
 
@@ -1179,7 +1179,7 @@ TEST(UvppV3Coroutine, resourceScopeWaitsForEveryTcpCloseCompletion) {
     }
     throw;
   }
-  listener.listen([&](uv::tcp &server, uv::result status) {
+  listener.listen([&](uv::tcp &server, uv::result<void> status) {
     EXPECT_TRUE(status);
     auto peer = std::make_unique<uv::tcp>(loop);
     EXPECT_NO_THROW(server.accept(*peer));
@@ -1965,7 +1965,7 @@ TEST(UvppV3Coroutine, tcpConnectionClosesDuringExceptionalTaskExit) {
     throw;
   }
   const auto address = uv::ipv4{"127.0.0.1", listener.sockname().port()};
-  listener.listen([&](uv::tcp &server, uv::result) { server.close(); });
+  listener.listen([&](uv::tcp &server, uv::result<void>) { server.close(); });
 
   auto client = [&]() -> uv::co::task<void> {
     auto socket = co_await uv::tcp_connection::connect(address);
@@ -2001,13 +2001,13 @@ TEST(UvppV3Coroutine, tcpConnectionReadSomeStopsAndReleasesSlotsBeforeResumption
   std::unique_ptr<uv::tcp> peer;
   std::unique_ptr<uv::write_request> reply_request;
   std::string reply{"reply"};
-  listener.listen([&](uv::tcp &server, uv::result status) {
+  listener.listen([&](uv::tcp &server, uv::result<void> status) {
     ASSERT_TRUE(status);
     peer = std::make_unique<uv::tcp>(loop);
     ASSERT_NO_THROW(server.accept(*peer));
     reply_request = std::make_unique<uv::write_request>();
     peer->write(*reply_request, std::as_bytes(std::span{reply.data(), reply.size()}),
-      [&](uv::write_request &, uv::result write_status) {
+      [&](uv::write_request &, uv::result<void> write_status) {
         EXPECT_TRUE(write_status);
         peer->close();
         server.close();
@@ -2320,7 +2320,7 @@ TEST(UvppV3Coroutine, pipeConnectionStreamsWithBorrowedBuffersAndScopedCleanup) 
         server_received = true;
         stream.read_stop();
         stream.write(response_request, uv::buffer_view{response.data(), response.size()},
-            [&](uv::write_request &, uv::result status) {
+            [&](uv::write_request &, uv::result<void> status) {
               EXPECT_TRUE(status);
               server_wrote = true;
               stream.close();
@@ -2549,7 +2549,7 @@ TEST(UvppV3Coroutine, ipcPipeTransfersTcpIntoAStableReceivedOwner) {
   tcp_listener.bind(uv::ipv4{"127.0.0.1", 0});
   const uv::ipv4 tcp_address{"127.0.0.1", tcp_listener.sockname().port()};
   std::unique_ptr<uv::tcp> tcp_peer;
-  tcp_listener.listen([&](uv::tcp &server, uv::result status) {
+  tcp_listener.listen([&](uv::tcp &server, uv::result<void> status) {
     EXPECT_TRUE(status);
     tcp_peer = std::make_unique<uv::tcp>(loop);
     EXPECT_NO_THROW(server.accept(*tcp_peer));
@@ -2694,7 +2694,7 @@ TEST(UvppV3Coroutine, pipeWriteWithHandleRejectsANonIpcPipe) {
   tcp_listener.bind(uv::ipv4{"127.0.0.1", 0});
   const uv::ipv4 address{"127.0.0.1", tcp_listener.sockname().port()};
   std::unique_ptr<uv::tcp> peer;
-  tcp_listener.listen([&](uv::tcp &server, uv::result status) {
+  tcp_listener.listen([&](uv::tcp &server, uv::result<void> status) {
     EXPECT_TRUE(status);
     peer = std::make_unique<uv::tcp>(loop);
     EXPECT_NO_THROW(server.accept(*peer));
@@ -2769,7 +2769,7 @@ TEST(UvppV3Coroutine, pipeWriteWithHandleUsesTheTcpExportSlotAcrossPipes) {
   tcp_listener.bind(uv::ipv4{"127.0.0.1", 0});
   const uv::ipv4 address{"127.0.0.1", tcp_listener.sockname().port()};
   std::unique_ptr<uv::tcp> peer;
-  tcp_listener.listen([&](uv::tcp &server, uv::result status) {
+  tcp_listener.listen([&](uv::tcp &server, uv::result<void> status) {
     EXPECT_TRUE(status);
     peer = std::make_unique<uv::tcp>(loop);
     EXPECT_NO_THROW(server.accept(*peer));
@@ -2835,7 +2835,7 @@ TEST(UvppV3Coroutine, ipcPipeBackToBackHandleWritesPreserveBytesAndOwners) {
   tcp_listener.bind(uv::ipv4{"127.0.0.1", 0});
   const uv::ipv4 address{"127.0.0.1", tcp_listener.sockname().port()};
   std::vector<std::unique_ptr<uv::tcp>> peers;
-  tcp_listener.listen([&](uv::tcp &server, uv::result status) {
+  tcp_listener.listen([&](uv::tcp &server, uv::result<void> status) {
     EXPECT_TRUE(status);
     auto peer = std::make_unique<uv::tcp>(loop);
     EXPECT_NO_THROW(server.accept(*peer));
@@ -3448,7 +3448,7 @@ TEST(UvppV3CoroutineDeathTest, tcpConnectionDestructionWithActivePipeHandleExpor
     tcp_listener.bind(uv::ipv4{"127.0.0.1", 0});
     const uv::ipv4 address{"127.0.0.1", tcp_listener.sockname().port()};
     std::unique_ptr<uv::tcp> peer;
-    tcp_listener.listen([&](uv::tcp &server, uv::result status) {
+    tcp_listener.listen([&](uv::tcp &server, uv::result<void> status) {
       if (!status) {
         std::terminate();
       }

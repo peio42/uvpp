@@ -152,9 +152,9 @@ namespace uv {
 
     bool ok() const noexcept { return status_ >= 0; }
     explicit operator bool() const noexcept { return ok(); }
-    result status() const noexcept { return result{status_}; }
+    result<void> status() const noexcept { return result<void>{status_}; }
     int raw_status() const noexcept { return status_; }
-    std::error_code error_code() const noexcept { return make_error_code(status_); }
+    uv::error_code error_code() const noexcept { return make_error_code(status_); }
 
     addrinfo *native() noexcept { return addresses_; }
     const addrinfo *native() const noexcept { return addresses_; }
@@ -194,9 +194,9 @@ namespace uv {
 
     bool ok() const noexcept { return status_ >= 0; }
     explicit operator bool() const noexcept { return ok(); }
-    result status() const noexcept { return result{status_}; }
+    result<void> status() const noexcept { return result<void>{status_}; }
     int raw_status() const noexcept { return status_; }
-    std::error_code error_code() const noexcept { return make_error_code(status_); }
+    uv::error_code error_code() const noexcept { return make_error_code(status_); }
 
     std::string_view hostname() const noexcept { return hostname_; }
     std::string_view service() const noexcept { return service_; }
@@ -219,7 +219,7 @@ namespace uv {
       throw_if_error(uv_cancel(native_request()));
     }
 
-    std::error_code try_cancel() noexcept {
+    error_code try_cancel() noexcept {
       return make_error_code(uv_cancel(native_request()));
     }
 
@@ -277,7 +277,7 @@ namespace uv {
       throw_if_error(uv_cancel(native_request()));
     }
 
-    std::error_code try_cancel() noexcept {
+    error_code try_cancel() noexcept {
       return make_error_code(uv_cancel(native_request()));
     }
 

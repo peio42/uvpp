@@ -93,7 +93,7 @@ uv::owned_buffer payload{4};
 std::memcpy(payload.data(), "ping", 4);
 
 socket.send(request, payload.view(), uv::ipv4{"127.0.0.1", 1234},
-  [](uv::udp_send_request&, uv::result status) {
+  [](uv::udp_send_request&, uv::result<void> status) {
     if (!status) {
       return;
     }

@@ -56,9 +56,9 @@ The request and the byte storage must both stay alive until the callback runs.
 
 ```cpp
 bool ok = result.ok();
-uv::result status = result.status();
+uv::result<void> status = result.status();
 int raw = result.raw_status();
-std::error_code ec = result.error_code();
+uv::error_code ec = result.error_code();
 ```
 
 Short reads are not reported as partial success by libuv. On success, the full

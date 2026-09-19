@@ -38,7 +38,7 @@ int main() {
     }
 
     if (!read) {
-      std::cerr << read.status().error_code().message() << '\n';
+      std::cerr << read.status().error().message() << '\n';
       delete[] storage.data();
       stream.close();
       return;

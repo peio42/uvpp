@@ -123,7 +123,7 @@ uv::owned_buffer payload{4};
 std::memcpy(payload.data(), "ping", 4);
 
 stream.write(request, payload.view(),
-  [](uv::write_request&, uv::result status) {
+  [](uv::write_request&, uv::result<void> status) {
     if (!status) {
       return;
     }
@@ -147,7 +147,7 @@ void send_ping(uv::tcp& stream) {
   uv::owned_buffer payload{4};
   std::memcpy(payload.data(), "ping", 4);
 
-  stream.write(request, payload.view(), [](uv::write_request&, uv::result) {});
+  stream.write(request, payload.view(), [](uv::write_request&, uv::result<void>) {});
 } // request and payload are destroyed too early
 ```
 
@@ -168,9 +168,9 @@ auto* op = new pending_write{
 std::memcpy(op->payload.data(), "ping", 4);
 
 stream.write(op->request, op->payload.view(),
-  [op](uv::write_request&, uv::result status) {
+  [op](uv::write_request&, uv::result<void> status) {
     if (!status) {
-      // handle status.error_code()
+      // handle status.error()
     }
 
     delete op;
@@ -258,4 +258,3 @@ client.read_start(allocator, [](uv::tcp&, uv::read_result read) {
 
 The copy has a cost, but it changes the lifetime question: the vector is now the
 owner.
-

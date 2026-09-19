@@ -86,7 +86,7 @@ co_await workers.join();
 co_await socket.close();
 ```
 
-`uv::ops::close(socket)` awaits the same transition and returns `uv::result`
+`uv::ops::close(socket)` awaits the same transition and returns `uv::result<void>`
 instead of throwing `UV_EBADF` or `UV_EBUSY`. These APIs remain experimental;
 their target contract is in the
 [asynchronous ownership proposal](../proposals/002-async-ownership.md).

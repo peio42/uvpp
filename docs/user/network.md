@@ -58,7 +58,7 @@ uv::getaddrinfo(loop, request, "localhost", "80",
 
 `getaddrinfo_request::cancel()` and `getnameinfo_request::cancel()` request
 libuv cancellation and throw `uv::error` if libuv cannot cancel the request.
-The `try_cancel()` variants return `std::error_code` instead. A successfully
+The `try_cancel()` variants return `uv::error_code` instead. A successfully
 canceled DNS request still completes asynchronously; keep the request alive
 until its callback reports the final status.
 

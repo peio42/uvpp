@@ -154,7 +154,7 @@ require every return type to end in `_result`.
 Current `tcp_connection::read_some_result` and its pipe counterpart are aliases
 of one internal value carrying a byte count and EOF. UDP's nested
 `recv_from_result` carries a size, copied peer address, and partial flag;
-operational failures are thrown by the await. Historical `uv::result` is a
+operational failures are thrown by the await. Historical `uv::result<void>` is a
 non-template status type. A unified result carrier remains a decision in 006.
 
 Prefer namespace-level names for vocabulary genuinely shared by several APIs;

@@ -86,16 +86,16 @@ namespace uv {
     poll_result(int status, int events) noexcept
       : status_{status}, events_{poll_events::from_raw(events)} {}
 
-    bool ok() const noexcept { return status_.ok(); }
+    bool ok() const noexcept { return static_cast<bool>(status_); }
     explicit operator bool() const noexcept { return ok(); }
-    result status() const noexcept { return status_; }
-    std::error_code error_code() const noexcept { return status_.error_code(); }
+    result<void> status() const noexcept { return status_; }
+    uv::error_code error_code() const noexcept { return status_.error(); }
     poll_events events() const noexcept { return events_; }
     bool has_event(poll_event event) const noexcept { return events_.has(event); }
     int raw_events() const noexcept { return events_.raw(); }
 
   private:
-    result status_;
+    result<void> status_;
     poll_events events_;
   };
 

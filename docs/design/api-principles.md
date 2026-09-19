@@ -17,7 +17,7 @@ The public API should use:
 - `std::string_view` for read-only text inputs.
 - `std::span` for buffer ranges and non-owning byte views.
 - `std::chrono` for durations.
-- `std::error_code` where non-throwing APIs are exposed.
+- `uv::error_code` where non-throwing APIs are exposed.
 - RAII where it accurately models ownership.
 
 The public API should avoid:

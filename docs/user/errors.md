@@ -13,23 +13,24 @@ try {
 }
 ```
 
-Asynchronous failures happen later, in a libuv completion callback. They are delivered through `uv::result` or an operation-specific result object.
+Asynchronous failures happen later, in a libuv completion callback. They are delivered through `uv::result<void>` or an operation-specific result object.
 
 ```cpp
 uv::connect_request request;
 
 client.connect(request, uv::ipv4{"127.0.0.1", 2345},
-  [](uv::connect_request&, uv::result result) {
+  [](uv::connect_request&, uv::result<void> result) {
     if (!result) {
-      auto ec = result.error_code();
+      auto ec = result.error();
       (void)ec;
       return;
     }
   });
 ```
 
-For cancellable requests, `uv::result::canceled()` is the named branch for
-`UV_ECANCELED`.
+For cancellable requests, compare `result.error()` with
+`uv::make_error_code(UV_ECANCELED)` after completion. A cancellation request does
+not itself complete the operation.
 
 Filesystem operations use typed results such as `uv::fs::open_result`, `uv::fs::read_result`, and `uv::fs::status_result`.
 

@@ -19,9 +19,9 @@ int main() {
   uv::ipv4 address{"0.0.0.0", 2345};
   server.bind(address);
 
-  server.listen([&](uv::tcp &srv, uv::result status) {
+  server.listen([&](uv::tcp &srv, uv::result<void> status) {
     if (!status) {
-      std::cerr << status.error_code().message() << '\n';
+      std::cerr << status.error().message() << '\n';
       return;
     }
 
@@ -50,9 +50,9 @@ int main() {
       auto *request = new uv::write_request;
       auto bytes = read.bytes();
 
-      stream.write(*request, bytes, [request, storage](uv::write_request &, uv::result status) {
+      stream.write(*request, bytes, [request, storage](uv::write_request &, uv::result<void> status) {
         if (!status) {
-          std::cerr << status.error_code().message() << '\n';
+          std::cerr << status.error().message() << '\n';
         }
         delete[] storage.data();
         delete request;

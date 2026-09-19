@@ -119,7 +119,7 @@ public:
 
   void close() { throw_if_error(uv_loop_close(&raw_)); }
 
-  std::error_code try_close() noexcept {
+  error_code try_close() noexcept {
     return make_error_code(uv_loop_close(&raw_));
   }
 
