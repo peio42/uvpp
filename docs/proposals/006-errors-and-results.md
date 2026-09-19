@@ -65,6 +65,10 @@ operational error without a payload. `uv::status` is an alias for
 `uv::result<void>` for APIs and local variables whose only outcome is that
 status.
 
+`uv::status` is the semantic alias for `uv::result<void>`. Public APIs should
+prefer `status` when the operation carries no success payload; `result<void>`
+remains the generic underlying type.
+
 ```cpp
 uv::result<std::unique_ptr<connection>> connected{std::move(connection)};
 uv::status closed;
