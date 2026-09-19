@@ -47,6 +47,10 @@ declaration names an error-only completion. Both expose `has_value()`, explicit
 error result; `error()` is empty for success. `result<T>` has the usual lvalue and
 rvalue accessors and supports move-only `T` without an allocation.
 
+`uv::status` is the semantic alias for `uv::result<void>`. Public APIs should
+prefer `status` when the operation carries no success payload; `result<void>`
+remains the generic underlying type.
+
 `result<void>` accepts an `error_code`. API implementations adapt a native libuv
 status through `uv::status::from_native(status)`, which documents the origin of
 the integer.
