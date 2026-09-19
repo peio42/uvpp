@@ -2937,6 +2937,60 @@ TEST(UvppV3Coroutine, ipcReceiveHandleCancellationReleasesTheReadSlot) {
   std::filesystem::remove(path);
 }
 
+TEST(UvppV3Coroutine, ipcPipeReceiveHandleRejectsAnActiveReadSome) {
+  if (!local_pipe_is_permitted()) {
+    GTEST_SKIP() << "local pipe bind is not permitted in this environment";
+  }
+  const auto path = v3_pipe_path() + "-ipc-read-slot";
+  std::filesystem::remove(path);
+  uv::loop loop;
+  uv::pipe_listener listener(loop, path, true);
+  bool read_canceled = false;
+  int receive_status = 0;
+
+  auto server = [&]() -> uv::co::task<void> {
+    auto control = co_await listener.accept();
+    uv::co::task_scope operations(loop);
+    std::array<std::byte, 8> read_buffer{};
+    std::array<std::byte, 8> receive_buffer{};
+    auto read = [&]() -> uv::co::task<void> {
+      try {
+        (void)co_await control.read_some(read_buffer);
+      } catch (const uv::error &error) {
+        read_canceled = error.code().value() == UV_ECANCELED;
+      }
+    };
+    auto receive = [&]() -> uv::co::task<void> {
+      try {
+        (void)co_await control.receive_handle(receive_buffer);
+      } catch (const uv::error &error) {
+        receive_status = error.code().value();
+      }
+    };
+
+    operations.spawn(read());
+    operations.spawn(receive());
+    operations.request_stop();
+    co_await operations.join();
+    listener.request_close();
+  };
+  auto client = [&]() -> uv::co::task<void> {
+    auto control = co_await uv::pipe_connection::connect(path, true);
+    co_await uv::co::sleep_for(1ms);
+  };
+
+  auto server_execution = uv::co::spawn(loop, server());
+  auto client_execution = uv::co::spawn(loop, client());
+  loop.run();
+
+  EXPECT_NO_THROW(server_execution.rethrow_if_failed());
+  EXPECT_NO_THROW(client_execution.rethrow_if_failed());
+  EXPECT_TRUE(read_canceled);
+  EXPECT_EQ(receive_status, UV_EBUSY);
+  EXPECT_NO_THROW(loop.close());
+  std::filesystem::remove(path);
+}
+
 TEST(UvppV3Coroutine, pipeWriteWithHandleRejectsANonIpcPipe) {
   if (!local_pipe_is_permitted() || !loopback_tcp_is_permitted()) {
     GTEST_SKIP() << "local pipe or loopback TCP is not permitted in this environment";
@@ -2976,6 +3030,73 @@ TEST(UvppV3Coroutine, pipeWriteWithHandleRejectsANonIpcPipe) {
 
   EXPECT_NO_THROW(execution.rethrow_if_failed());
   EXPECT_EQ(status, UV_EINVAL);
+  EXPECT_NO_THROW(loop.close());
+  std::filesystem::remove(path);
+}
+
+TEST(UvppV3Coroutine, ipcPipeWriteWithHandleRejectsAnActiveWrite) {
+  if (!local_pipe_is_permitted() || !loopback_tcp_is_permitted()) {
+    GTEST_SKIP() << "local pipe or loopback TCP is not permitted in this environment";
+  }
+  const auto path = v3_pipe_path() + "-ipc-write-slot";
+  std::filesystem::remove(path);
+  uv::loop loop;
+  uv::pipe_listener listener(loop, path, true);
+  uv::tcp tcp_listener(loop);
+  tcp_listener.bind(uv::ipv4{"127.0.0.1", 0});
+  const uv::ipv4 address{"127.0.0.1", tcp_listener.sockname().port()};
+  std::unique_ptr<uv::tcp> peer;
+  tcp_listener.listen([&](uv::tcp &server, uv::result<void> status) {
+    EXPECT_TRUE(status);
+    peer = std::make_unique<uv::tcp>(loop);
+    EXPECT_NO_THROW(server.accept(*peer));
+  });
+  bool writers_finished = false;
+  bool write_completed = false;
+  int write_with_handle_status = 0;
+
+  auto server = [&]() -> uv::co::task<void> {
+    auto control = co_await listener.accept();
+    while (!writers_finished) {
+      co_await uv::co::sleep_for(1ms);
+    }
+    (void)control;
+  };
+  auto client = [&]() -> uv::co::task<void> {
+    auto control = co_await uv::pipe_connection::connect(path, true);
+    auto source = co_await uv::tcp_connection::connect(address);
+    uv::co::task_scope writers(loop);
+    auto write = [&]() -> uv::co::task<void> {
+      co_await control.write("bytes");
+      write_completed = true;
+    };
+    auto write_with_handle = [&]() -> uv::co::task<void> {
+      try {
+        co_await control.write_with_handle("handle", source);
+      } catch (const uv::error &error) {
+        write_with_handle_status = error.code().value();
+      }
+    };
+
+    writers.spawn(write());
+    writers.spawn(write_with_handle());
+    co_await writers.join();
+    writers_finished = true;
+    if (peer && !peer->closing()) {
+      peer->close();
+    }
+    tcp_listener.close();
+    listener.request_close();
+  };
+
+  auto server_execution = uv::co::spawn(loop, server());
+  auto client_execution = uv::co::spawn(loop, client());
+  loop.run();
+
+  EXPECT_NO_THROW(server_execution.rethrow_if_failed());
+  EXPECT_NO_THROW(client_execution.rethrow_if_failed());
+  EXPECT_TRUE(write_completed);
+  EXPECT_EQ(write_with_handle_status, UV_EBUSY);
   EXPECT_NO_THROW(loop.close());
   std::filesystem::remove(path);
 }
