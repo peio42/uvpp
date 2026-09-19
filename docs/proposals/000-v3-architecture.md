@@ -3,8 +3,7 @@
 Status: accepted.
 
 Target: v3. This umbrella proposal defines the direction for the other v3
-proposals. It does not describe the implemented v2 API or authorize changing v2
-policy piecemeal. Specialized proposals refine these invariants; incompatible
+proposals. It does not claim that the complete target API is implemented. Specialized proposals refine these invariants; incompatible
 alternatives require an explicit revision here.
 
 ## Motivation
@@ -176,8 +175,7 @@ measurement rather than compatibility aliases or speculative abstraction layers.
 
 1. Establish this architecture (000), including namespaces and ownership/error
    boundaries, before broad API implementation.
-2. Establish validation and performance baselines (010); compatible work can land
-   in v2. This is a baseline gate, not completion of every future benchmark.
+2. Establish validation and performance baselines (010); this is a baseline gate, not completion of every future benchmark.
 3. Define initial contracts for ownership (002), cancellation (003), operation
    state (004), errors (006), and scheduling (007). Fix minimum buffer borrowing
    and transfer rules from (005) at this stage.
@@ -206,18 +204,25 @@ the public v3 API, demonstrate raw callbacks,
 high-level callbacks, and coroutine I/O on the same loop; paired throwing and
 explicit-result failures; owner moves with stable native addresses; exceptional
 close and cancellation; and explicit buffer lifetimes. Record allocation costs
-against equivalent raw paths and supply v2-to-v3 migration examples. Compatibility
+against equivalent raw paths and supply complete v3 usage examples. Compatibility
 aliases are not required and must not dictate the new model.
 
 ## Implementation and documentation lifecycle
 
-The architectural direction is accepted, but the three-layer v3 API is largely not
-implemented. The experimental `uv::co::task<T>`, root `spawn`, child-task await,
-timer `sleep_for`, and `uv::tcp_connection` connect/close slices are the first
-implementations; they intentionally do not settle task scopes, cancellation,
-asynchronous join, error-policy pairs, or owner APIs.
-Current v2 behavior remains authoritative in `docs/design/` and `docs/user/`
-except where explicitly marked experimental.
+The architectural direction is accepted. Experimental implementation now includes
+`task<T>`, `spawn_handle<T>`, child awaits, join and cooperative stop, timer sleep,
+task scopes, TCP/pipe connection and listener owners, UDP sockets, awaited close
+with `uv::ops::close`, and resource scopes for these network families.
+
+The raw namespace/error-policy migration, complete paired operation surfaces,
+active spawn-handle retention fallback, generic resource ownership, and broader
+validation remain unfinished. Specialized proposals retain their open decisions.
+
+The README and `docs/user/` now teach v3 exclusively, including explicit availability
+and limitations; superseded user guides are removed rather than archived.
+`docs/design/` records implemented contracts, contributor rules, and remaining
+migration boundaries. This documentation review does not make unimplemented
+proposal signatures available or freeze the experimental API.
 
 As work lands, update those documents and retain only remaining work and necessary
 dependencies here. Remove this proposal when its architecture is implemented and

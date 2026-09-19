@@ -4,7 +4,7 @@ Status: draft.
 
 Architecture: [000 — V3 architecture](000-v3-architecture.md).
 
-Target: v3 exploration; independent compatible improvements may land in v2.
+Target: v3 development on this branch.
 
 This proposal is not an implemented API or a release commitment. Names are provisional.
 
@@ -256,8 +256,8 @@ survives every native completion.
 
 ## Remaining Directory Layer
 
-The former design intentions for a higher-level directory owner belong here. V2
-provides raw-only incremental directory iteration; its directory/result destructors
+The higher-level directory owner remains proposed. Existing code provides
+raw-only incremental directory iteration; its directory/result destructors
 assert ownership has been consumed and do not close resources. Prototype an owning
 incremental adapter with cleanup before every next read and close, owned entry names,
 and an explicit asynchronous exit. Decide allocation/buffering and failure behavior

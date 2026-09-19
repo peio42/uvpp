@@ -2,17 +2,8 @@
 
 `uv::loop` owns a `uv_loop_t`. `uv::loop_view` is a non-owning view over an existing loop, such as the default libuv loop.
 
-```cpp
-uv::loop loop;
-uv::timer timer(loop);
-
-timer.start(100ms, [](uv::timer& self) {
-  self.close();
-});
-
-loop.run();
-loop.close();
-```
+All v3 layers share this loop. See the complete [startup example](getting-started.md).
+A task or owner borrows the loop; none creates a second scheduler implicitly.
 
 The loop destructor does not call `uv_loop_close()`. Close the loop explicitly after all associated handles and requests are done.
 
@@ -26,7 +17,8 @@ bool still_alive = loop.run(uv::run_mode::nowait);
 
 In the default `uv::run_mode::until_done` mode, libuv runs until there is no more work, so `run()` normally returns `false`.
 
-Use `stop()` to request that the loop stops running.
+Use `stop()` to request that the loop stops running. This does not cancel tasks,
+close owners, or complete native cleanup; resume driving the loop as needed.
 
 ```cpp
 loop.stop();
@@ -109,18 +101,10 @@ for (uv::handle_view handle : loop.handles()) {
 
 `handle_view` does not own the handle. Do not keep it past the lifetime of the underlying native handle.
 
-`handle_view::as<T>()` can recover a uvpp wrapper only when the handle is known to have been created by uvpp as that exact wrapper type.
-
-```cpp
-loop.walk([](uv::handle_view handle) {
-  if (handle.type() == uv::handle_type::timer) {
-    uv::timer& timer = handle.as<uv::timer>();
-    (void)timer;
-  }
-});
-```
-
-Do not use `as<T>()` for foreign libuv handles or for a different wrapper type.
+Walking exposes native handles, including handles used internally by high-level
+owners. Do not close them or replace their callbacks through a view: use the
+owning object's API. Do not recover a low-level wrapper from a high-level owner's
+native handle; their storage representations differ.
 
 ## Low-Level Loop Operations
 

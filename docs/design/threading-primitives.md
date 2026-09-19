@@ -1,12 +1,11 @@
 # Threading Primitives
 
-Status: implemented in v2.
+Status: existing implementation on the v3 branch; public surface consolidation remains pending.
 
 The wrappers in `include/uvpp/threading/primitives.hpp` expose libuv thread and
 synchronization primitives. They synchronize application state and do not make
 loop, handle, request, callback-slot, or `user_data` access generally thread-safe.
-See the [thread-safety contract](thread-safety.md) and
-[user guide](../user/threading.md).
+See the [thread-safety contract](thread-safety.md).
 
 ## Scope and Ownership
 
@@ -45,8 +44,7 @@ are contained by `detail::invoke_callback` and terminate the process.
 `mutex` and `recursive_mutex` expose `lock()`, `try_lock()`, and `unlock()` for use
 with standard lock guards. `rwlock` exposes separate read/write lock operations.
 The `try_*` lock operations return false for ordinary contention and throw for
-unexpected native failures. This is the documented synchronization exception to
-v2's general non-throwing `try_*` convention.
+unexpected native failures. These are actual attempt semantics, consistent with the v3 `try_*` naming rule.
 
 `semaphore` exposes `post()`, `wait()`, and `try_wait()`. Condition variables expose
 signal, broadcast, wait with a `mutex&`, and a chrono-based timed wait. Callers

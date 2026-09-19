@@ -12,8 +12,8 @@ composable operation results. It is not an implementation or a release commitmen
 
 ## Structural Error Surfaces
 
-V2 keeps its current immediate-throwing and `try_*` conventions. V3 deliberately
-changes the structure under [000](000-v3-architecture.md):
+Existing low-level immediate-throwing and error-policy `try_*` conventions remain
+migration work. V3 changes the structure under [000](000-v3-architecture.md):
 
 ```cpp
 // Proposed convention, not implemented signatures.
@@ -176,15 +176,17 @@ handler must not consume native `data` or silently change all callback semantics
 `uv::error_code`, `result<T>`, and `result<void>` are implemented in
 [`core/error.hpp`](../../include/uvpp/core/error.hpp). Completion statuses and
 existing domain error accessors use the new error vocabulary. The paired
-throwing/explicit operation surfaces are still being adapted one domain at a
-time; target v3 because this changes source compatibility.
+throwing/explicit owner-close surface is implemented as `close()` and
+`uv::ops::close(owner)` for TCP/pipe connections and listeners and UDP sockets.
+Connect/read/write/send adaptation remains unfinished. See the
+[v3 error guide](../user/errors.md) for current availability.
 
 Validate equivalent immediate/delayed native failures in both styles, allocation
 failure during setup, EOF and partial results, move-only values, error access, and
 unobserved-task routing. Test that native callbacks never propagate exceptions and
 that result adaptation cannot miss failures during operation construction.
 
-## Gaps Confirmed Against V2
+## Remaining low-level adaptation
 
 Specialized completion types still differ in their direct convenience accessors:
 stream/UDP reads and filesystem watchers lack direct `raw_status()` and

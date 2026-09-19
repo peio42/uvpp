@@ -4,7 +4,7 @@ Status: draft.
 
 Architecture: [000 — V3 architecture](000-v3-architecture.md).
 
-Target: v3 exploration; independent compatible improvements may land in v2.
+Target: v3 development on this branch.
 
 This proposal is not an implemented API or a release commitment. Names are provisional.
 

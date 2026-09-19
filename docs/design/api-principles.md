@@ -1,259 +1,35 @@
-# API Principles
-
-For concrete naming and result-shape decisions that must stay consistent across
-future API additions, also read [API policy decisions](api-policy-decisions.md).
-
-This page primarily describes the historical v2 surface. The v3
-[naming and API shape review](naming-and-api-shape.md) distinguishes that surface
-from accepted v3 rules and recommendations still awaiting consolidation.
-
-## API Shape
-
-uvpp v2 should feel like a C++ library that happens to use libuv, not a direct transliteration of libuv naming and memory conventions.
-
-The public API should use:
-
-- C++20 as the minimum language standard.
-- `std::string_view` for read-only text inputs.
-- `std::span` for buffer ranges and non-owning byte views.
-- `std::chrono` for durations.
-- `uv::error_code` where non-throwing APIs are exposed.
-- RAII where it accurately models ownership.
-
-The public API should avoid:
-
-- exposing libuv fields as normal user-facing state;
-- requiring users to write casts;
-- requiring users to know every exact libuv callback typedef;
-- hiding asynchronous lifetime requirements behind misleading destructors.
-
-## Naming
-
-Use C++ style names consistently.
-
-Examples:
-
-```cpp
-loop.run();
-timer.start(100ms, 1s, callback);
-tcp.bind(ipv4{"0.0.0.0", 2345});
-stream.read_start(...);
-handle.close();
-```
-
-Prefer clear names over one-to-one libuv names when the C name is awkward. Keep libuv terminology where it is already clear and familiar, such as `listen`, `accept`, `bind`, `connect`, `close`, and `run`.
-
-## Header-Only Design
-
-v2 remains header-only and C++20-only. Implementation details should live in headers under `detail/` only when needed.
-
-Current organization and extension rules:
-
-- Keep public class definitions in focused headers.
-- Keep exception-boundary invocation helpers in `core/callback.hpp`; native
-  trampolines live beside the handle/request or submission function.
-- Keep native conversion utilities in `core/native.hpp`.
-- Put broadly included, low-level headers in `core/`.
-- Avoid including the aggregate `uv.hpp` from implementation headers.
-
-## Native Access
-
-Raw libuv access is supported but explicit:
-
-```cpp
-uv_tcp_t* raw = tcp.native();
-uv_stream_t* stream = tcp.native_stream();
-```
-
-There should be no implicit conversion operator to raw libuv pointers in the primary API. Implicit conversions make call sites short, but they reintroduce the same ambiguity v2 is meant to remove.
-
-## Typed Constants
-
-Ordinary user-facing APIs should not require libuv constants when the constant
-domain is small, stable, and has clear C++ semantics. Prefer thin `enum class`
-types in namespace `uv`:
-
-```cpp
-loop.run(uv::run_mode::nowait);
-
-if (timer.view().type() == uv::handle_type::timer) {
-  // timer handle
-}
-```
-
-These enums map directly to libuv constants and should not store extra state or
-add runtime overhead. Keep the names semantic rather than transliterating the C
-spelling:
-
-- `*_mode` for exclusive modes, such as `run_mode`;
-- `*_type` for classification results, such as `handle_type`, `request_type`,
-  and `fs_type`;
-- `*_event` or `*_event_kind` for observed events;
-- `*_flag` for configuration bitmasks.
-
-Do not add native constant overloads by default. A raw escape hatch is useful
-only when there is a concrete libuv interop use case that the typed API cannot
-express cleanly. Low-level wrappers may still expose raw objects through
-`native()`, `native_handle()`, `native_stream()`, or `native_request()`.
-
-## Explicit Borrowed Views
-
-Borrowed views must be produced with named functions, not implicit conversion
-operators.
-
-Examples:
-
-```cpp
-uv::handle_view handle = timer.view();
-uv::buffer_view buffer = storage.view();
-```
-
-The `.view()` spelling makes the lifetime relationship visible at the call
-site: the returned object does not own the underlying native handle, buffer, or
-storage. This is especially important for asynchronous operations and loop
-introspection, where keeping a view after the owner is closed or destroyed is a
-user lifetime error.
-
-Do not add implicit conversions from owning or address-stable wrappers to
-borrowed views such as `handle_view`. A named conversion is slightly longer, but
-it preserves uvpp's explicit ownership model.
-
-## Thin Native Operations
-
-Low-level wrappers may expose immediate libuv operations directly when they do not change ownership semantics.
-
-Examples:
-
-```cpp
-tcp.no_delay(true);
-tcp.keep_alive(true, 60);
-tcp.simultaneous_accepts(true);
-
-auto fd = tcp.fileno();
-auto bytes = stream.write_queue_size();
-
-udp.connect(ipv4{"127.0.0.1", 1234});
-pipe.pending_instances(4);
-```
-
-These functions should remain thin: validate through libuv, throw `uv::error` on immediate failure, and avoid storing extra state in the wrapper.
-
-For immediate operations that need caller-provided native metadata, keep the raw
-shape visible instead of hiding allocation in the wrapper. The operation should
-still live on the relevant handle when it is semantically a handle operation.
-For example, UDP batch send remains `udp.send_many_now(...)`, but the low-level
-argument is an explicit borrowed batch view over libuv-compatible arrays.
-
-Do not move isolated raw-shaped handle operations into a global `uv::raw`
-namespace just because their arguments are close to libuv. Use a separate raw
-namespace only when a whole sub-domain has a distinct ownership and lifetime
-model, as filesystem does with `uv::fs::raw`.
-
-## User Data
-
-The native `data` field is reserved for the application, not for wrapper internals.
-
-Expose it as a typed non-owning pointer API:
-
-```cpp
-struct session_state {};
-
-session_state state;
-client.user_data(state);
-
-auto* current = client.user_data<session_state>();
-client.clear_user_data();
-```
-
-The typed getter is a cast convenience, not a type-safe container. Storing `session_state` and retrieving `other_state` is a programmer error and cannot be diagnosed by the compiler because libuv stores only `void*`.
-
-Do not add the user data type to the primary handle/request templates. A design such as `tcp<session_state>` would make the whole hierarchy contagious, complicate APIs that only need "some tcp", and produce more template instantiations without improving the native storage model.
-
-The low-level API stores only the native application pointer. Higher-level
-ownership is tracked in [proposal 002](../proposals/002-async-ownership.md).
-
-## Value Types
-
-`buffer_view` uses composition and has size/alignment assertions against
-`uv_buf_t`. Address wrappers also use composition. There is no public
-`uv::timespec` wrapper. Raw stat results expose native timestamps;
-`fs::file_status` converts them to chrono-based `fs::file_time` values.
-
-Example:
-
-```cpp
-class buffer_view {
-public:
-  std::span<std::byte> bytes() const noexcept;
-  uv_buf_t* native() noexcept;
-
-private:
-  uv_buf_t raw_{};
-};
-```
-
-Buffer taxonomy is fixed:
-
-- `buffer_view` is a non-owning `uv_buf_t`-compatible view;
-- `owned_buffer` owns bytes and can explicitly produce a `buffer_view` with `view()`;
-- `std::span<std::byte>` / `std::span<const std::byte>` are accepted for generic byte ranges where `uv_buf_t` compatibility is not required at the call site.
-
-A single buffer type must not sometimes own memory and sometimes only view it. Ownership is represented by the type name.
-
-Example:
-
-```cpp
-owned_buffer storage{4096};
-buffer_view view = storage.view();
-```
-
-The conversion is intentionally named rather than implicit. Producing a `buffer_view` creates a borrowed view into the owned storage, and async libuv operations still require the storage to outlive the operation.
-
-## Bitmask Options
-
-Where libuv exposes compact bitmasks, v2 should prefer thin typed helpers without hiding the native model.
-
-`poll_event` is the current pattern:
-
-```cpp
-poll.start(poll_event::readable | poll_event::disconnect, callback);
-
-if (event.has_event(poll_event::readable)) {
-  // fd is readable
-}
-```
-
-The wrapper exposes callback events through typed result objects, such as
-`poll_result`, and raw masks only through explicit helpers such as
-`raw_events()` or `start_raw()`. The enum helpers document common flags and
-avoid spelling libuv constants in ordinary C++ call sites.
-
-Do not force a strong type where libuv intentionally accepts platform-defined
-integer identifiers rather than a compact uvpp-owned domain. Use a semantic
-alias when it improves readability without hiding the native model. For example,
-`uv::signal_number` aliases `int`: signal numbers remain POSIX/platform values
-such as `SIGINT` or `SIGTERM`, but callback signatures no longer expose an
-anonymous integer.
-
-## Minimal Surprises
-
-The API should make asynchronous lifetime visible. If a method starts an operation that outlives the call, its request object or callback state must have a clear owner.
-
-Bad shape:
-
-```cpp
-tcp.write(data); // unclear where request and data live
-```
-
-Better shape:
-
-```cpp
-write_request req;
-tcp.write(req, data, callback);
-```
-
-An owning stream write convenience is tracked in
-[proposal 005](../proposals/005-buffers-and-flow-control.md); `tcp.async_write` is
-not part of v2.
-
-Filesystem operations already own operation state by default. `uv::fs` owns the internal request and buffers/results needed for safe callback delivery, while `uv::fs::raw` exposes the manual libuv request protocol for callers that explicitly want it.
+# API principles
+
+These are contributor rules for v3, under
+[proposal 000](../proposals/000-v3-architecture.md). Existing code that differs
+requires migration; it does not override the target contract.
+
+- Keep C++20, header-only integration, focused headers, and one shared `uv::loop`.
+- Use `uv::raw` for explicit low-level protocols, high-level `uv` owners,
+  `uv::co` composition, and `uv::ops` result-oriented operations on those owners.
+  The complete namespace split is not yet implemented.
+- Keep native addresses stable. Raw handles are not movable; an owner can move
+  stable storage without relocating a native handle or invalidating callbacks.
+- Make borrowing explicit through `.view()` and native access explicit through
+  named helpers. Do not add implicit pointer or view conversions.
+- Reserve native `data` for application code. Typed access is a cast convenience,
+  not dynamic type checking or ownership.
+- Borrow write/send bytes by default. Copying and ownership transfer need explicit
+  semantic names or types. Operation ownership does not imply payload ownership.
+- Expose asynchronous completion and cleanup. Cancellation is not completion;
+  destructors cannot drive a nested loop or release live native storage.
+- Use structural C++20 concepts for public templates, references when null is invalid,
+  chrono for durations, and integer counts for metrics.
+- Preserve EOF, partial progress, would-block, and domain-specific results.
+  Raw operational errors are explicit; high-level awaits throw at the await;
+  `uv::ops` awaits return operational errors. Setup/allocation policies are separate.
+- Release terminal operation slots before user delivery. Persistent subscriptions
+  retain exclusivity until their native source has been quiesced.
+- Keep loop-thread affinity unless an entry point is explicitly cross-thread safe.
+  No exception may escape a libuv C callback.
+- Document allocations and ownership costs. Do not infer an allocation-free
+  operation from static callback dispatch alone.
+
+See [naming and API shape](naming-and-api-shape.md),
+[API policy decisions](api-policy-decisions.md), and
+[implementation architecture](architecture.md) for availability boundaries.

@@ -1,84 +1,88 @@
-# Ownership And Lifetime
+# Ownership and lifetime
 
-libuv handles are address-stable. uvpp handles are therefore not copyable or movable after initialization.
+The implemented v3 TCP/pipe connections and listeners, and UDP sockets, are
+move-only owners of stable native storage. Moving an owner transfers storage;
+it does not relocate the native handle. Tasks and owners borrow their `uv::loop`.
+Keep that loop alive and drive it through all pending native cleanup.
 
-```cpp
-uv::tcp client(loop);
-```
+## Closing owners
 
-Keep a handle object alive while libuv can still reference its native handle. Destroying a wrapper while callbacks can still run is a user lifetime error.
+`co_await owner.close()` waits for the native close callback. Repeated awaits join
+the same close transition. `request_close()` initiates close without waiting.
+`co_await uv::ops::close(owner)` returns `uv::status` for the same operation.
+Close is not stream shutdown and does not join application tasks.
 
-## Closing Handles
+Connection and UDP close reject active borrowed I/O with `UV_EBUSY`; settle that
+work first. Listener close can quiesce a pending `accept()`, which receives
+`UV_ECANCELED` after provisional-child cleanup. Accepted connections remain separate
+owners. IPC export also retains a claim on the exported TCP owner through completion.
 
-`close()` maps to asynchronous `uv_close()`. It schedules the close and returns before libuv has finished with the native handle.
+Direct-owner destruction starts asynchronous cleanup when its lifetime preconditions
+are met. It never runs a nested loop. Destroying a connection/socket with active
+borrowed I/O, or a listener with an active accept, is a terminating contract
+violation. Use explicit close or resource scopes to observe completion.
 
-For stack-owned handles, close them before leaving the scope and run the loop until close callbacks have completed.
+## Borrowing
 
-```cpp
-uv::timer timer(loop);
+Produce borrowed connection/socket views explicitly with `.view()`. A view is not
+another close owner and does not retain native storage. Named native accessors
+(`native()`, `native_handle()`, `native_stream()` where applicable) also borrow;
+they do not authorize closing the handle or replacing an active callback slot.
+Native `data` belongs to application code.
 
-timer.start(100ms, [&](uv::timer& self) {
-  self.close();
-});
+Operation state does not own external bytes. Follow the [buffer rules](buffers.md)
+even after cancellation has been requested.
 
-loop.run();
-loop.close();
-```
+## Resource scopes
 
-For heap-owned handles, delete the object from the close callback.
-
-```cpp
-auto* client = new uv::tcp(loop);
-
-client->close([client](uv::tcp&) {
-  delete client;
-});
-```
-
-## Requests
-
-Requests must outlive the asynchronous operation that uses them.
-
-```cpp
-uv::write_request request;
-
-stream.write(request, view, [](uv::write_request&, uv::status result) {
-  if (!result) {
-    return;
-  }
-});
-```
-
-Do not destroy or reuse a request until its completion callback has run.
-
-## Borrowed Callback Data
-
-Some callback result objects expose borrowed data. Copy it inside the callback if it must survive the callback.
+Include `<uvpp/co/resource_scope.hpp>`. A `uv::co::resource_scope` owns adopted
+TCP/pipe connections and listeners, and UDP sockets. A `uv::co::task_scope` owns
+child execution. Their completion boundaries are separate:
 
 ```cpp
-stream.read_start(allocator, [](uv::tcp&, uv::read_result read) {
-  if (!read || read.eof()) {
-    return;
-  }
-
-  std::vector<std::byte> payload{read.bytes().begin(), read.bytes().end()};
-});
+// Inside a task bound to loop; include both scope headers and tcp_listener.hpp.
+uv::co::task_scope tasks(loop);
+uv::co::resource_scope resources(loop);
+auto listener = resources.own(
+    uv::tcp_listener{loop, uv::ipv4{"127.0.0.1", 8080}});
+// Adopt connections and spawn handlers borrowing their .view() here.
+co_await tasks.join();
+co_await resources.finish();
 ```
 
-`uv::fs` public results are different: they own or copy their returned values so those values can safely outlive the callback.
+This fragment shows normal ordering. On an exceptional path, retain the primary
+exception, request stop and join child work, then finish resource cleanup before
+rethrowing. Do not put a cleanup `co_await` inside a C++ catch handler; capture the
+exception and await cleanup afterward.
 
-## User Data
+`resources.own()` transfers the sole connection owner into `resource_scope`; the
+handler receives only a `tcp_connection_view`. `task_scope::join()` finishes task
+execution, while `resources.finish()` starts internal close and waits for the
+actual `uv_close` callback before destroying owner storage. A view retained after
+`finish()` diagnoses use instead of accessing released native state. The caller
+must join tasks before calling `finish()`; cleanup with active borrowed I/O is
+rejected with `std::logic_error`. This rejection is recoverable: keep the scope
+alive, settle/join the borrowing tasks, then await a new `resources.finish()` task.
+Earlier successful closes are not rolled back; their views are already invalid.
+The retry closes only the remaining resources.
 
-libuv `data` fields belong to the application. uvpp exposes them as non-owning typed pointer helpers.
+`finish()` returns a cold task borrowing the scope. Merely constructing or
+abandoning that task does not seal adoption. Starting it on the associated loop
+seals `own()` permanently, including after a cleanup failure. A wrong-loop await
+throws before changing scope state. Overlapping cleanup attempts throw
+`std::logic_error`; after successful cleanup, another await succeeds immediately
+on the associated loop. Keep the scope alive through all tasks that borrow it.
 
-```cpp
-struct session {};
+Cleanup stops at the first failure and propagates that exception; it does not
+aggregate errors or join application tasks. Setup/allocation failures may also
+throw, and completed cleanup remains committed. Preserve any primary task failure
+separately while handling cleanup errors and retrying. Cancellation does not
+shorten native close completion. `resource_scope` destruction with remaining
+resources is a terminating contract violation, even after a caught cleanup error;
+`task_scope` likewise requires its outstanding work to be settled.
 
-session state;
-client.user_data(state);
-
-auto* current = client.user_data<session>();
-client.clear_user_data();
-```
-
-The typed getter is a cast convenience over `void*`; it does not enforce type safety or ownership.
+The same registration/view rules apply to pipe connections and UDP sockets;
+listener registrations expose `accept()`. Views retain diagnostic bookkeeping,
+not native resource lifetime. Resource scope cleanup closes listeners before
+dependent owners. Generic resource registration and cleanup-error aggregation
+remain proposed.

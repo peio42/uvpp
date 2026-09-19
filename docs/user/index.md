@@ -1,27 +1,37 @@
-# User Documentation
+# uvpp v3 user guide
 
-uvpp is a header-only C++20 wrapper around libuv. Include `uvpp/uv.hpp`, use namespace `uv`, and link with libuv and pthread.
+uvpp is header-only C++20. Include headers from `uvpp/`, use namespace `uv`,
+and link libuv and pthread. These guides cover v3 exclusively; the APIs described
+as available below are experimental and may change before release.
 
-## User Guides
+## Start here
 
-- [Tutorial](tutorial/): a progressive introduction to the event loop, handles,
-  callbacks, ownership, buffers, streams, and filesystem operations.
-- [Getting started](getting-started.md): requirements, build flags, and a minimal timer program.
-- [Loop](loop.md): running the event loop, backend information, metrics, and handle walking.
-- [Callbacks](callbacks.md): runtime callbacks, static callbacks, result objects, and exception boundaries.
-- [Errors](errors.md): immediate failures, asynchronous completion failures, and `uv::error`.
-- [Ownership and lifetime](ownership-and-lifetime.md): handles, requests, close callbacks, and borrowed callback data.
-- [Buffers](buffers.md): `buffer_view`, `owned_buffer`, spans, and async buffer lifetime.
-- [Streams](streams.md): TCP/pipe/TTY stream operations, accept, read, write, and shutdown requests.
-- [UDP](udp.md): datagram sockets, immediate sends, receive callbacks, and multicast helpers.
-- [Network utilities](network.md): DNS lookup requests and interface-index helpers.
-- [Filesystem](filesystem.md): recommended `uv::fs` APIs and the lower-level `uv::fs::raw` layer.
-- [Process](process.md): process spawning and process options.
-- [System utilities](system.md): environment, process IDs, system information, paths, and blocking sleep.
-- [Threading primitives](threading.md): libuv threads, mutexes, condition variables, semaphores, barriers, thread-local keys, and once guards.
-- [Thread pool work](threadpool.md): `queue_work` requests and worker-thread completion.
-- [Random bytes](random.md): synchronous and asynchronous random byte generation.
-- [Experimental coroutines](coroutines.md): the initial v3 task and timer-sleep slice.
-- [Future features](future.md): entry point to future proposals and their status.
+1. [Getting started](getting-started.md): build and run a coroutine task.
+2. [Loop](loop.md): execution context, driving, and shutdown.
+3. [Coroutines](coroutines.md): cold tasks, spawning, joining, stop, and task scopes.
+4. [Ownership and lifetime](ownership-and-lifetime.md): owners, views, close, and resource scopes.
+5. [Errors](errors.md): throwing awaits, results, and setup failures.
+6. [Buffers](buffers.md): borrowed payloads and completion lifetimes.
 
-See the [documentation index](../index.md) for implementation design and future proposals.
+## Networking
+
+- [TCP](networking/tcp.md): connect, accept, stream I/O, and listener limits.
+- [UDP](networking/udp.md): datagram send/receive and truncation.
+- [Pipe](networking/pipe.md): local streams and TCP handle passing over IPC.
+
+## Availability
+
+| Surface | Available on this branch |
+| --- | --- |
+| Common execution | `uv::loop`, cold `uv::co::task<T>`, `spawn_handle<T>`, join, cooperative stop, timer sleep |
+| Structured execution | `uv::co::task_scope` for `task<void>` children |
+| Resource cleanup | `uv::co::resource_scope` for TCP/pipe connections and listeners, and UDP sockets |
+| Network owners | `tcp_connection`, `tcp_listener`, `pipe_connection`, `pipe_listener`, `udp_socket` |
+| Explicit-result owner operations | `uv::ops::close(owner)`; a complete I/O counterpart is not yet available |
+| Raw layer | `uv::raw` is the target namespace; the low-level namespace/error-policy migration is unfinished |
+| Other domains | Filesystem, DNS, process, watchers, threading and utility code exists, but its v3 surface has not been consolidated in these guides |
+
+Do not infer that a header's presence establishes the final v3 API. In particular,
+there is no documented v3 `write_copy`, `read_exactly`, general detached task,
+implicit server task spawning, or bounded I/O queue yet. Remaining design work
+and validation gates are tracked in [proposals](../proposals/index.md).

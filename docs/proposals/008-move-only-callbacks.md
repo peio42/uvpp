@@ -4,7 +4,7 @@ Status: draft.
 
 Architecture: [000 — V3 architecture](000-v3-architecture.md).
 
-Target: v3 exploration; independent compatible improvements may land in v2.
+Target: v3 development on this branch.
 
 This proposal is not an implemented API or a release commitment. Names are provisional.
 
@@ -75,4 +75,4 @@ Stream `read_start_static` and an equivalent static UDP receive pair are absent.
 Explore two static callbacks (allocation and read/receive), preserving the existing
 borrow contract, rather than the former one-callback sketch. Validate buffer release
 on EOF/error and UDP native chunk/free notifications. These additions could be
-compatible with v2 and do not depend on move-only storage.
+independent of move-only storage.

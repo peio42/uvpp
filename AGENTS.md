@@ -88,12 +88,14 @@ uv::loop loop;
 
 ## Documentation Layout
 
-- User documentation and tutorials live in `docs/user/`.
+- User documentation lives in `docs/user/` and is strictly v3. Document available
+  APIs and their limits; remove superseded guides rather than archiving them.
+  Group network guides under `docs/user/networking/`.
 - Implemented design and coding rules live in `docs/design/`.
 - Future or partially implemented changes live in `docs/proposals/`, with explicit status.
 - When implementing a proposal, update current design and user documentation and record progress in the proposal.
 - Keep `README.md` focused on project overview, quick start, build, and links.
-- Put user-facing explanations in `docs/user/*.md`, not in design strategy files.
+- Put user-facing explanations under `docs/user/`, not in design strategy files.
 
 ## Design References
 

@@ -8,7 +8,7 @@ Dependencies: [002 — Asynchronous ownership](002-async-ownership.md),
 [003 — Cancellation and task scopes](003-cancellation-and-task-scopes.md), and
 [004 — Shared operation state](004-operation-state.md).
 
-Target: v3 exploration. The current API is deliberately limited to adopted TCP
+Target: v3 exploration. The current API is deliberately limited to adopted TCP/pipe
 connections/listeners and UDP sockets; generic type erasure and cleanup-error
 aggregation remain proposed.
 

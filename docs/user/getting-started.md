@@ -1,107 +1,72 @@
-# Getting Started
+# Getting started
 
-uvpp is header-only. Add the repository `include/` directory to your compiler include path and link with libuv and pthread.
+Use the v3 development checkout with a C++20 compiler, libuv, and pthread.
+The APIs in this guide are implemented but experimental.
 
-```sh
-g++ -std=c++20 -I/path/to/uvpp/include app.cpp -luv -pthread
-```
+## A complete program
 
-## CMake Integration
-
-uvpp ships a `CMakeLists.txt` that exposes the `uvpp::uvpp` target. The target sets the C++20 requirement, the include path, and propagates the libuv and pthread dependencies to consumers.
-
-### add_subdirectory or FetchContent
-
-```cmake
-# clone or copy uvpp alongside your project, then:
-add_subdirectory(uvpp)
-
-add_executable(myapp main.cpp)
-target_link_libraries(myapp PRIVATE uvpp::uvpp)
-```
-
-With FetchContent:
-
-```cmake
-include(FetchContent)
-FetchContent_Declare(uvpp
-  GIT_REPOSITORY https://github.com/peio42/uvpp.git
-  GIT_TAG        main
-)
-FetchContent_MakeAvailable(uvpp)
-
-add_executable(myapp main.cpp)
-target_link_libraries(myapp PRIVATE uvpp::uvpp)
-```
-
-### find_package (after installation)
-
-After running `cmake --install`, consumers can locate uvpp with:
-
-```cmake
-find_package(uvpp REQUIRED)
-
-add_executable(myapp main.cpp)
-target_link_libraries(myapp PRIVATE uvpp::uvpp)
-```
-
-The public API is in namespace `uv`:
+Save this as `app.cpp`:
 
 ```cpp
 #include <chrono>
-#include <iostream>
-
-#include <uvpp/uv.hpp>
+#include <uvpp/co/sleep.hpp>
 
 using namespace std::chrono_literals;
 
+uv::co::task<int> answer() {
+  co_await uv::co::sleep_for(10ms);
+  co_return 42;
+}
+
 int main() {
   uv::loop loop;
-  uv::timer timer(loop);
-
-  int ticks = 0;
-
-  timer.start(100ms, 100ms, [&](uv::timer& self) {
-    std::cout << "tick\n";
-
-    if (++ticks == 3) {
-      self.close();
-    }
-  });
-
+  auto execution = uv::co::spawn(loop, answer());
   loop.run();
   loop.close();
+  return execution.take_result() == 42 ? 0 : 1;
 }
 ```
 
-`uv_close()` is asynchronous. Keep handles alive until their close callback has run, or until the loop has completed all work for stack-allocated handles whose lifetime is already controlled by the surrounding scope.
-
-## Building This Repository
-
-Install libuv and Google Test to build the test suite:
-
 ```sh
-sudo apt-get update
-sudo apt-get install -y g++ libgtest-dev libuv1-dev
+g++ -std=c++20 -I/path/to/uvpp/include app.cpp -luv -pthread -o app
+./app
 ```
 
-Run the default suite:
+The task is cold until `spawn` binds it to the loop and starts it. Keep the spawn
+handle alive, drive the loop through timer completion and native cleanup, then
+close the loop. `take_result()` moves the completed value or rethrows the task's
+exception. For `task<void>`, use `rethrow_if_failed()` after completion.
+
+Use focused headers such as `<uvpp/co/task.hpp>`, `<uvpp/co/sleep.hpp>`, and
+`<uvpp/net/tcp_connection.hpp>`. `<uvpp/uv.hpp>` is the umbrella header; it also
+includes low-level APIs whose v3 migration remains unfinished.
+
+## CMake integration
+
+With this checkout alongside the application:
+
+```cmake
+cmake_minimum_required(VERSION 3.14)
+project(myapp LANGUAGES CXX)
+add_subdirectory(uvpp)
+add_executable(myapp app.cpp)
+target_link_libraries(myapp PRIVATE uvpp::uvpp)
+```
+
+The interface target propagates C++20, include paths, libuv, and thread dependencies.
+For an installed checkout, replace `add_subdirectory(uvpp)` with
+`find_package(uvpp REQUIRED)`. Pin the development revision you validated when
+fetching the dependency; these guides do not imply a published stable v3 package.
+
+## Repository checks
+
+Google Test is additionally required for the repository tests.
 
 ```sh
 make test
-```
-
-Run the GCC and Clang suites:
-
-```sh
 make test-all
-```
-
-Build examples:
-
-```sh
 make examples
 ```
 
-The example sources live under `examples/`; built binaries are written to
-`build/<compiler>/examples/`.
+Continue with [loop execution](loop.md), [coroutines](coroutines.md), and
+[ownership and cleanup](ownership-and-lifetime.md) before adding network I/O.

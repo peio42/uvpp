@@ -1,15 +1,16 @@
-# uvpp Documentation
+# uvpp v3 documentation
 
-uvpp is a header-only C++20 wrapper around libuv. Include `uvpp/uv.hpp`, use
-namespace `uv`, and link with libuv and pthread.
+This branch targets v3. The implementation is in progress and its high-level
+APIs remain experimental.
 
-- [User documentation](user/index.md): the supported API, guides, and
-  [tutorial](user/tutorial/index.md).
-- [Current design](design/index.md): implemented architecture, contracts, and
-  contributor rules.
-- [Proposals](proposals/index.md): future changes, alternatives, open decisions,
-  and implementation progress. Proposed APIs are not available unless explicitly
-  recorded as implemented.
+- [User guides](user/index.md) describe available v3 APIs and their current limits.
+- [Design](design/index.md) explains implementation contracts and contributor rules,
+  including code that still needs migration to the target architecture.
+- [Proposals](proposals/index.md) record unfinished work and open decisions.
+  Acceptance fixes a direction; it does not make an API available.
 
-When a proposal is implemented, update the current design and user guides in the
-same change. Keep the proposal as a decision record with links to those references.
+User documentation is strictly v3. Superseded guides are removed; Git preserves
+history. When implementation advances, update user guides, implemented design,
+and proposal progress together. Completed proposals follow the
+[proposal lifecycle](proposals/index.md#proposal-lifecycle), rather than becoming
+an archive of past designs.
