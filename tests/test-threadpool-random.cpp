@@ -41,7 +41,7 @@ void static_work_callback(uv::work_request &request) {
   request.user_data<static_work_state>()->worked.store(true);
 }
 
-void static_after_work_callback(uv::work_request &request, uv::result<void> status) {
+void static_after_work_callback(uv::work_request &request, uv::status status) {
   auto *state = request.user_data<static_work_state>();
   state->after = true;
   state->status = status.error().native();
@@ -61,7 +61,7 @@ public:
             std::this_thread::yield();
           }
         },
-        [](uv::work_request &, uv::result<void> status) {
+        [](uv::work_request &, uv::status status) {
           EXPECT_TRUE(status);
         });
       requests_.push_back(std::move(request));
@@ -118,7 +118,7 @@ TEST(Uvpp2Threadpool, queueWorkRunsWorkerAndAfterCallbacks) {
         worked.store(true);
       }
     },
-    [&](uv::work_request &callback_request, uv::result<void> callback_status) {
+    [&](uv::work_request &callback_request, uv::status callback_status) {
       EXPECT_EQ(&request, &callback_request);
       after = true;
       status = callback_status.error().native();
@@ -140,7 +140,7 @@ TEST(Uvpp2Threadpool, queueWorkCancelAfterCompletionFails) {
 
   uv::queue_work(loop, request,
     [](uv::work_request &) {},
-    [](uv::work_request &, uv::result<void>) {});
+    [](uv::work_request &, uv::status) {});
 
   loop.run();
 
@@ -177,7 +177,7 @@ TEST(Uvpp2Threadpool, queueWorkCancelPendingCompletesWithCanceledStatus) {
     [&](uv::work_request &) {
       target_started.store(true);
     },
-    [&](uv::work_request &, uv::result<void> status) {
+    [&](uv::work_request &, uv::status status) {
       target_after = true;
       target_canceled = status.error() == uv::make_error_code(UV_ECANCELED);
     });

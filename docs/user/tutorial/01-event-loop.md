@@ -132,7 +132,7 @@ of the operation that uses it.
 uv::write_request request;
 
 stream.write(request, buffer.view(),
-  [](uv::write_request& req, uv::result<void> result) {
+  [](uv::write_request& req, uv::status result) {
     (void)req;
     if (!result) {
       return;

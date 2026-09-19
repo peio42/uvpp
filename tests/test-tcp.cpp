@@ -47,7 +47,7 @@ TEST(Uvpp2Tcp, acceptsReadsAndWrites) {
   uv::ipv4 bind_addr{"127.0.0.1", 0};
   server.bind(bind_addr);
 
-  server.listen([&](uv::tcp &srv, uv::result<void> status) {
+  server.listen([&](uv::tcp &srv, uv::status status) {
     ASSERT_TRUE(status);
     EXPECT_EQ(srv.user_data<int>(), &server_marker);
 
@@ -68,7 +68,7 @@ TEST(Uvpp2Tcp, acceptsReadsAndWrites) {
 
       static char response[] = "pong";
       uv::buffer_view out{response, 4};
-      stream.write(server_write_req, out, [&](uv::write_request &request, uv::result<void> write_status) {
+      stream.write(server_write_req, out, [&](uv::write_request &request, uv::status write_status) {
         ASSERT_TRUE(write_status);
         EXPECT_EQ(request.user_data<int>(), &server_write_marker);
         server_write_done = true;
@@ -82,14 +82,14 @@ TEST(Uvpp2Tcp, acceptsReadsAndWrites) {
   auto bound = server.sockname();
   uv::ipv4 connect_addr{"127.0.0.1", bound.port()};
 
-  client.connect(connect_req, connect_addr, [&](uv::connect_request &request, uv::result<void> status) {
+  client.connect(connect_req, connect_addr, [&](uv::connect_request &request, uv::status status) {
     ASSERT_TRUE(status);
     EXPECT_EQ(request.user_data<int>(), &connect_marker);
     client_connected = true;
 
     static char payload[] = "ping";
     uv::buffer_view out{payload, 4};
-    client.write(client_write_req, out, [&](uv::write_request &request, uv::result<void> write_status) {
+    client.write(client_write_req, out, [&](uv::write_request &request, uv::status write_status) {
       ASSERT_TRUE(write_status);
       EXPECT_EQ(request.user_data<int>(), &client_write_marker);
       client_write_done = true;
@@ -131,7 +131,7 @@ TEST(Uvpp2Tcp, acceptsReadsAndWrites) {
 
 namespace {
 
-void on_static_ipv6_connect(uv::connect_request &, uv::result<void>) {}
+void on_static_ipv6_connect(uv::connect_request &, uv::status) {}
 
 }
 
@@ -196,7 +196,7 @@ TEST(Uvpp2Tcp, closeResetClosesConnectedTcp) {
   bool server_closed = false;
 
   server.bind(uv::ipv4{"127.0.0.1", 0});
-  server.listen([&](uv::tcp &srv, uv::result<void> status) {
+  server.listen([&](uv::tcp &srv, uv::status status) {
     ASSERT_TRUE(status);
     accepted_connection = true;
 
@@ -223,7 +223,7 @@ TEST(Uvpp2Tcp, closeResetClosesConnectedTcp) {
 
   auto bound = server.sockname();
   client.connect(connect_req, uv::ipv4{"127.0.0.1", bound.port()},
-    [&](uv::connect_request &, uv::result<void> status) {
+    [&](uv::connect_request &, uv::status status) {
       ASSERT_TRUE(status);
       client.close_reset([&](uv::tcp &) {
         client_closed = true;

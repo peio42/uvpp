@@ -19,7 +19,7 @@ int main() {
 
   server.bind(uv::ipv4{"0.0.0.0", 2345});
 
-  server.listen([&](uv::tcp& listener, uv::result<void> status) {
+  server.listen([&](uv::tcp& listener, uv::status status) {
     if (!status) {
       std::cerr << status.error().message() << '\n';
       return;
@@ -120,7 +120,7 @@ client.read_start(allocator, [](uv::tcp& stream, uv::read_result read) {
   };
 
   stream.write(write->request, write->payload.view(),
-    [write](uv::write_request&, uv::result<void> status) {
+    [write](uv::write_request&, uv::status status) {
       if (!status) {
         std::cerr << status.error().message() << '\n';
       }
@@ -152,7 +152,7 @@ struct session {
     : client(loop) {}
 };
 
-server.listen([&](uv::tcp& listener, uv::result<void> status) {
+server.listen([&](uv::tcp& listener, uv::status status) {
   if (!status) {
     std::cerr << status.error().message() << '\n';
     return;
@@ -218,7 +218,7 @@ can temporarily refuse more bytes.
 ```cpp
 uv::shutdown_request shutdown;
 
-stream.shutdown(shutdown, [](uv::shutdown_request&, uv::result<void> status) {
+stream.shutdown(shutdown, [](uv::shutdown_request&, uv::status status) {
   if (!status) {
     return;
   }
@@ -230,7 +230,7 @@ not destroy the handle. To release the handle, use `close()` later when your
 protocol requires it.
 
 ```cpp
-stream.shutdown(shutdown, [&](uv::shutdown_request&, uv::result<void>) {
+stream.shutdown(shutdown, [&](uv::shutdown_request&, uv::status) {
   stream.close();
 });
 ```

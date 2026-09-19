@@ -133,7 +133,7 @@ uv::tcp server(loop);
 int accepted_count = 0;
 
 server.bind(uv::ipv4{"0.0.0.0", 2345});
-server.listen([&](uv::tcp& listener, uv::result<void> status) {
+server.listen([&](uv::tcp& listener, uv::status status) {
   if (!status) {
     return;
   }

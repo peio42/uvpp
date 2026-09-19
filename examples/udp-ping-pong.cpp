@@ -96,7 +96,7 @@ int main() {
 
       auto view = reply->view();
       handle.send(reply->request, view, reply->native_address(),
-        [&handle, reply](uv::udp_send_request &, uv::result<void> status) {
+        [&handle, reply](uv::udp_send_request &, uv::status status) {
           if (!status) {
             std::cerr << status.error().message() << '\n';
           }
@@ -115,7 +115,7 @@ int main() {
 
   auto view = ping->view();
   client.send(ping->request, view, server_address,
-    [ping](uv::udp_send_request &, uv::result<void> status) {
+    [ping](uv::udp_send_request &, uv::status status) {
       if (!status) {
         std::cerr << status.error().message() << '\n';
       }

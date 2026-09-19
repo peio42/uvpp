@@ -104,7 +104,7 @@ TEST(Uvpp2Core, requestCallbacksAreOneShot) {
     std::weak_ptr<int> weak = token;
     bool called = false;
 
-    request.set_callback([token, &called](uv::write_request&, uv::result<void>) {
+    request.set_callback([token, &called](uv::write_request&, uv::status) {
       called = true;
     });
     token.reset();
@@ -121,7 +121,7 @@ TEST(Uvpp2Core, requestCallbacksAreOneShot) {
     std::weak_ptr<int> weak = token;
     bool called = false;
 
-    request.set_callback([token, &called](uv::connect_request&, uv::result<void>) {
+    request.set_callback([token, &called](uv::connect_request&, uv::status) {
       called = true;
     });
     token.reset();
@@ -137,7 +137,7 @@ TEST(Uvpp2Core, requestCallbacksAreOneShot) {
     std::weak_ptr<int> weak = token;
     bool called = false;
 
-    request.set_callback([token, &called](uv::shutdown_request&, uv::result<void>) {
+    request.set_callback([token, &called](uv::shutdown_request&, uv::status) {
       called = true;
     });
     token.reset();
@@ -153,7 +153,7 @@ TEST(Uvpp2Core, requestCallbacksAreOneShot) {
     std::weak_ptr<int> weak = token;
     bool called = false;
 
-    request.set_callback([token, &called](uv::udp_send_request&, uv::result<void>) {
+    request.set_callback([token, &called](uv::udp_send_request&, uv::status) {
       called = true;
     });
     token.reset();

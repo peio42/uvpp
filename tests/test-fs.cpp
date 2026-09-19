@@ -48,7 +48,7 @@ static_status_state *current_static_status = nullptr;
 template<class Result>
 concept fs_result_status_contract = requires(const Result &result) {
   { result.ok() } -> std::same_as<bool>;
-  { result.status() } -> std::same_as<uv::result<void>>;
+  { result.status() } -> std::same_as<uv::status>;
   { result.raw_status() } -> std::same_as<int>;
   { result.error_code() } -> std::same_as<uv::error_code>;
 };
