@@ -102,6 +102,26 @@ until it returns. Its result exposes `count()` and `eof()`; an operational error
 throws at the await. Each call is one-shot: it stops the native reader and releases
 both read slots before resuming, so another `read_some` may immediately follow.
 
+## Experimental I/O concurrency
+
+Each experimental owner has one exclusive operation slot per direction. A second
+operation in the same direction throws `UV_EBUSY`; one inbound and one outbound
+operation may proceed together.
+
+| Owner | Inbound | Outbound |
+| --- | --- | --- |
+| TCP connection | one `read_some()` | one `write()` |
+| Pipe connection | one `read_some()` or `receive_handle()` | one `write()` or `write_with_handle()` |
+| UDP socket | one `recv_from()` | one `send_to()` |
+| TCP / pipe listener | one `accept()` | — |
+
+The pipe IPC variants share their normal-direction slots: `receive_handle()`
+conflicts with `read_some()`, and `write_with_handle()` conflicts with `write()`.
+The single-write/send restriction is the initial experimental contract and may be
+widened after queueing, borrowing, cancellation, and cleanup semantics have been
+validated. The detailed contributor contract is in
+[experimental v3 I/O concurrency](../design/io-concurrency.md).
+
 Connections are affine to the loop that created them. `write` and `read_some`
 reject a task bound to another loop. Destroying a direct connection owner with a
 pending read or write is an unsupported contract violation: the experimental

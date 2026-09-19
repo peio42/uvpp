@@ -11,6 +11,7 @@ does not by itself change the current API contracts.
 - [API policy decisions](api-policy-decisions.md): concrete naming and result-shape policies for future API additions.
 - [Callback strategy](callback-strategy.md): runtime callbacks, static callbacks, callback slots, trampolines, and exception boundaries.
 - [Error handling strategy](error-handling-strategy.md): immediate failures, async completion results, EOF, and callback failure policy.
+- [Experimental v3 I/O concurrency](io-concurrency.md): operation exclusivity, permitted duplex I/O, and close interactions for coroutine owners.
 - [Ownership strategy](ownership-strategy.md): handle lifetime, request lifetime, buffers, user data, loop ownership, and deallocation rules.
 - [Request guide](request-guide.md): step-by-step checklist for adding a new request type (classes, overloads, tests, documentation).
 - [Thread safety](thread-safety.md): libuv threading model and cross-thread communication rules.

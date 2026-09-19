@@ -20,6 +20,8 @@ namespace uv::detail {
 
 // Common stream-operation slots. A stream family keeps this state alongside
 // its address-stable native handle; it is not stored in uv_handle_t::data.
+// Each direction has an independent exclusive slot: one read and one write may
+// overlap, while a second operation in either direction reports UV_EBUSY.
 struct stream_io_state {
   bool write_active = false;
   void *active_read = nullptr;

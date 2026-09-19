@@ -138,7 +138,10 @@ in-flight send remains non-cancellable and retains the borrow. `recv_from()` is
 one-shot and exclusive: it borrows mutable caller storage until the first actual
 datagram, copies the peer address into the result, calls `uv_udp_recv_stop()`, and
 releases receive/cancellation slots before task delivery. Empty libuv receive
-notifications do not complete the await; an empty datagram does.
+notifications do not complete the await; an empty datagram does. UDP send and
+receive use independent exclusive slots, allowing one of each to overlap while
+rejecting another operation in either direction with `UV_EBUSY`; see the
+[implemented concurrency contract](../design/io-concurrency.md).
 
 Validate EOF after partial input, zero-length datagrams, truncated datagrams,
 consumer cancellation, callback conflicts, buffer reuse only after completion,

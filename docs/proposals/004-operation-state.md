@@ -99,7 +99,10 @@ that a later native callback could use after its coroutine frame has gone away.
 The shared borrowed `write()` similarly performs state, affinity, and
 pre-existing-stop checks, claims one `uv_write_t` slot, and clears it on submission
 failure or native completion before resumption. It stores the native buffer view,
-not the bytes it borrows. TCP and pipe retain only their family-specific
+not the bytes it borrows. The read and write slots are independent, so a stream
+permits one operation in each direction while rejecting a competing operation in
+the same direction with `UV_EBUSY`; the current contract is documented in
+[the design notes](../design/io-concurrency.md). TCP and pipe retain only their family-specific
 connect/accept/endpoint behavior around that common stream protocol; pipe's close
 state machine separately snapshots joined close waiters before the first user
 resumption.
