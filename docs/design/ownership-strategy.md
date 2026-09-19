@@ -38,6 +38,13 @@ Coroutine frames and operation state do not retain external payloads. Writes/sen
 borrow bytes unchanged through actual completion; reads borrow mutable storage.
 Cancellation alone releases neither the slot nor the bytes.
 
+The high-level DNS resolver has no persistent owner. Its one-shot coroutine
+awaiter owns a stable `uv_getaddrinfo_t`, copied node/service/scalar hints, and
+the native result list until its terminal callback. That callback releases the
+task-stop registration before resuming the task; only then may frame destruction
+free the native list. A failed `uv_cancel` leaves this storage intact until the
+ordinary completion callback.
+
 ## Low-level implementation boundaries
 
 Caller-owned requests must survive native completion and cleanup. Existing

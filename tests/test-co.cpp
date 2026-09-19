@@ -17,6 +17,7 @@
 #include "uvpp/handles/tcp.hpp"
 #include "uvpp/net/pipe_connection.hpp"
 #include "uvpp/net/pipe_listener.hpp"
+#include "uvpp/net/dns.hpp"
 #include "uvpp/net/tcp_connection.hpp"
 #include "uvpp/net/tcp_listener.hpp"
 #include "uvpp/net/udp_socket.hpp"
@@ -216,6 +217,90 @@ TEST(UvppV3Coroutine, sleepForBindsColdTaskToTheSpawnLoop) {
   EXPECT_TRUE(resumed);
   EXPECT_TRUE(execution.done());
   EXPECT_NO_THROW(execution.rethrow_if_failed());
+  loop.close();
+}
+
+TEST(UvppV3Coroutine, resolveReturnsOwnedAddressesOnTheSpawnLoop) {
+  uv::loop loop;
+  std::optional<uv::resolved_addresses> addresses;
+
+  addrinfo hints{};
+  hints.ai_family = AF_INET;
+  hints.ai_socktype = SOCK_STREAM;
+
+  auto lookup = [&]() -> uv::co::task<void> {
+    addresses.emplace(co_await uv::resolve("localhost", "80", &hints));
+  };
+
+  auto execution = uv::co::spawn(loop, lookup());
+  loop.run();
+
+  EXPECT_TRUE(execution.done());
+  EXPECT_NO_THROW(execution.rethrow_if_failed());
+  ASSERT_TRUE(addresses.has_value());
+  EXPECT_FALSE(addresses->empty());
+  EXPECT_EQ(addresses->front().family, AF_INET);
+  loop.close();
+}
+
+TEST(UvppV3Coroutine, resolveOpsReportsNativeFailureAsAResult) {
+  uv::loop loop;
+  std::optional<uv::resolve_result> outcome;
+
+  addrinfo hints{};
+  hints.ai_socktype = -1;
+
+  auto lookup = [&]() -> uv::co::task<void> {
+    outcome.emplace(co_await uv::ops::resolve("localhost", "80", &hints));
+  };
+
+  auto execution = uv::co::spawn(loop, lookup());
+  loop.run();
+
+  EXPECT_TRUE(execution.done());
+  EXPECT_NO_THROW(execution.rethrow_if_failed());
+  ASSERT_TRUE(outcome.has_value());
+  EXPECT_FALSE(*outcome);
+  EXPECT_TRUE(outcome->error());
+  loop.close();
+}
+
+TEST(UvppV3Coroutine, resolveThrowsNativeFailureAtTheAwait) {
+  uv::loop loop;
+
+  addrinfo hints{};
+  hints.ai_socktype = -1;
+
+  auto lookup = [&]() -> uv::co::task<void> {
+    (void)co_await uv::resolve("localhost", "80", &hints);
+  };
+
+  auto execution = uv::co::spawn(loop, lookup());
+  loop.run();
+
+  EXPECT_TRUE(execution.done());
+  EXPECT_THROW(execution.rethrow_if_failed(), uv::error);
+  loop.close();
+}
+
+TEST(UvppV3Coroutine, resolveStopRetainsTheRequestUntilItsTerminalCallback) {
+  uv::loop loop;
+  std::optional<uv::resolve_result> outcome;
+
+  auto lookup = [&]() -> uv::co::task<void> {
+    outcome.emplace(co_await uv::ops::resolve("localhost"));
+  };
+
+  auto execution = uv::co::spawn(loop, lookup());
+  execution.request_stop();
+  loop.run();
+
+  EXPECT_TRUE(execution.done());
+  EXPECT_NO_THROW(execution.rethrow_if_failed());
+  ASSERT_TRUE(outcome.has_value());
+  // uv_cancel races the worker: either its terminal UV_ECANCELED callback or
+  // any normal resolver completion (success or DNS failure) is valid, but the
+  // root cannot complete before one of those terminal callbacks.
   loop.close();
 }
 

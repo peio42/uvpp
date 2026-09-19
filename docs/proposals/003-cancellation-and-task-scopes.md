@@ -115,7 +115,11 @@ It does not join native resource close completion or retain external borrowed da
 beyond the child task contract.
 
 The first stop-aware adapters are timer sleep, TCP and pipe one-shot read/accept,
-and UDP one-shot receive. They quiesce their native source, release
+UDP one-shot receive, and DNS resolution. DNS owns its `uv_getaddrinfo_t` and
+copied query inputs in the suspended coroutine frame; a stop before submission
+returns `UV_ECANCELED`, while a submitted stop attempts `uv_cancel` and retains
+that frame through its terminal callback. A rejected/racing `uv_cancel` permits
+normal DNS completion. The subscription adapters quiesce their native source, release
 callback claims, and deliver `UV_ECANCELED`. Submitted TCP/pipe write and connect
 cannot be physically cancelled in this slice: a prior stop rejects their
 submission, but an in-flight operation remains alive through actual completion.

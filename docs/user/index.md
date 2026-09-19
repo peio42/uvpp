@@ -18,6 +18,7 @@ as available below are experimental and may change before release.
 - [TCP](networking/tcp.md): connect, accept, stream I/O, and listener limits.
 - [UDP](networking/udp.md): datagram send/receive and truncation.
 - [Pipe](networking/pipe.md): local streams and TCP handle passing over IPC.
+- [DNS](networking/dns.md): coroutine `getaddrinfo` resolution and result surfaces.
 
 ## Availability
 
@@ -27,9 +28,9 @@ as available below are experimental and may change before release.
 | Structured execution | `uv::co::task_scope` for `task<void>` children |
 | Resource cleanup | `uv::co::resource_scope` for TCP/pipe connections and listeners, and UDP sockets |
 | Network owners | `tcp_connection`, `tcp_listener`, `pipe_connection`, `pipe_listener`, `udp_socket` |
-| Explicit-result owner operations | `uv::ops::close(owner)`; a complete I/O counterpart is not yet available |
+| Explicit-result operations | `uv::ops::close(owner)` and `uv::ops::resolve(...)`; a complete owner-I/O counterpart is not yet available |
 | Raw layer | `uv::raw` is the target namespace; the low-level namespace/error-policy migration is unfinished |
-| Other domains | Filesystem, DNS, process, watchers, threading and utility code exists, but its v3 surface has not been consolidated in these guides |
+| Other domains | Filesystem, process, watchers, threading and utility code exists, but their v3 surfaces have not been consolidated in these guides |
 
 Do not infer that a header's presence establishes the final v3 API. In particular,
 there is no documented v3 `write_copy`, `read_exactly`, general detached task,
