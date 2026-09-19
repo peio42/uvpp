@@ -22,7 +22,7 @@ pipe, UDP, and scope prototypes. Relevant implementation references:
 | Producers | [TCP listener](../../include/uvpp/net/tcp_listener.hpp), [pipe listener](../../include/uvpp/net/pipe_listener.hpp) | Keep `*_listener` and `accept`; constructors currently bind/listen. |
 | Datagram owner | [UDP](../../include/uvpp/net/udp_socket.hpp) | Keep `udp_socket`, `send_to`, and `recv_from`; review address accessors. |
 | Scoped access | [resource scope](../../include/uvpp/co/resource_scope.hpp) | Distinguish the owning scope, non-owning registrations, and borrowed views. |
-| Execution | [tasks](../../include/uvpp/co/task.hpp), [task scope](../../include/uvpp/co/task_scope.hpp) | Keep task vocabulary; current `spawn_handle` is not a template and only owns a spawned `task<void>`. |
+| Execution | [tasks](../../include/uvpp/co/task.hpp), [task scope](../../include/uvpp/co/task_scope.hpp) | Keep task vocabulary; current `spawn_handle<T>` owns a spawned `task<T>`; `task_scope` children remain `task<void>`. |
 | Native wrappers | [handles](../../include/uvpp/handles/handle.hpp), [streams](../../include/uvpp/handles/stream.hpp), [requests](../../include/uvpp/requests/request.hpp) | Existing low-level types still occupy `uv`; namespace migration is unfinished. |
 | Filesystem | [operations](../../include/uvpp/fs/operations.hpp), [descriptor](../../include/uvpp/fs/file.hpp) | Current `file_descriptor` is a copyable descriptor value, not an asynchronous file owner. |
 | Results | [error vocabulary](../../include/uvpp/core/error.hpp), [stream I/O](../../include/uvpp/detail/stream_io.hpp) | Result names do not imply one uniform value/error interface. |

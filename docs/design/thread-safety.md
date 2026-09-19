@@ -2,7 +2,7 @@
 
 ## Baseline
 
-uvpp v2 follows libuv's threading model. Unless a function is explicitly documented as thread-safe by libuv and by uvpp, `uv` wrapper objects must be accessed from the thread that owns the associated `uv_loop_t`.
+uvpp follows libuv's threading model. Unless a function is explicitly documented as thread-safe by libuv and by uvpp, `uv` wrapper objects must be accessed from the thread that owns the associated `uv_loop_t`.
 
 The low-level wrappers do not add locks, atomics, or cross-thread lifetime management.
 
@@ -18,7 +18,17 @@ Rules:
 
 This keeps the core wrapper zero-overhead and avoids implying guarantees libuv does not provide.
 
+## Coroutine affinity
+
+Tasks inherit their root loop. Current owner awaits and scope operations check
+that context; same-loop join and loop-thread stop are required. These facilities
+do not make external-thread owner access safe. See [coroutines](../user/coroutines.md).
+
 ## Cross-Thread Communication
+
+The spellings below describe current low-level implementation machinery. Its raw
+namespace migration remains unfinished; it is not a second high-level v3 owner API.
+
 
 Cross-thread work should use libuv mechanisms designed for it, primarily `uv::async`.
 

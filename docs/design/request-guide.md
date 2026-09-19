@@ -1,211 +1,50 @@
-# Adding a New Request Type
+# Adding a request or operation
 
-This guide lists every step required to add a well-formed request to uvpp.
-This is a contributor checklist for new code, not a statement that every existing
-request has the exact same methods. Preserve the storage invariant and consult
-the [current result families](error-handling-strategy.md#result-families).
+New work follows the [v3 architecture](architecture.md), not the namespace or
+throwing submission policy of an older wrapper. First identify the layer and
+read the relevant ownership, operation, buffer, and error proposals.
 
-## 1. Request class and result types — `include/uvpp/requests/<domain>.hpp`
+## Define the public contract
 
-Create a header in `include/uvpp/requests/`. It should contain:
+For a raw operation, make caller-controlled request and buffer lifetimes explicit
+and return operational status/results. A high-level operation owns its control
+state; borrowing still defaults for write/send bytes. Throwing and `uv::ops`
+frontends must share submission, completion, rollback, and cleanup behavior.
+Do not add a public operation until its layer and setup-failure policy are clear.
 
-- one or more **typed result classes** (see the result contract below);
-- one **request class** per libuv request type, inheriting `basic_request<Derived, uv_foo_t>`.
+Use `uv::status` or `uv::result<T>` for common outcomes. Keep richer domain types
+where EOF, partial progress, would-block, or borrowed data needs representation.
+Do not copy the differing [existing result-family](error-handling-strategy.md#result-families)
+accessors into a new common result contract.
 
-### Result class contract
+## Implement lifecycle machinery
 
-For a new DNS/random-style typed request result, use the following interface.
-Existing stream, watcher, base status, and filesystem types differ as described
-in the error-handling document; this checklist does not retroactively add members:
+Keep native requests address-stable and reconstruct state without native `data`.
+Document callback/frame ownership and every input retained by libuv. Roll back
+claims and owned preparation state on submission failure; separately cover failure
+before submission, including callable and string allocation.
 
-```cpp
-bool ok() const noexcept;
-explicit operator bool() const noexcept;
-result status() const noexcept;
-int raw_status() const noexcept;
-uv::error_code error_code() const noexcept;
-// payload accessors …
-```
+At terminal completion, quiesce any native source, release claimed slots, and
+extract callbacks before user delivery. Transfer/free native results even with no
+callback. Do not access storage after delivery if user code can destroy it.
+Cancellation requests do not imply completion. No exception may cross C callbacks.
 
-Result objects that own a heap-allocated libuv resource (such as `addrinfo*`)
-must be **move-only**. Result objects that hold borrowed views may use value
-semantics when the borrow rules are documented.
+Existing `detail::submit_request` helpers throw on immediate failure. Their
+rollback behavior is useful evidence, but they are not a ready-made implementation
+of the v3 raw result policy. Persistent subscriptions need their own protocol.
 
-### Request class contract
+## Integration and validation
 
-```cpp
-class foo_request final : public basic_request<foo_request, uv_foo_t> {
-public:
-  using callback = std::function<void(foo_request&, foo_result)>;
+Add focused headers and umbrella includes as appropriate. Apply named capability
+macros consistently to declarations and tests; see
+[version gating](api-policy-decisions.md#version-gated-libuv-features).
 
-  void set_callback(callback cb);
+Validate native layout/reconstruction, success, setup/submission failure rollback,
+exactly-once completion, resubmission or destruction from completion, cancellation,
+borrowed lifetimes, and native close retention. Exercise both error surfaces when
+implemented and static/runtime delivery where supported. Use existing tests as
+evidence, not as a substitute for the new operation's lifetime contract.
 
-  // Called by the trampoline. Must be noexcept.
-  void invoke(int status, ...) noexcept;
-
-  // Static callback path. Must be noexcept.
-  template<auto Callback>
-  void invoke_static(int status, ...) noexcept;
-
-private:
-  callback callback_{};
-  // Owned copies of submission inputs, if libuv borrows pointers from *this
-};
-```
-
-#### `invoke()` rules
-
-1. Extract and clear the callback slot before calling it:
-   `auto cb = std::move(callback_); callback_ = {};`
-2. Release transferred resources or deliver them to an explicit owner even when no callback is present (e.g.
-   `uv_freeaddrinfo(addresses)` when `!cb`).
-3. Clear owned submission inputs before invoking user code (`clear_inputs()`),
-   so destruction or resubmission in terminal completion does not access stale state.
-4. Mark the method `noexcept`. Exceptions from user code are caught by
-   `detail::invoke_callback` and forwarded to `std::terminate`.
-
-## 2. Submission helpers — `include/uvpp/net/<domain>.hpp` (or appropriate domain)
-
-Create a header that contains the free functions users call to submit the
-operation. Separate the dispatch layer from the request/result definitions so
-callers who only need the result types can include the thinner header.
-
-### Trampoline
-
-Place the libuv C callback in the local `detail` namespace and name it
-`<operation>_trampoline`:
-
-```cpp
-namespace detail {
-  inline void foo_trampoline(uv_foo_t *raw, int status) noexcept {
-    foo_request::from_native(raw).invoke(status);
-  }
-}
-```
-
-### `loop` / `loop_view` overload pair
-
-Every public submission free function accepting a loop must have two overloads. The `loop&` overload
-forwards to the `loop_view` overload:
-
-```cpp
-inline void foo(loop_view loop, foo_request &request, ..., foo_request::callback cb);
-inline void foo(loop &loop, foo_request &request, ..., foo_request::callback cb) {
-  foo(loop.view(), request, ..., std::move(cb));
-}
-```
-
-Reproduce the pair for every additional argument combination that produces
-distinct overloads (e.g. `nullptr_t` vs `string_view` variants).
-
-### Static callback overloads
-
-Provide `foo_static<Callback>()` variants that take no runtime callable:
-
-```cpp
-template<auto Callback>
-void foo_static(loop_view loop, foo_request &request, ...);
-
-template<auto Callback>
-void foo_static(loop &loop, foo_request &request, ...) {
-  foo_static<Callback>(loop.view(), request, ...);
-}
-```
-
-### When `detail::submit_request` applies
-
-`detail::submit_request` from `requests/request.hpp` has two overloads.
-
-**3-argument form** — use when all submission inputs are owned by the caller
-(buffer views, address pointers, scalars) and libuv borrows them for the
-duration of the operation:
-
-```cpp
-detail::submit_request(request, std::move(callback),
-  [&] { return uv_foo(loop.native(), request.native(), trampoline, buffer, addr); });
-```
-
-**4-argument form** — use when the request must store copies of submission
-inputs (for example, strings copied to provide null-termination for libuv's
-`const char*` parameters). Caller must call `set_inputs()` before this helper;
-the `on_error` lambda is invoked alongside the callback rollback on immediate
-failure:
-
-```cpp
-request.set_inputs(node, service, hints);
-detail::submit_request(request, std::move(callback),
-  [&] { return uv_getaddrinfo(loop.native(), request.native(), trampoline,
-                              request.node_arg(), request.service_arg(),
-                              request.hints_arg()); },
-  [&] { request.clear_inputs(); });
-```
-
-The rollback helpers cover the submit callable after slot installation. They do
-not wrap earlier `set_inputs()` or callback construction; do not claim a general
-strong exception guarantee for preparation failures.
-
-For **static callback paths** where no runtime callback is stored, use
-`detail::submit_with_rollback` instead:
-
-```cpp
-request.set_inputs(node, service, hints);
-detail::submit_with_rollback(
-  [&] { return uv_getaddrinfo(loop.native(), request.native(), static_trampoline,
-                              request.node_arg(), request.service_arg(),
-                              request.hints_arg()); },
-  [&] { request.clear_inputs(); });
-```
-
-## 3. Update `include/uvpp/uv.hpp`
-
-Add includes for both new headers in dependency order (request definitions before
-dispatch functions):
-
-```cpp
-#include "uvpp/requests/foo.hpp"
-#include "uvpp/net/foo.hpp"
-```
-
-## 4. Update `include/uvpp/core/version.hpp` if needed
-
-If the request wraps a libuv API added after the project baseline, add a named
-capability macro:
-
-```cpp
-#define UVPP_HAS_FOO UVPP_UV_VERSION_AT_LEAST(1, X, 0)
-```
-
-Guard the public header and any tests with that macro. See
-[api-policy-decisions.md](api-policy-decisions.md) for the full version-gating
-policy.
-
-## 5. Tests
-
-### Layout test — `tests/test-layout.cpp`
-
-Add `static_assert` and round-trip reconstruction assertions alongside the
-existing request layout checks:
-
-```cpp
-static_assert(std::is_standard_layout_v<uv::foo_request::native_storage>);
-
-uv::foo_request foo;
-EXPECT_EQ(&foo, &uv::foo_request::from_native(foo.native()));
-EXPECT_EQ(&foo, &uv::foo_request::from_native(foo.native_request()));
-```
-
-### Functional tests — `tests/test-<domain>.cpp`
-
-Cover at minimum:
-
-- a successful async completion with a runtime callback;
-- a static callback compilation check (take a function pointer to the static
-  overload);
-- an immediate submission failure that throws `uv::error` and leaves the request
-  in a clean state;
-- the `type()` accessor returning the expected `uv::request_type` value.
-
-## 6. Documentation
-
-Add a section to the relevant user-facing doc under `docs/user/` (or create one).
-Update `docs/design/architecture.md` if the directory layout changes.
+Update the relevant v3 user guide, implemented design, and proposal progress in
+the same change. Keep remaining work explicit instead of documenting sketches as
+available API.

@@ -1,10 +1,11 @@
 # Proposals
 
-These documents describe future or incomplete changes. They do not override the
-[current design](../design/index.md) or document currently supported user APIs.
+These documents describe future or incomplete changes. Accepted architectural
+direction governs v3 development; implementation
+availability is recorded in [current design](../design/index.md) and the
+[v3 user guides](../user/index.md). Proposed signatures are not callable APIs.
 Except where marked accepted, proposals below are drafts for v3 exploration, not
-an agreed release scope. Compatible work, especially validation improvements, may
-land independently in v2.
+an agreed release scope. This branch targets v3.
 
 ## Catalogue
 
@@ -16,7 +17,7 @@ land independently in v2.
 | [003 — Cancellation and task scopes](003-cancellation-and-task-scopes.md) | Partially implemented | Stop, deadlines, joining, and structured composition |
 | [004 — Shared operation state](004-operation-state.md) | Draft | Callback/coroutine submission, rollback, and completion machinery |
 | [005 — Buffers and flow control](005-buffers-and-flow-control.md) | Draft | Ownership, read adapters, recycling, and bounded queues |
-| [006 — Errors and results](006-errors-and-results.md) | Draft | Error vocabulary, throwing facades, and explicit `uv::ops` results |
+| [006 — Errors and results](006-errors-and-results.md) | Partially implemented | Error vocabulary, throwing facades, and explicit `uv::ops` results |
 | [007 — Loop scheduling](007-loop-scheduling.md) | Draft | Common-loop continuations, optional cross-thread posting, and shutdown |
 | [008 — Move-only callbacks](008-move-only-callbacks.md) | Draft | Callable ownership, replacement, and storage costs |
 | [009 — Lifetime diagnostics](009-lifetime-diagnostics.md) | Draft | Optional lifecycle checks and instrumentation |
@@ -25,10 +26,11 @@ land independently in v2.
 
 ## Shared Constraints
 
-[000 — V3 architecture](000-v3-architecture.md) defines the proposed common
+[000 — V3 architecture](000-v3-architecture.md) defines the accepted common
 invariants: `uv::raw`, high-level `uv`, and coroutine `uv::co`, sharing `uv::loop`.
 `uv::ops` is the high-level explicit-result surface, not another owner hierarchy.
-Specialized proposals refine that architecture; current v2 policy remains in design.
+Specialized proposals refine that architecture. Existing low-level code may still
+need migration; historical behavior does not override the accepted v3 target.
 
 Keep C++20, header-only integration, explicit native access, application-owned
 `data`, and stable native addresses. Costs and asynchronous ownership remain
@@ -47,7 +49,7 @@ explicit. Positive breaking changes take precedence over v2 source compatibility
 Callback storage (008) and diagnostics (009) advance transversally and become
 prerequisites only where a chosen contract requires them. This is a dependency
 guide, not a release schedule or a requirement to finish every foundation before
-prototyping. Compatible validation work may land in v2 independently.
+prototyping.
 
 ## Proposal Lifecycle
 
@@ -73,6 +75,6 @@ ADR may be introduced; an ADR system is not required to complete a proposal.
 The proposals directory is an active work catalogue, not an archive.
 
 The coroutine proposal replaces the former `docs/design/coroutine-strategy.md`;
-proposal 006 incorporates the former `docs/design/v3-notes.md`. The user-facing
-[future features page](../user/future.md) points here rather than maintaining a
-separate roadmap.
+proposal 006 incorporates the former `docs/design/v3-notes.md`. The
+[user guide availability table](../user/index.md#availability) records the
+implemented v3 surface; this catalogue tracks the remaining work.

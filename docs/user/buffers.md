@@ -1,64 +1,39 @@
 # Buffers
 
-uvpp separates owned storage from borrowed views.
-
-- `uv::buffer_view` is a non-owning `uv_buf_t`-compatible view.
-- `uv::owned_buffer` owns bytes and can produce a `buffer_view`.
-- `std::span<std::byte>` and `std::span<const std::byte>` are used for generic byte ranges.
-
-```cpp
-uv::owned_buffer storage{4096};
-uv::buffer_view view = storage.view();
-```
-
-Creating a `buffer_view` does not transfer ownership. The referenced memory must remain alive while libuv may use it.
-
-The view preserves every length representable by the native `uv_buf_t::len` field. On a platform where that field is narrower than `std::size_t`, constructing a larger view throws `std::length_error`; uvpp never silently truncates the length. Likewise, operations reject an oversized number of buffers before submission. The non-throwing `*_now()` operations report that condition as `UV_EINVAL`.
-
-## Writes
-
-Low-level async writes and UDP sends do not copy submitted buffers.
+V3 network writes and sends borrow their payload by default. A task frame or an
+operation owner does not keep external data alive. Keep submitted bytes alive,
+address-stable, and unmodified until the await completes, including after a stop
+request. Do not construct a deferred awaiter from a temporary payload that will
+be gone when the await begins.
 
 ```cpp
-uv::owned_buffer payload{4};
-std::memcpy(payload.data(), "ping", 4);
-
-uv::write_request request;
-stream.write(request, payload.view(),
-  [](uv::write_request&, uv::status result) {
-    if (!result) {
-      return;
-    }
-  });
+// Inside a task; socket is a TCP or pipe connection.
+std::string payload = "hello";
+co_await socket.write(payload);
+// payload may now be modified or destroyed.
 ```
 
-`payload` and `request` must both remain alive until the write callback runs.
-
-## Reads
-
-Stream and UDP receive allocators return borrowed `buffer_view` values. The allocator controls the backing storage lifetime.
+`read_some(std::span<std::byte>)` and UDP `recv_from(std::span<std::byte>)` borrow
+mutable caller storage until completion. Only use the returned byte count; a
+stream result additionally reports `eof()`, and a UDP result reports `partial()`
+and a copied peer address. The result does not own the caller's bytes.
 
 ```cpp
-uv::owned_buffer storage{4096};
-
-auto allocator = [&](uv::tcp&, std::size_t) {
-  return storage.view();
-};
-
-stream.read_start(allocator, [](uv::tcp&, uv::read_result read) {
-  if (!read || read.eof()) {
-    return;
-  }
-
-  auto bytes = read.bytes();
-  (void)bytes;
-});
+std::array<std::byte, 4096> storage;
+auto read = co_await socket.read_some(storage);
+if (!read.eof()) {
+  auto received = std::span{storage}.first(read.count());
+  // Consume received before reusing storage for another read.
+}
 ```
 
-`read.bytes()`, `read.storage()`, and `read.raw_buffer()` are callback-scoped views unless the application explicitly owns the backing storage for longer.
+Include `<string>`, `<array>`, and `<span>` for these fragments. Stream reads are
+one-shot: terminal delivery stops the native reader and releases its slots before
+resuming the task. A new read may start immediately afterward.
 
-## Filesystem Buffers
+Shared storage vocabulary also includes `uv::owned_buffer` and its explicit
+`.view()` producing a borrowed `uv::buffer_view`, declared in
+`<uvpp/net/buffer.hpp>`. A view never extends storage lifetime.
 
-The public `uv::fs` layer owns operation state internally. For example, `uv::fs::write` copies submitted bytes into operation-owned storage, and `uv::fs::read_result` owns its read buffer.
-
-Use `uv::fs::raw` when exact libuv buffer ownership and request reuse matter.
+`write_copy`, owning read adapters, `read_exactly`, buffer pools, and bounded
+queues remain proposed. See [proposal 005](../proposals/005-buffers-and-flow-control.md).
