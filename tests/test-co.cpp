@@ -19,6 +19,7 @@
 #include "uvpp/net/pipe_listener.hpp"
 #include "uvpp/net/tcp_connection.hpp"
 #include "uvpp/net/tcp_listener.hpp"
+#include "uvpp/net/udp_socket.hpp"
 
 using namespace std::chrono_literals;
 
@@ -1332,6 +1333,147 @@ TEST(UvppV3Coroutine, udpSocketSendReceiveAndScopedCleanup) {
   EXPECT_NO_THROW(loop.close());
 }
 
+TEST(UvppV3Coroutine, udpSocketPermitsOneReceiveAndOneSend) {
+  if (!loopback_tcp_is_permitted()) {
+    GTEST_SKIP() << "loopback networking is not permitted in this environment";
+  }
+
+  uv::loop loop;
+  uv::co::task_scope tasks(loop);
+  uv::co::resource_scope resources(loop);
+  std::array<std::byte, 16> socket_buffer{};
+  std::array<std::byte, 16> peer_buffer{};
+  std::string socket_received;
+  std::string peer_received;
+
+  auto parent = [&]() -> uv::co::task<void> {
+    auto socket = resources.own(uv::udp_socket{loop, uv::ipv4{"127.0.0.1", 0}});
+    auto peer = resources.own(uv::udp_socket{loop, uv::ipv4{"127.0.0.1", 0}});
+    const auto socket_address = socket.view().local_address().to_v4();
+    const auto peer_address = peer.view().local_address().to_v4();
+
+    auto receive_on_socket = [&]() -> uv::co::task<void> {
+      const auto result = co_await socket.view().recv_from(socket_buffer);
+      socket_received.assign(reinterpret_cast<const char *>(socket_buffer.data()), result.size());
+    };
+    auto receive_on_peer = [&]() -> uv::co::task<void> {
+      const auto result = co_await peer.view().recv_from(peer_buffer);
+      peer_received.assign(reinterpret_cast<const char *>(peer_buffer.data()), result.size());
+    };
+    auto send_from_socket = [&]() -> uv::co::task<void> {
+      co_await socket.view().send_to("outbound", peer_address);
+    };
+    auto send_from_peer = [&]() -> uv::co::task<void> {
+      co_await peer.view().send_to("inbound", socket_address);
+    };
+
+    tasks.spawn(receive_on_socket());
+    tasks.spawn(receive_on_peer());
+    tasks.spawn(send_from_socket());
+    tasks.spawn(send_from_peer());
+    co_await tasks.join();
+    co_await resources.finish();
+  };
+
+  auto execution = uv::co::spawn(loop, parent());
+  loop.run();
+
+  EXPECT_NO_THROW(execution.rethrow_if_failed());
+  EXPECT_EQ(socket_received, "inbound");
+  EXPECT_EQ(peer_received, "outbound");
+  EXPECT_NO_THROW(loop.close());
+}
+
+TEST(UvppV3Coroutine, udpSocketRejectsSimultaneousReceive) {
+  if (!loopback_tcp_is_permitted()) {
+    GTEST_SKIP() << "loopback networking is not permitted in this environment";
+  }
+
+  uv::loop loop;
+  uv::co::task_scope tasks(loop);
+  uv::co::resource_scope resources(loop);
+  std::array<std::byte, 16> first_buffer{};
+  std::array<std::byte, 16> second_buffer{};
+  bool first_completed = false;
+  int second_status = 0;
+
+  auto parent = [&]() -> uv::co::task<void> {
+    auto receiver = resources.own(uv::udp_socket{loop, uv::ipv4{"127.0.0.1", 0}});
+    auto sender = resources.own(uv::udp_socket{loop, uv::ipv4{"127.0.0.1", 0}});
+    const auto receiver_address = receiver.view().local_address().to_v4();
+    auto first = [&]() -> uv::co::task<void> {
+      (void)co_await receiver.view().recv_from(first_buffer);
+      first_completed = true;
+    };
+    auto second = [&]() -> uv::co::task<void> {
+      try {
+        (void)co_await receiver.view().recv_from(second_buffer);
+      } catch (const uv::error &error) {
+        second_status = error.code().value();
+      }
+    };
+    auto send = [&]() -> uv::co::task<void> {
+      co_await sender.view().send_to("packet", receiver_address);
+    };
+
+    tasks.spawn(first());
+    tasks.spawn(second());
+    tasks.spawn(send());
+    co_await tasks.join();
+    co_await resources.finish();
+  };
+
+  auto execution = uv::co::spawn(loop, parent());
+  loop.run();
+
+  EXPECT_NO_THROW(execution.rethrow_if_failed());
+  EXPECT_TRUE(first_completed);
+  EXPECT_EQ(second_status, UV_EBUSY);
+  EXPECT_NO_THROW(loop.close());
+}
+
+TEST(UvppV3Coroutine, udpSocketRejectsSimultaneousSend) {
+  if (!loopback_tcp_is_permitted()) {
+    GTEST_SKIP() << "loopback networking is not permitted in this environment";
+  }
+
+  uv::loop loop;
+  uv::co::task_scope tasks(loop);
+  uv::co::resource_scope resources(loop);
+  bool first_completed = false;
+  int second_status = 0;
+
+  auto parent = [&]() -> uv::co::task<void> {
+    auto sender = resources.own(uv::udp_socket{loop, uv::ipv4{"127.0.0.1", 0}});
+    auto receiver = resources.own(uv::udp_socket{loop, uv::ipv4{"127.0.0.1", 0}});
+    const auto receiver_address = receiver.view().local_address().to_v4();
+    auto first = [&]() -> uv::co::task<void> {
+      co_await sender.view().send_to("first", receiver_address);
+      first_completed = true;
+    };
+    auto second = [&]() -> uv::co::task<void> {
+      try {
+        co_await sender.view().send_to("second", receiver_address);
+      } catch (const uv::error &error) {
+        second_status = error.code().value();
+      }
+    };
+
+    tasks.spawn(first());
+    tasks.spawn(second());
+    co_await tasks.join();
+    co_await resources.finish();
+  };
+
+  auto execution = uv::co::spawn(loop, parent());
+  loop.run();
+
+  EXPECT_NO_THROW(execution.rethrow_if_failed());
+  EXPECT_TRUE(first_completed);
+  EXPECT_EQ(second_status, UV_EBUSY);
+  EXPECT_NO_THROW(loop.close());
+}
+
 TEST(UvppV3Coroutine, udpSocketStopCancelsReceiveBeforeScopedCleanup) {
   if (!loopback_tcp_is_permitted()) {
     GTEST_SKIP() << "loopback networking is not permitted in this environment";
@@ -2251,6 +2393,65 @@ TEST(UvppV3Coroutine, tcpConnectionRejectsSimultaneousWrite) {
   pair.close();
 }
 
+TEST(UvppV3Coroutine, tcpConnectionPermitsOneReadAndOneWrite) {
+  connected_tcp_pair pair;
+  try {
+    pair.connect();
+  } catch (const uv::error &error) {
+    pair.close();
+    if (error.code().value() == UV_EPERM) {
+      GTEST_SKIP() << "loopback TCP is not permitted in this environment";
+    }
+    throw;
+  }
+
+  std::array<char, 16> peer_buffer{};
+  std::array<std::byte, 16> client_buffer{};
+  std::string request{"request"};
+  std::string response{"response"};
+  uv::write_request response_request;
+  bool peer_received_request = false;
+  bool write_completed = false;
+  std::string client_received;
+
+  pair.peer->read_start(
+      [&](uv::tcp &, std::size_t) {
+        return uv::buffer_view{peer_buffer.data(), peer_buffer.size()};
+      },
+      [&](uv::tcp &peer, uv::read_result result) {
+        ASSERT_TRUE(result);
+        EXPECT_EQ(result.count(), request.size());
+        EXPECT_EQ((std::string_view{peer_buffer.data(),
+                      static_cast<std::size_t>(result.count())}), request);
+        peer_received_request = true;
+        peer.read_stop();
+        peer.write(response_request, std::as_bytes(std::span{response.data(), response.size()}),
+            [](uv::write_request &, uv::result<void> status) { EXPECT_TRUE(status); });
+      });
+
+  auto reader = [&]() -> uv::co::task<void> {
+    const auto result = co_await pair.client->read_some(client_buffer);
+    EXPECT_FALSE(result.eof());
+    client_received.assign(reinterpret_cast<const char *>(client_buffer.data()), result.count());
+    pair.loop.stop();
+  };
+  auto writer = [&]() -> uv::co::task<void> {
+    co_await pair.client->write(request);
+    write_completed = true;
+  };
+
+  auto read_execution = uv::co::spawn(pair.loop, reader());
+  auto write_execution = uv::co::spawn(pair.loop, writer());
+  pair.loop.run();
+
+  EXPECT_NO_THROW(read_execution.rethrow_if_failed());
+  EXPECT_NO_THROW(write_execution.rethrow_if_failed());
+  EXPECT_TRUE(peer_received_request);
+  EXPECT_TRUE(write_completed);
+  EXPECT_EQ(client_received, response);
+  pair.close();
+}
+
 TEST(UvppV3Coroutine, taskScopeStopWaitsForSubmittedBorrowedWrite) {
   connected_tcp_pair pair;
   try {
@@ -2512,6 +2713,60 @@ TEST(UvppV3Coroutine, pipeConnectionRejectsSimultaneousWrite) {
   EXPECT_NO_THROW(second_execution.rethrow_if_failed());
   EXPECT_TRUE(first_completed);
   EXPECT_EQ(second_status, UV_EBUSY);
+  pair.close();
+}
+
+TEST(UvppV3Coroutine, pipeConnectionPermitsOneReadAndOneWrite) {
+  if (!local_pipe_is_permitted()) {
+    GTEST_SKIP() << "local pipe bind is not permitted in this environment";
+  }
+  connected_pipe_pair pair;
+  pair.connect();
+
+  std::array<char, 16> peer_buffer{};
+  std::array<std::byte, 16> client_buffer{};
+  std::string request{"request"};
+  std::string response{"response"};
+  uv::write_request response_request;
+  bool peer_received_request = false;
+  bool write_completed = false;
+  std::string client_received;
+
+  pair.peer->read_start(
+      [&](uv::pipe &, std::size_t) {
+        return uv::buffer_view{peer_buffer.data(), peer_buffer.size()};
+      },
+      [&](uv::pipe &peer, uv::read_result result) {
+        ASSERT_TRUE(result);
+        EXPECT_EQ(result.count(), request.size());
+        EXPECT_EQ((std::string_view{peer_buffer.data(),
+                      static_cast<std::size_t>(result.count())}), request);
+        peer_received_request = true;
+        peer.read_stop();
+        peer.write(response_request, std::as_bytes(std::span{response.data(), response.size()}),
+            [](uv::write_request &, uv::result<void> status) { EXPECT_TRUE(status); });
+      });
+
+  auto reader = [&]() -> uv::co::task<void> {
+    const auto result = co_await pair.client->read_some(client_buffer);
+    EXPECT_FALSE(result.eof());
+    client_received.assign(reinterpret_cast<const char *>(client_buffer.data()), result.count());
+    pair.loop.stop();
+  };
+  auto writer = [&]() -> uv::co::task<void> {
+    co_await pair.client->write(request);
+    write_completed = true;
+  };
+
+  auto read_execution = uv::co::spawn(pair.loop, reader());
+  auto write_execution = uv::co::spawn(pair.loop, writer());
+  pair.loop.run();
+
+  EXPECT_NO_THROW(read_execution.rethrow_if_failed());
+  EXPECT_NO_THROW(write_execution.rethrow_if_failed());
+  EXPECT_TRUE(peer_received_request);
+  EXPECT_TRUE(write_completed);
+  EXPECT_EQ(client_received, response);
   pair.close();
 }
 

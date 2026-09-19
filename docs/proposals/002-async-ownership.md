@@ -198,6 +198,14 @@ result, stops native receive, releases its callback/cancellation slots, then
 resumes. Active UDP send/receive destruction remains an explicit contract
 violation, and resource-scope cleanup rejects it until task work has joined.
 
+The implemented experimental owner concurrency matrix is now recorded in
+[the current design](../design/io-concurrency.md): one exclusive inbound and
+outbound slot per connection or UDP socket, opposite-direction overlap allowed,
+and one exclusive listener accept. The IPC pipe operations share the corresponding
+stream slots. Tests cover `UV_EBUSY` for same-direction overlap and successful
+TCP, pipe, and UDP duplex operations. This is an implemented experimental
+contract, while queueing and a broader public API remain open.
+
 The experimental `uv::pipe_connection` applies the same stable-owner protocol to
 one outgoing local pipe connection. `connect(name, ipc)` copies the name into
 the awaiter, preserves its address-stable `uv_pipe_t` state through completion

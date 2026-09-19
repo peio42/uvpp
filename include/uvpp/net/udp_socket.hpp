@@ -38,6 +38,9 @@ struct udp_socket_state {
   uv_udp_t udp{};
   uv::loop *loop = nullptr;
   async_close_state close{};
+  // Send and receive have independent exclusive slots. This permits one
+  // operation in each direction while preserving a single borrowed payload or
+  // receive buffer per direction.
   bool send_active = false;
   void *active_receive = nullptr;
 
