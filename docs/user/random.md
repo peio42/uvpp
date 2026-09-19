@@ -56,7 +56,7 @@ The request and the byte storage must both stay alive until the callback runs.
 
 ```cpp
 bool ok = result.ok();
-uv::result<void> status = result.status();
+uv::status status = result.status();
 int raw = result.raw_status();
 uv::error_code ec = result.error_code();
 ```

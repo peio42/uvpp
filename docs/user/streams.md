@@ -10,7 +10,7 @@ uv::tcp server(loop);
 
 server.bind(uv::ipv4{"127.0.0.1", 2345});
 
-server.listen([&](uv::tcp& listener, uv::result<void> status) {
+server.listen([&](uv::tcp& listener, uv::status status) {
   if (!status) {
     return;
   }
@@ -68,7 +68,7 @@ uv::owned_buffer payload{4};
 std::memcpy(payload.data(), "pong", 4);
 
 client.write(request, payload.view(),
-  [](uv::write_request&, uv::result<void> result) {
+  [](uv::write_request&, uv::status result) {
     if (!result) {
       return;
     }
@@ -84,7 +84,7 @@ Use `uv::shutdown_request` for asynchronous stream shutdown.
 ```cpp
 uv::shutdown_request request;
 
-client.shutdown(request, [](uv::shutdown_request&, uv::result<void> result) {
+client.shutdown(request, [](uv::shutdown_request&, uv::status result) {
   if (!result) {
     return;
   }

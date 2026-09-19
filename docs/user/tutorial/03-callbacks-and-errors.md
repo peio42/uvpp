@@ -29,10 +29,10 @@ failed.
 ## Completion Failure
 
 When an operation is accepted, it can still fail later. The callback then
-receives `uv::result<void>` or a specialized result object.
+receives `uv::status` or a specialized result object.
 
 ```cpp
-server.listen([](uv::tcp& listener, uv::result<void> status) {
+server.listen([](uv::tcp& listener, uv::status status) {
   if (!status) {
     std::cerr << "listen callback: "
               << status.error().message()
@@ -44,7 +44,7 @@ server.listen([](uv::tcp& listener, uv::result<void> status) {
 });
 ```
 
-`uv::result<void>` represents a libuv status. It can be tested as a boolean: true means
+`uv::status` represents a libuv status. It can be tested as a boolean: true means
 success, false means error. Use `error_code()` to obtain a standard C++ error
 code.
 

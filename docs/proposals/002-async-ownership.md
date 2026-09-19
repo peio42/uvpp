@@ -169,7 +169,7 @@ and awaits internal close completion before destroying owner storage. It rejects
 cross-loop adoption and requires task join before cleanup while borrowed I/O is
 active. `tcp_connection`, `pipe_connection`, `udp_socket`, and both listener
 families now expose the public member awaiter and `request_close()`; the matching
-`uv::ops::close` overloads return the current `uv::result<void>` status value. Tests in
+`uv::ops::close` overloads return the current `uv::status` value. Tests in
 `tests/test-co.cpp` cover TCP and pipe close, concurrent joining, explicit
 results, active-read rejection by both `close()` and `request_close()`, stop
 requested before or during close, and both listener families with an active

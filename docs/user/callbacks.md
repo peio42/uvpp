@@ -68,10 +68,10 @@ loop.run();
 loop.close();
 ```
 
-Callbacks that can fail asynchronously receive `uv::result<void>` or a typed result object. Check the result inside the callback instead of expecting asynchronous errors to throw.
+Callbacks that can fail asynchronously receive `uv::status` or a typed result object. Check the result inside the callback instead of expecting asynchronous errors to throw.
 
 ```cpp
-server.listen([](uv::tcp& server, uv::result<void> status) {
+server.listen([](uv::tcp& server, uv::status status) {
   if (!status) {
     return;
   }

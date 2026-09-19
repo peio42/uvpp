@@ -14,7 +14,7 @@ uv::queue_work(loop, req,
   [&value](uv::work_request&) {         // only value crosses the thread boundary
     value = expensive_blocking_call();
   },
-  [&](uv::work_request&, uv::result<void> status) {
+  [&](uv::work_request&, uv::status status) {
     if (!status) {
       return;
     }
@@ -43,7 +43,7 @@ The work callback runs outside the loop thread. It must not access `uv::loop`,
 handles, or requests except through APIs documented as cross-thread safe by
 libuv and uvpp. Use normal synchronization for shared application data.
 
-The after-work callback runs on the loop thread and receives `uv::result<void>`.
+The after-work callback runs on the loop thread and receives `uv::status`.
 
 ```cpp
 uv::queue_work(loop, req,
@@ -51,7 +51,7 @@ uv::queue_work(loop, req,
     auto* state = req.user_data<job_state>();
     state->run_in_worker();
   },
-  [](uv::work_request& req, uv::result<void> status) {
+  [](uv::work_request& req, uv::status status) {
     auto* state = req.user_data<job_state>();
 
     if (status.error() == uv::make_error_code(UV_ECANCELED)) {
@@ -75,7 +75,7 @@ static void do_work(uv::work_request& req) {
   req.user_data<job_state>()->run_in_worker();
 }
 
-static void after_work(uv::work_request& req, uv::result<void> status) {
+static void after_work(uv::work_request& req, uv::status status) {
   req.user_data<job_state>()->done = status.has_value();
 }
 
