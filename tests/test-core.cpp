@@ -41,19 +41,24 @@ TEST(Uvpp2Core, checkThrowsUvppErrorOnLibuvFailure) {
 }
 
 TEST(Uvpp2Core, voidResultUsesOneErrorGrammar) {
+  static_assert(std::same_as<uv::status, uv::result<void>>);
+
+  uv::status status;
+  EXPECT_TRUE(status);
+
   uv::result<void> ok;
   EXPECT_TRUE(ok);
   EXPECT_TRUE(ok.has_value());
   EXPECT_FALSE(ok.error());
   EXPECT_NO_THROW(ok.value());
 
-  uv::result<void> failed{UV_ECONNREFUSED};
+  auto failed = uv::status::from_native(UV_ECONNREFUSED);
   EXPECT_FALSE(failed);
   EXPECT_FALSE(failed.has_value());
   EXPECT_EQ(failed.error(), uv::make_error_code(UV_ECONNREFUSED));
   EXPECT_THROW(failed.value(), uv::error);
 
-  uv::result<void> canceled{UV_ECANCELED};
+  uv::result<void> canceled{uv::make_error_code(UV_ECANCELED)};
   EXPECT_FALSE(canceled);
   EXPECT_EQ(canceled.error(), uv::make_error_code(UV_ECANCELED));
 }

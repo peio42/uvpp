@@ -84,18 +84,18 @@ namespace uv {
   class poll_result {
   public:
     poll_result(int status, int events) noexcept
-      : status_{status}, events_{poll_events::from_raw(events)} {}
+      : status_{uv::status::from_native(status)}, events_{poll_events::from_raw(events)} {}
 
     bool ok() const noexcept { return static_cast<bool>(status_); }
     explicit operator bool() const noexcept { return ok(); }
-    result<void> status() const noexcept { return status_; }
+    uv::status status() const noexcept { return status_; }
     uv::error_code error_code() const noexcept { return status_.error(); }
     poll_events events() const noexcept { return events_; }
     bool has_event(poll_event event) const noexcept { return events_.has(event); }
     int raw_events() const noexcept { return events_.raw(); }
 
   private:
-    result<void> status_;
+    uv::status status_;
     poll_events events_;
   };
 

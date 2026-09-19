@@ -152,7 +152,7 @@ namespace uv {
 
     bool ok() const noexcept { return status_ >= 0; }
     explicit operator bool() const noexcept { return ok(); }
-    result<void> status() const noexcept { return result<void>{status_}; }
+    uv::status status() const noexcept { return uv::status::from_native(status_); }
     int raw_status() const noexcept { return status_; }
     uv::error_code error_code() const noexcept { return make_error_code(status_); }
 
@@ -194,7 +194,7 @@ namespace uv {
 
     bool ok() const noexcept { return status_ >= 0; }
     explicit operator bool() const noexcept { return ok(); }
-    result<void> status() const noexcept { return result<void>{status_}; }
+    uv::status status() const noexcept { return uv::status::from_native(status_); }
     int raw_status() const noexcept { return status_; }
     uv::error_code error_code() const noexcept { return make_error_code(status_); }
 

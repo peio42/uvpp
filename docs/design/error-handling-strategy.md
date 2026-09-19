@@ -32,7 +32,7 @@ A native submission failure is reported by the initiating call; a later failure
 is reported by a completion callback. These are distinct channels in v2.
 
 ```cpp
-tcp.connect(req, addr, [](uv::connect_request&, uv::result<void> status) {
+tcp.connect(req, addr, [](uv::connect_request&, uv::status status) {
   if (!status) {
     auto ec = status.error();
     (void)ec;
@@ -41,10 +41,15 @@ tcp.connect(req, addr, [](uv::connect_request&, uv::result<void> status) {
 ```
 
 `uv::result<T>` stores either one `T` or one `uv::error_code`; `uv::result<void>`
-stores success or an operational error. Both expose `has_value()`, explicit
+stores success or an operational error. `uv::status` is its alias when the
+declaration names an error-only completion. Both expose `has_value()`, explicit
 `operator bool()`, `value()`, and `error()`. `value()` throws `uv::error` on an
 error result; `error()` is empty for success. `result<T>` has the usual lvalue and
 rvalue accessors and supports move-only `T` without an allocation.
+
+`result<void>` accepts an `error_code`. API implementations adapt a native libuv
+status through `uv::status::from_native(status)`, which documents the origin of
+the integer.
 
 ## Result Families
 
@@ -52,12 +57,12 @@ The current result API is not uniform across all families:
 
 | Family | Status access | Error access and payload |
 | --- | --- | --- |
-| `uv::result<void>` | `has_value()` / boolean conversion | `error()` |
-| DNS and random results | `status()` returns `uv::result<void>`; `raw_status()` returns `int` | Direct `error_code()` plus family payload |
-| Public and raw filesystem results | `status()` returns `uv::result<void>`; `raw_status()` returns zero on success or a negative error | Direct `error_code()`; `raw()` retains native payload/status value |
-| Stream/UDP read results | `status()` returns `uv::result<void>`; `count()` retains native byte count/status | `status().error()`; no direct `error_code()` or `raw_status()` |
-| `fs_event_result`, `fs_poll_result` | `status()` returns `uv::result<void>` | `status().error()`; no direct `error_code()` or `raw_status()` |
-| `poll_result` | `status()` returns `uv::result<void>` | Direct `error_code()`, no `raw_status()`; `raw_events()` is the event mask |
+| `uv::status` (`uv::result<void>`) | `has_value()` / boolean conversion | `error()` |
+| DNS and random results | `status()` returns `uv::status`; `raw_status()` returns `int` | Direct `error_code()` plus family payload |
+| Public and raw filesystem results | `status()` returns `uv::status`; `raw_status()` returns zero on success or a negative error | Direct `error_code()`; `raw()` retains native payload/status value |
+| Stream/UDP read results | `status()` returns `uv::status`; `count()` retains native byte count/status | `status().error()`; no direct `error_code()` or `raw_status()` |
+| `fs_event_result`, `fs_poll_result` | `status()` returns `uv::status` | `status().error()`; no direct `error_code()` or `raw_status()` |
+| `poll_result` | `status()` returns `uv::status` | Direct `error_code()`, no `raw_status()`; `raw_events()` is the event mask |
 
 These families expose `ok()` and explicit boolean conversion. Use the payload
 accessor to obtain file descriptors or counts; filesystem `raw_status()` normalizes

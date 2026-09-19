@@ -142,9 +142,11 @@ namespace uv {
   public:
     constexpr result() noexcept = default;
 
-    explicit result(int status) noexcept : error_{make_error_code(status)} {}
+    constexpr explicit result(error_code code) noexcept : error_{code} {}
 
-    explicit result(error_code code) noexcept : error_{code} {}
+    static constexpr result from_native(int native_status) noexcept {
+      return result{make_error_code(native_status)};
+    }
 
     bool has_value() const noexcept { return !error_; }
     explicit operator bool() const noexcept { return has_value(); }
@@ -160,5 +162,8 @@ namespace uv {
   private:
     error_code error_;
   };
+
+  // A completion that carries only an operational error, if any.
+  using status = result<void>;
 
 }
