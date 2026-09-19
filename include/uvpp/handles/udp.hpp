@@ -46,7 +46,7 @@ namespace uv {
     bool mmsg_free() const noexcept { return false; }
 #endif
     ssize_t count() const noexcept { return nread_; }
-    result<void> status() const noexcept { return result<void>{static_cast<int>(nread_)}; }
+    uv::status status() const noexcept { return uv::status::from_native(static_cast<int>(nread_)); }
     unsigned flags() const noexcept { return flags_; }
     const sockaddr *address() const noexcept { return addr_; }
 
@@ -585,7 +585,7 @@ namespace uv {
     void send_static(udp_send_request &request, std::span<const buffer_view> buffers, const sockaddr *addr) {
       throw_if_error(uv_udp_send(request.native(), native(), reinterpret_cast<const uv_buf_t *>(buffers.data()),
                                  detail::checked_buffer_count(buffers.size()), addr, [](uv_udp_send_t *raw, int status) noexcept {
-        detail::invoke_static_callback<Callback>(udp_send_request::from_native(raw), result<void>{status});
+        detail::invoke_static_callback<Callback>(udp_send_request::from_native(raw), uv::status::from_native(status));
       }));
     }
 

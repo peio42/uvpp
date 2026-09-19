@@ -61,13 +61,18 @@ started; see [002](002-async-ownership.md) for its state and lifetime contract.
 V3 uses `uv::result<T>` and `uv::result<void>` as its common value/error
 vocabulary. A result contains either one `T` or one `uv::error_code`; it never
 exposes a value for an error result. `result<void>` represents success or an
-operational error without a payload.
+operational error without a payload. `uv::status` is an alias for
+`uv::result<void>` for APIs and local variables whose only outcome is that
+status.
 
 ```cpp
 uv::result<std::unique_ptr<connection>> connected{std::move(connection)};
-uv::result<void> closed;
-uv::result<void> refused{UV_ECONNREFUSED};
+uv::status closed;
+uv::status refused = uv::status::from_native(UV_ECONNREFUSED);
 ```
+
+`result<void>` accepts an `error_code`. Adapt a native libuv status through
+`status::from_native(status)`, which makes that conversion explicit.
 
 `result<T>` supports move-only values. It is copyable or movable exactly when
 `T` permits the corresponding operation; it does not allocate. The primary

@@ -119,7 +119,7 @@ namespace uv {
 #else
       std::string storage{name};
       uv_pipe_connect(request.native(), native(), storage.c_str(), [](uv_connect_t *raw, int status) noexcept {
-        detail::invoke_static_callback<Callback>(connect_request::from_native(raw), result<void>{status});
+        detail::invoke_static_callback<Callback>(connect_request::from_native(raw), uv::status::from_native(status));
       });
 #endif
     }
@@ -129,7 +129,7 @@ namespace uv {
     void connect_static(connect_request &request, std::string_view name, unsigned int flags) {
       throw_if_error(uv_pipe_connect2(request.native(), native(), name.data(), name.size(), flags,
         [](uv_connect_t *raw, int status) noexcept {
-          detail::invoke_static_callback<Callback>(connect_request::from_native(raw), result<void>{status});
+          detail::invoke_static_callback<Callback>(connect_request::from_native(raw), uv::status::from_native(status));
         }));
     }
 

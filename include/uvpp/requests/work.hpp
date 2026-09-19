@@ -15,7 +15,7 @@ namespace uv {
   class work_request final : public basic_request<work_request, uv_work_t> {
   public:
     using work_callback = std::function<void(work_request&)>;
-    using after_callback = std::function<void(work_request&, result<void>)>;
+    using after_callback = std::function<void(work_request&, uv::status)>;
 
     void set_callbacks(work_callback work, after_callback after) {
       work_callback_ = std::move(work);
@@ -50,7 +50,7 @@ namespace uv {
       work_callback_ = {};
 
       if (callback) {
-        detail::invoke_callback(callback, *this, result<void>{status});
+        detail::invoke_callback(callback, *this, uv::status::from_native(status));
       }
     }
 
@@ -61,7 +61,7 @@ namespace uv {
 
     template<auto Callback>
     void invoke_after_static(int status) noexcept {
-      detail::invoke_static_callback<Callback>(*this, result<void>{status});
+      detail::invoke_static_callback<Callback>(*this, uv::status::from_native(status));
     }
 
   private:

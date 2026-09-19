@@ -13,7 +13,7 @@ namespace uv {
 
   class write_request final : public basic_request<write_request, uv_write_t> {
   public:
-    using callback = std::function<void(write_request&, result<void>)>;
+    using callback = std::function<void(write_request&, uv::status)>;
 
     void set_callback(callback cb) {
       callback_ = std::move(cb);
@@ -24,7 +24,7 @@ namespace uv {
       callback_ = {};
 
       if (callback) {
-        detail::invoke_callback(callback, *this, result<void>{status});
+        detail::invoke_callback(callback, *this, uv::status::from_native(status));
       }
     }
 

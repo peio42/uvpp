@@ -100,7 +100,7 @@ uv::timer timer(loop);
 timer.start_static<on_tick>(250ms);
 ```
 
-Immediate submission failures throw `uv::error`. Asynchronous completion is reported through `uv::result<void>` or a typed result object.
+Immediate submission failures throw `uv::error`. Asynchronous completion is reported through `uv::status` (an alias for `uv::result<void>`) or a typed result object.
 
 ```cpp
 try {
@@ -142,7 +142,7 @@ Streams expose libuv's accept/read/write model with typed wrappers.
 uv::tcp server(loop);
 server.bind(uv::ipv4{"127.0.0.1", 2345});
 
-server.listen([&](uv::tcp& srv, uv::result<void> status) {
+server.listen([&](uv::tcp& srv, uv::status status) {
   if (!status) {
     return;
   }

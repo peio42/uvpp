@@ -104,14 +104,14 @@ namespace uv {
     template<auto Callback>
     void connect_static(connect_request &request, const ipv4 &addr) {
       throw_if_error(uv_tcp_connect(request.native(), native(), addr.native_sockaddr(), [](uv_connect_t *raw, int status) noexcept {
-        detail::invoke_static_callback<Callback>(connect_request::from_native(raw), result<void>{status});
+        detail::invoke_static_callback<Callback>(connect_request::from_native(raw), uv::status::from_native(status));
       }));
     }
 
     template<auto Callback>
     void connect_static(connect_request &request, const ipv6 &addr) {
       throw_if_error(uv_tcp_connect(request.native(), native(), addr.native_sockaddr(), [](uv_connect_t *raw, int status) noexcept {
-        detail::invoke_static_callback<Callback>(connect_request::from_native(raw), result<void>{status});
+        detail::invoke_static_callback<Callback>(connect_request::from_native(raw), uv::status::from_native(status));
       }));
     }
 

@@ -13,13 +13,13 @@ try {
 }
 ```
 
-Asynchronous failures happen later, in a libuv completion callback. They are delivered through `uv::result<void>` or an operation-specific result object.
+Asynchronous failures happen later, in a libuv completion callback. They are delivered through `uv::status` (an alias for `uv::result<void>`) or an operation-specific result object.
 
 ```cpp
 uv::connect_request request;
 
 client.connect(request, uv::ipv4{"127.0.0.1", 2345},
-  [](uv::connect_request&, uv::result<void> result) {
+  [](uv::connect_request&, uv::status result) {
     if (!result) {
       auto ec = result.error();
       (void)ec;

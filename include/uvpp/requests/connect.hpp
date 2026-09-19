@@ -13,7 +13,7 @@ namespace uv {
 
   class connect_request final : public basic_request<connect_request, uv_connect_t> {
   public:
-    using callback = std::function<void(connect_request&, result<void>)>;
+    using callback = std::function<void(connect_request&, uv::status)>;
 
     void set_callback(callback cb) {
       callback_ = std::move(cb);
@@ -24,7 +24,7 @@ namespace uv {
       callback_ = {};
 
       if (callback) {
-        detail::invoke_callback(callback, *this, result<void>{status});
+        detail::invoke_callback(callback, *this, uv::status::from_native(status));
       }
     }
 

@@ -24,7 +24,7 @@ namespace uv {
 
     bool ok() const noexcept { return status_ >= 0; }
     explicit operator bool() const noexcept { return ok(); }
-    result<void> status() const noexcept { return result<void>{status_}; }
+    uv::status status() const noexcept { return uv::status::from_native(status_); }
 
     const uv_stat_t *previous() const noexcept { return previous_; }
     const uv_stat_t *current() const noexcept { return current_; }
