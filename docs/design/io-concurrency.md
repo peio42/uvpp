@@ -52,8 +52,10 @@ tasks or close already accepted connections.
 ## Validation
 
 The coroutine tests cover second same-direction operations returning `UV_EBUSY`,
-stream and UDP opposite-direction overlap, listener accept exclusivity, terminal
-slot release, cancellation, and active-I/O close rejection. See
+including `read_some()` versus `receive_handle()` and `write()` versus
+`write_with_handle()` on an IPC pipe. They also cover stream and UDP
+opposite-direction overlap, listener accept exclusivity, terminal slot release,
+cancellation, and active-I/O close rejection. See
 [`tests/test-co.cpp`](../../tests/test-co.cpp).
 
 This implementation evidence feeds the remaining operation, buffer, ownership,
