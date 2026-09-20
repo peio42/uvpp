@@ -115,6 +115,11 @@ namespace uv {
       : private native_storage<resolve_awaiter<ExplicitResult>, uv_getaddrinfo_t, uv_req_t> {
       using storage_type = native_storage<resolve_awaiter<ExplicitResult>, uv_getaddrinfo_t, uv_req_t>;
 
+      // native_storage performs the private native-to-awaiter recovery used
+      // by the completion trampoline.  The inheritance remains private so
+      // high-level resolve does not expose raw request ownership.
+      friend storage_type;
+
     public:
       resolve_awaiter(std::optional<std::string_view> node,
                       std::optional<std::string_view> service,
@@ -182,11 +187,9 @@ namespace uv {
 
     private:
       static void on_complete(uv_getaddrinfo_t *raw, int status, addrinfo *addresses) noexcept {
-        // The native object is the first object in storage_type.  Keep this
-        // recovery private so this high-level request exposes no raw request
-        // ownership API and never repurposes uv_req_t::data.
-        auto *storage = reinterpret_cast<storage_type *>(raw);
-        auto &self = *static_cast<resolve_awaiter *>(storage);
+        // Keep native recovery private so this high-level request exposes no
+        // raw request ownership API and never repurposes uv_req_t::data.
+        auto &self = storage_type::from_native(raw);
         self.complete(status, addresses);
       }
 
