@@ -224,12 +224,11 @@ TEST(UvppV3Coroutine, resolveReturnsOwnedAddressesOnTheSpawnLoop) {
   uv::loop loop;
   std::optional<uv::resolved_addresses> addresses;
 
-  addrinfo hints{};
-  hints.ai_family = AF_INET;
-  hints.ai_socktype = SOCK_STREAM;
-
   auto lookup = [&]() -> uv::co::task<void> {
-    addresses.emplace(co_await uv::resolve("localhost", "80", &hints));
+    addresses.emplace(co_await uv::resolve("localhost", "80", uv::resolve_options{
+      .family = AF_INET,
+      .socket_type = SOCK_STREAM,
+    }));
   };
 
   auto execution = uv::co::spawn(loop, lookup());
@@ -247,11 +246,10 @@ TEST(UvppV3Coroutine, resolveOpsReportsNativeFailureAsAResult) {
   uv::loop loop;
   std::optional<uv::resolve_result> outcome;
 
-  addrinfo hints{};
-  hints.ai_socktype = -1;
-
   auto lookup = [&]() -> uv::co::task<void> {
-    outcome.emplace(co_await uv::ops::resolve("localhost", "80", &hints));
+    outcome.emplace(co_await uv::ops::resolve("localhost", "80", uv::resolve_options{
+      .socket_type = -1,
+    }));
   };
 
   auto execution = uv::co::spawn(loop, lookup());
@@ -268,11 +266,10 @@ TEST(UvppV3Coroutine, resolveOpsReportsNativeFailureAsAResult) {
 TEST(UvppV3Coroutine, resolveThrowsNativeFailureAtTheAwait) {
   uv::loop loop;
 
-  addrinfo hints{};
-  hints.ai_socktype = -1;
-
   auto lookup = [&]() -> uv::co::task<void> {
-    (void)co_await uv::resolve("localhost", "80", &hints);
+    (void)co_await uv::resolve("localhost", "80", uv::resolve_options{
+      .socket_type = -1,
+    });
   };
 
   auto execution = uv::co::spawn(loop, lookup());

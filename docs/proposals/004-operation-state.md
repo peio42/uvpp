@@ -86,7 +86,7 @@ before delivering a failed connection. It is a family-specific prototype, not ye
 a common coroutine frontend.
 
 DNS resolution is a second request-family prototype. Its awaiter owns stable
-`uv_getaddrinfo_t` storage and copied node/service/scalar-hints through native
+`uv_getaddrinfo_t` storage and copied node/service/`resolve_options` through native
 completion without consuming `uv_req_t::data`. It releases its stop registration
 before task delivery, frees the native `addrinfo` list when the awaiter is
 destroyed, and materializes an owned `vector<address_info>` only after callback

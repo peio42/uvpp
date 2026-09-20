@@ -28,6 +28,17 @@ namespace uv {
   using resolved_addresses = std::vector<address_info>;
   using resolve_result = result<resolved_addresses>;
 
+  // Configuration for the high-level resolver.  Unlike addrinfo, this value
+  // contains only the scalar fields that uv_getaddrinfo consults as hints.
+  // It deliberately has no native-pointer members or implicit conversion to
+  // addrinfo, so it can safely be passed by value to a cold coroutine task.
+  struct resolve_options {
+    int flags = 0;
+    int family = AF_UNSPEC;
+    int socket_type = 0;
+    int protocol = 0;
+  };
+
   namespace detail {
 
     inline void getaddrinfo_trampoline(uv_getaddrinfo_t *raw, int status, addrinfo *addresses) noexcept {
@@ -107,17 +118,17 @@ namespace uv {
     public:
       resolve_awaiter(std::optional<std::string_view> node,
                       std::optional<std::string_view> service,
-                      const addrinfo *hints)
+                      std::optional<resolve_options> options)
         : node_{node ? std::optional<std::string>{std::string{*node}} : std::nullopt},
           service_{service ? std::optional<std::string>{std::string{*service}} : std::nullopt} {
-        if (hints != nullptr) {
-          // getaddrinfo only consults these scalar hint fields.  Do not retain
-          // caller pointers such as ai_addr, ai_canonname, or ai_next.
+        if (options) {
+          // uv_getaddrinfo only consults these scalar hint fields.  Keep the
+          // native representation private to the libuv call boundary.
           hints_.emplace();
-          hints_->ai_flags = hints->ai_flags;
-          hints_->ai_family = hints->ai_family;
-          hints_->ai_socktype = hints->ai_socktype;
-          hints_->ai_protocol = hints->ai_protocol;
+          hints_->ai_flags = options->flags;
+          hints_->ai_family = options->family;
+          hints_->ai_socktype = options->socket_type;
+          hints_->ai_protocol = options->protocol;
         }
       }
 
@@ -234,24 +245,40 @@ namespace uv {
 
   }
 
-  // Resolve a node/service pair on the awaiting task's loop.  Inputs and the
-  // relevant scalar hint fields are copied before submission.  Operational
-  // submission and completion failures throw uv::error at co_await; allocation
-  // while copying inputs or materializing the returned vector may still throw.
+  // Resolve a node/service pair on the awaiting task's loop.  Inputs and
+  // resolve_options are copied before submission.  Operational submission and
+  // completion failures throw uv::error at co_await; allocation while copying
+  // inputs or materializing the returned vector may still throw.
   [[nodiscard]] inline detail::resolve_awaiter<false> resolve(
-      std::string_view node, std::string_view service, const addrinfo *hints = nullptr) {
+      std::string_view node, std::string_view service) {
     return detail::resolve_awaiter<false>{std::optional<std::string_view>{node},
-                                          std::optional<std::string_view>{service}, hints};
+                                          std::optional<std::string_view>{service}, std::nullopt};
   }
 
   [[nodiscard]] inline detail::resolve_awaiter<false> resolve(
-      std::string_view node, const addrinfo *hints = nullptr) {
-    return detail::resolve_awaiter<false>{std::optional<std::string_view>{node}, std::nullopt, hints};
+      std::string_view node, std::string_view service, resolve_options options) {
+    return detail::resolve_awaiter<false>{std::optional<std::string_view>{node},
+                                          std::optional<std::string_view>{service}, options};
   }
 
   [[nodiscard]] inline detail::resolve_awaiter<false> resolve(
-      std::nullptr_t, std::string_view service, const addrinfo *hints = nullptr) {
-    return detail::resolve_awaiter<false>{std::nullopt, std::optional<std::string_view>{service}, hints};
+      std::string_view node) {
+    return detail::resolve_awaiter<false>{std::optional<std::string_view>{node}, std::nullopt, std::nullopt};
+  }
+
+  [[nodiscard]] inline detail::resolve_awaiter<false> resolve(
+      std::string_view node, resolve_options options) {
+    return detail::resolve_awaiter<false>{std::optional<std::string_view>{node}, std::nullopt, options};
+  }
+
+  [[nodiscard]] inline detail::resolve_awaiter<false> resolve(
+      std::nullptr_t, std::string_view service) {
+    return detail::resolve_awaiter<false>{std::nullopt, std::optional<std::string_view>{service}, std::nullopt};
+  }
+
+  [[nodiscard]] inline detail::resolve_awaiter<false> resolve(
+      std::nullptr_t, std::string_view service, resolve_options options) {
+    return detail::resolve_awaiter<false>{std::nullopt, std::optional<std::string_view>{service}, options};
   }
 
   namespace ops {
@@ -260,19 +287,35 @@ namespace uv {
     // completion failures, including completed cancellation, are returned as
     // resolve_result errors.  C++ setup/materialization failures may throw.
     [[nodiscard]] inline detail::resolve_awaiter<true> resolve(
-        std::string_view node, std::string_view service, const addrinfo *hints = nullptr) {
+        std::string_view node, std::string_view service) {
       return detail::resolve_awaiter<true>{std::optional<std::string_view>{node},
-                                           std::optional<std::string_view>{service}, hints};
+                                           std::optional<std::string_view>{service}, std::nullopt};
     }
 
     [[nodiscard]] inline detail::resolve_awaiter<true> resolve(
-        std::string_view node, const addrinfo *hints = nullptr) {
-      return detail::resolve_awaiter<true>{std::optional<std::string_view>{node}, std::nullopt, hints};
+        std::string_view node, std::string_view service, resolve_options options) {
+      return detail::resolve_awaiter<true>{std::optional<std::string_view>{node},
+                                           std::optional<std::string_view>{service}, options};
     }
 
     [[nodiscard]] inline detail::resolve_awaiter<true> resolve(
-        std::nullptr_t, std::string_view service, const addrinfo *hints = nullptr) {
-      return detail::resolve_awaiter<true>{std::nullopt, std::optional<std::string_view>{service}, hints};
+        std::string_view node) {
+      return detail::resolve_awaiter<true>{std::optional<std::string_view>{node}, std::nullopt, std::nullopt};
+    }
+
+    [[nodiscard]] inline detail::resolve_awaiter<true> resolve(
+        std::string_view node, resolve_options options) {
+      return detail::resolve_awaiter<true>{std::optional<std::string_view>{node}, std::nullopt, options};
+    }
+
+    [[nodiscard]] inline detail::resolve_awaiter<true> resolve(
+        std::nullptr_t, std::string_view service) {
+      return detail::resolve_awaiter<true>{std::nullopt, std::optional<std::string_view>{service}, std::nullopt};
+    }
+
+    [[nodiscard]] inline detail::resolve_awaiter<true> resolve(
+        std::nullptr_t, std::string_view service, resolve_options options) {
+      return detail::resolve_awaiter<true>{std::nullopt, std::optional<std::string_view>{service}, options};
     }
 
   } // namespace ops
