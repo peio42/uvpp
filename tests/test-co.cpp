@@ -301,6 +301,38 @@ TEST(UvppV3Coroutine, resolveStopRetainsTheRequestUntilItsTerminalCallback) {
   loop.close();
 }
 
+TEST(UvppV3Coroutine, resolvePreexistingStopCompletesWithoutSubmitting) {
+  uv::loop loop;
+  uv::co::task_scope scope(loop);
+  std::optional<uv::resolve_result> outcome;
+  bool stop_observed = false;
+
+  auto lookup = [&]() -> uv::co::task<void> {
+    stop_observed = co_await uv::co::stop_requested();
+    outcome.emplace(co_await uv::ops::resolve("localhost", "80"));
+  };
+  auto parent = [&]() -> uv::co::task<void> {
+    // task_scope starts its children immediately.  Stopping it first means the
+    // child reaches resolve with its inherited cancellation state already set.
+    scope.request_stop();
+    scope.spawn(lookup());
+    co_await scope.join();
+  };
+
+  auto execution = uv::co::spawn(loop, parent());
+
+  // A submitted uv_getaddrinfo request completes only through a later native
+  // callback.  Synchronous root completion therefore proves that resolve took
+  // its pre-submission stop path instead.
+  EXPECT_TRUE(execution.done());
+  EXPECT_TRUE(stop_observed);
+  ASSERT_TRUE(outcome.has_value());
+  EXPECT_FALSE(*outcome);
+  EXPECT_EQ(outcome->error(), uv::make_error_code(UV_ECANCELED));
+  EXPECT_NO_THROW(execution.rethrow_if_failed());
+  EXPECT_NO_THROW(loop.close());
+}
+
 TEST(UvppV3Coroutine, sleepForDeliversTaskFailureToTheSpawnHandle) {
   uv::loop loop;
 
