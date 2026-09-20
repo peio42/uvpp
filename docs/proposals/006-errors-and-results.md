@@ -181,7 +181,8 @@ throwing/explicit owner-close surface is implemented as `close()` and
 DNS resolution now supplies the first paired request surface: `uv::resolve(...)`
 throws native submission/completion failures and `uv::ops::resolve(...)` returns
 `result<resolved_addresses>`, including completed `UV_ECANCELED`. It owns copied
-values rather than exposing libuv's address list. Connect/read/write/send
+values rather than exposing libuv's address list; resolver hints use the
+value-type `resolve_options`, not native `addrinfo`. Connect/read/write/send
 adaptation remains unfinished. See the
 [v3 error guide](../user/errors.md) for current availability.
 

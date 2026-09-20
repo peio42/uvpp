@@ -18,10 +18,23 @@ uv::co::task<void> connect_later() {
 `resolved_addresses` is `std::vector<address_info>`. Each `address_info`
 contains a copied socket address, the relevant address-family/socket/protocol
 fields, and a copied canonical name. It never borrows libuv's `addrinfo` list.
-Pass an optional `addrinfo` hints pointer to select its scalar `ai_flags`,
-`ai_family`, `ai_socktype`, and `ai_protocol` fields. Those fields, the node,
-and the service are copied before native submission; no caller input must remain
-alive after the `resolve(...)` expression has created its awaiter.
+
+`resolve` accepts a value configuration rather than a native `addrinfo` hint
+pointer:
+
+```cpp
+auto addresses = co_await uv::resolve("localhost", "443", uv::resolve_options{
+  .family = AF_INET,
+  .socket_type = SOCK_STREAM,
+});
+```
+
+`resolve_options` defaults to `flags = 0`, `family = AF_UNSPEC`,
+`socket_type = 0`, and `protocol = 0`. It exposes precisely the scalar values
+that libuv uses as hints. The configuration, node, and service are copied before
+native submission; no caller input must remain alive after the `resolve(...)`
+expression has created its awaiter. The same configuration overloads are
+available as `uv::ops::resolve`.
 
 ## Error surfaces
 
