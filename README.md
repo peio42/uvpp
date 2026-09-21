@@ -59,12 +59,14 @@ make test          # default compiler suite and examples
 make test-all      # GCC and Clang suites
 make examples      # example binaries in build/<compiler>/examples/
 make package VERSION=<package-version>
+make checksums VERSION=<package-version>
 ```
 
 For focused work, run `make test-filter TEST_FILTER='Suite.Name'`. Add
 `GTEST_ARGS=--gtest_brief=1` to a test command to show only test failures.
 
-Packaging produces `dist/uvpp-<package-version>.tar.gz` and `dist/checksums.txt`.
+Packaging produces `dist/uvpp-<package-version>.tar.gz`; `make checksums` writes
+`dist/checksums.txt` for that archive.
 The generated archive contains its `VERSION` file; packaging does not modify the
 checkout.
 

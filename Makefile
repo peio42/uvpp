@@ -1,5 +1,5 @@
 .PHONY: clean build test test-filter examples build-gcc build-clang build-all test-gcc test-clang test-all \
-	test-asan-ubsan measure-cleanup package
+	test-asan-ubsan measure-cleanup package checksums
 
 CXX ?= g++
 CXX_ID ?= $(notdir $(CXX))
@@ -113,6 +113,16 @@ package:
 	printf '%s\n' "$(VERSION)" > $(DIST_DIR)/uvpp-$(VERSION)/VERSION
 	@if [ -f LICENSE ]; then cp LICENSE $(DIST_DIR)/uvpp-$(VERSION)/; fi
 	tar -czf $(DIST_DIR)/uvpp-$(VERSION).tar.gz -C $(DIST_DIR) uvpp-$(VERSION)
+
+checksums:
+	@if [ -z "$(VERSION)" ]; then \
+		echo "VERSION is required, example: make checksums VERSION=2.0.0"; \
+		exit 1; \
+	fi
+	@if [ ! -f "$(DIST_DIR)/uvpp-$(VERSION).tar.gz" ]; then \
+		echo "Missing package: $(DIST_DIR)/uvpp-$(VERSION).tar.gz"; \
+		exit 1; \
+	fi
 	cd $(DIST_DIR) && sha256sum uvpp-$(VERSION).tar.gz > checksums.txt
 
 clean:
