@@ -7,7 +7,8 @@ low-level wrappers own inline native storage, disable copying/moving, and requir
 explicit close without a destructor fallback. These wrappers are still awaiting
 the complete `uv::raw` namespace migration.
 
-Implemented high-level TCP/pipe connections/listeners, UDP sockets, and files
+Implemented high-level TCP/pipe connections/listeners, UDP sockets, files, and
+processes
 move ownership of stable storage. Their native addresses and callback reconstruction
 remain valid after a move. Named native accessors borrow; they do not transfer
 close authority or permit replacing an operation's callback slots.
@@ -30,6 +31,12 @@ Direct-owner destruction initiates asynchronous close when preconditions hold.
 Destroying owners with incompatible active I/O, or listeners with pending accept,
 is a terminating violation. Destructors never drive the loop. The application
 retains and drives the loop until all native close callbacks finish.
+
+The process owner has a stricter precondition: it cannot start native close until
+libuv has reported child exit. Destruction before exit retains stable process
+state through the exit callback and starts close only then; it neither kills the
+child nor runs a nested loop. `wait()` has one cancellable coroutine consumer
+slot, while the exit result itself remains retained for later waits.
 
 `uv::fs::file` is a request-based exception: `uv_fs_close` has a completion
 status. Submission failure leaves its descriptor open. After a native close

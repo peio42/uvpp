@@ -16,13 +16,13 @@ int main() {
   uv::loop loop;
   uv::pipe stdout_pipe(loop);
 
-  auto options = uv::process_options::make("/bin/sh")
+  auto options = uv::raw::process_options::make("/bin/sh")
     .args({"-c", "printf 'hello from child process\\n'"})
     .ignore_stdin()
     .pipe_stdout(stdout_pipe)
     .inherit_stderr();
 
-  uv::process child(loop, options, [](uv::process &process, uv::process_exit exit) {
+  uv::raw::process child(loop, options, [](uv::raw::process &process, uv::raw::process_exit exit) {
     std::cout << "child exited status=" << exit.status
               << " signal=" << exit.signal << '\n';
     process.close();

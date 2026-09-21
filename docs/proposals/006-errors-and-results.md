@@ -56,6 +56,13 @@ while registering a joining close waiter may still throw. Native handle close ha
 no completion status to adapt. The operation remains non-cancellable once it has
 started; see [002](002-async-ownership.md) for its state and lifetime contract.
 
+The process owner follows the same pairing for `wait()` and close:
+`co_await child.wait()` throws `UV_EBADF`, `UV_EBUSY`, or `UV_ECANCELED`, while
+`co_await uv::ops::wait(child)` returns `result<process_exit>`. A nonzero exit
+status or terminating signal is payload, not an operation error. `kill(signum)`
+throws immediate native failure and `uv::ops::kill(child, signum)` returns
+`uv::status`.
+
 ## Unified Operation Results
 
 V3 uses `uv::result<T>` and `uv::result<void>` as its common value/error

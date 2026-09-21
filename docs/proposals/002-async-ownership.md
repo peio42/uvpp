@@ -199,6 +199,16 @@ result, stops native receive, releases its callback/cancellation slots, then
 resumes. Active UDP send/receive destruction remains an explicit contract
 violation, and resource-scope cleanup rejects it until task work has joined.
 
+The experimental `uv::process` owns stable `uv_process_t` storage and launches
+in its synchronous constructor. Its `wait()` awaiter owns one exclusive
+cancellable consumer slot; cancellation releases that slot only, and the exit
+callback retains `process_exit` for a later wait. `close()` and `request_close()`
+reject a live child with `UV_EBUSY`; after exit they use the standard native-close
+completion barrier. Owner destruction before exit retains state until the exit
+callback and only then closes it, avoiding an early Unix close that would forfeit
+reaping. This slice has no stdio owners, process cancellation policy, or
+`resource_scope` adoption.
+
 The implemented experimental owner concurrency matrix is now recorded in
 [the current design](../design/io-concurrency.md): one exclusive inbound and
 outbound slot per connection or UDP socket, opposite-direction overlap allowed,

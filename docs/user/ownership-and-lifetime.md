@@ -27,6 +27,10 @@ stops the persistent native subscription and completes a current `next()` with
 `UV_ECANCELED`; it then waits for the native close callback. Signal sources are
 not yet resource-scope registrations. See [Signals](signals.md).
 
+`process` is also move-only and retains its stable `uv_process_t` through exit and
+native close. It deliberately rejects close while the child is alive; destruction
+then retains the state until exit before initiating close. See [Processes](processes.md).
+
 ## Borrowing
 
 Produce borrowed connection/socket views explicitly with `.view()`. A view is not
