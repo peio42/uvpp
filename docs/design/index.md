@@ -26,7 +26,7 @@ alignment; the tests provide examples of coverage, not a proof of every contract
 
 | Area | Implementation | Existing tests |
 | --- | --- | --- |
-| V3 owners and composition | [owners](../../include/uvpp/net/tcp_connection.hpp), [tasks](../../include/uvpp/co/task.hpp), [resource scopes](../../include/uvpp/co/resource_scope.hpp) | [coroutines](../../tests/test-co.cpp) |
+| V3 owners and composition | [owners](../../include/uvpp/net/tcp_connection.hpp), [tasks](../../include/uvpp/co/task.hpp), [resource scopes](../../include/uvpp/co/resource_scope.hpp) | [coroutines](../../tests/test-co-core.cpp) |
 | Native identity and views | [native storage](../../include/uvpp/core/native.hpp), [handle views](../../include/uvpp/handles/handle_view.hpp) | [layout](../../tests/test-layout.cpp) |
 | Loop and errors | [loop](../../include/uvpp/core/loop.hpp), [errors](../../include/uvpp/core/error.hpp) | [loop](../../tests/test-loop.cpp), [core](../../tests/test-core.cpp) |
 | Callbacks and requests | [invocation boundary](../../include/uvpp/core/callback.hpp), [submission](../../include/uvpp/requests/request.hpp), [DNS](../../include/uvpp/requests/dns.hpp) | [core](../../tests/test-core.cpp), [network](../../tests/test-network.cpp) |

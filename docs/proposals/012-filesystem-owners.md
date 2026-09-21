@@ -49,15 +49,17 @@ return the recorded terminal status. The destructor diagnoses an unclosed owner
 or active borrowed I/O. `resource_scope` owns files, returns a `file_view`, and
 releases an owner after terminal close before delivering a close error.
 
-Tests in [`test-co.cpp`](../../tests/test-co.cpp) cover a normal round trip,
-explicit open/write failures, and scope cleanup.
+Tests in [`test-co-filesystem.cpp`](../../tests/test-co-filesystem.cpp) cover a normal round trip,
+explicit open/write failures, scope cleanup, same-direction exclusion,
+read/write overlap, active-I/O close rejection, and cancellation retaining a
+borrowed write through terminal completion.
 
 ## Remaining work
 
 - Decide the supported fallback when an unclosed standalone owner is destroyed;
   the current diagnostic is deliberately strict.
-- Add deterministic fault injection for submission and close-completion errors,
-  cancellation races, concurrent close waiters, and same-direction exclusion.
+- Add deterministic fault injection for submission and close-completion errors
+  and cancellation races.
 - Design owning reads, scatter/gather I/O, copying helpers, queueing, directory
   ownership, metadata operations, and close-error aggregation.
 - Complete the `uv::raw::fs` namespace migration and adapt the callback API to

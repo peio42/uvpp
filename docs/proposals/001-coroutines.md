@@ -183,7 +183,7 @@ are foundations. An experimental focused-header slice now provides `task<T>`, ro
 `spawn(loop, task<T>)`, move-only child-task await, `spawn_handle<T>::join()`,
 `request_stop()`, non-void `take_result()`, `sleep_for(duration)`, one-shot `uv::tcp_listener::accept()`, and a same-loop
 `task_scope` for `task<void>` children; see [the coroutine guide](../user/coroutines.md) and
-[`tests/test-co.cpp`](../../tests/test-co.cpp). Root `join()` is a multiple-observer
+[`tests/test-co-core.cpp`](../../tests/test-co-core.cpp). Root `join()` is a multiple-observer
 same-loop completion barrier; result extraction is separate and single-consumer.
 The root holds a dedicated cancellation state inherited by nested children. It
 validates cold root startup, inherited child loop binding, timer completion/close

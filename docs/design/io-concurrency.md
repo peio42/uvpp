@@ -2,9 +2,9 @@
 
 This document records the implemented concurrency contract for the experimental
 v3 coroutine owners. It applies to high-level `uv::tcp_connection`,
-`uv::pipe_connection`, `uv::udp_socket`, `uv::tcp_listener`, and
-`uv::pipe_listener`; it does not extend the separate raw callback API or claim a
-complete stable v3 surface.
+`uv::pipe_connection`, `uv::udp_socket`, `uv::fs::file`, `uv::tcp_listener`,
+and `uv::pipe_listener`; it does not extend the separate raw callback API or
+claim a complete stable v3 surface.
 
 ## Operation slots
 
@@ -54,11 +54,18 @@ tasks or close already accepted connections.
 ## Validation
 
 The coroutine tests cover second same-direction operations returning `UV_EBUSY`,
-including `read_some()` versus `receive_handle()` and `write()` versus
-`write_with_handle()` on an IPC pipe. They also cover stream and UDP
-opposite-direction overlap, listener accept exclusivity, terminal slot release,
-cancellation, and active-I/O close rejection. See
-[`tests/test-co.cpp`](../../tests/test-co.cpp).
+including filesystem read/read and write/write, and a filesystem read followed
+immediately by another read from its continuation, which proves the terminal
+callback releases the read slot before resuming user code. They also cover
+`read_some()` versus
+`receive_handle()` and `write()` versus `write_with_handle()` on an IPC pipe.
+They also cover filesystem, stream, and UDP opposite-direction overlap, listener
+accept exclusivity, terminal slot release, cancellation, and active-I/O close
+rejection. See
+[`test-co-filesystem.cpp`](../../tests/test-co-filesystem.cpp),
+[`test-co-tcp.cpp`](../../tests/test-co-tcp.cpp),
+[`test-co-pipe.cpp`](../../tests/test-co-pipe.cpp), and
+[`test-co-udp.cpp`](../../tests/test-co-udp.cpp).
 
 This implementation evidence feeds the remaining operation, buffer, ownership,
 and error-policy work in proposals [002](../proposals/002-async-ownership.md),
