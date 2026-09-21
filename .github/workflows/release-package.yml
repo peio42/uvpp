@@ -8,7 +8,7 @@ on:
         required: true
         type: string
       run_tests:
-        description: Run GCC and Clang tests again instead of requiring existing CI checks
+        description: Re-run GCC, Clang, and ASan/UBSan instead of requiring existing CI checks
         required: false
         type: boolean
         default: false
@@ -52,7 +52,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           api="repos/$GITHUB_REPOSITORY/commits/$GITHUB_SHA/check-runs"
-          for check in GCC Clang; do
+          for check in "GCC" "Clang" "ASan / UBSan"; do
             conclusion="$(gh api "$api" --jq ".check_runs[] | select(.name == \"$check\") | .conclusion" | tail -n 1)"
             if [ "$conclusion" != "success" ]; then
               echo "Required CI check is not successful for $GITHUB_SHA: $check ($conclusion)"
@@ -64,12 +64,46 @@ jobs:
 
       - name: Run validation tests
         if: ${{ inputs.run_tests }}
-        run: make clean test-all
+        run: |
+          make clean
+          make test-all
+          make test-asan-ubsan
 
       - name: Build package
         env:
           UVPP_VERSION: ${{ inputs.version }}
         run: make package VERSION="$UVPP_VERSION"
+
+      - name: Extract package
+        env:
+          UVPP_VERSION: ${{ inputs.version }}
+        run: |
+          mkdir -p release-test
+          tar -xzf "dist/uvpp-$UVPP_VERSION.tar.gz" -C release-test
+
+      - name: Configure, build, and install package
+        env:
+          UVPP_VERSION: ${{ inputs.version }}
+          UVPP_INSTALL_PREFIX: ${{ runner.temp }}/uvpp
+        run: |
+          cmake -S "release-test/uvpp-$UVPP_VERSION" -B release-test/uvpp-build
+          cmake --build release-test/uvpp-build
+          cmake --install release-test/uvpp-build --prefix "$UVPP_INSTALL_PREFIX"
+
+      - name: Compile external CMake consumer
+        env:
+          UVPP_VERSION: ${{ inputs.version }}
+          UVPP_INSTALL_PREFIX: ${{ runner.temp }}/uvpp
+        run: |
+          cmake -S "release-test/uvpp-$UVPP_VERSION/examples/cmake-consumer" \
+            -B release-test/external-consumer-build \
+            -DCMAKE_PREFIX_PATH="$UVPP_INSTALL_PREFIX"
+          cmake --build release-test/external-consumer-build
+
+      - name: Generate checksums
+        env:
+          UVPP_VERSION: ${{ inputs.version }}
+        run: make checksums VERSION="$UVPP_VERSION"
 
       - name: Create release tag
         env:
