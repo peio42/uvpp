@@ -218,6 +218,12 @@ The raw namespace/error-policy migration, complete paired operation surfaces,
 active spawn-handle retention fallback, generic resource ownership, and broader
 validation remain unfinished. Specialized proposals retain their open decisions.
 
+The process slice now provides `uv::process`: synchronous `uv_spawn()`
+construction, one cancellable `wait()` consumer, retained terminal exit result,
+immediate `kill()`, and close only after exit. Its historical callback wrapper is
+available as `uv::raw::process`. Stdio, process supervision, and resource-scope
+adoption remain outside this slice.
+
 The README and `docs/user/` now teach v3 exclusively, including explicit availability
 and limitations; superseded user guides are removed rather than archived.
 `docs/design/` records implemented contracts, contributor rules, and remaining

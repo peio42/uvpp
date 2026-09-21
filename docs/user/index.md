@@ -14,6 +14,7 @@ as available below are experimental and may change before release.
 6. [Buffers](buffers.md): borrowed payloads and completion lifetimes.
 7. [Filesystem](filesystem.md): owned files and coroutine I/O.
 8. [Signals](signals.md): persistent signal subscriptions and individual waits.
+9. [Processes](processes.md): spawn a child, await its exit, and close it.
 
 ## Networking
 
@@ -31,8 +32,9 @@ as available below are experimental and may change before release.
 | Resource cleanup | `uv::co::resource_scope` for TCP/pipe connections and listeners, UDP sockets, and files |
 | Network owners | `tcp_connection`, `tcp_listener`, `pipe_connection`, `pipe_listener`, `udp_socket` |
 | Signal owner | `signal_source`, persistent `next()`, `uv::ops::next`, and terminal close |
+| Process owner | `process`, synchronous spawn, `wait()`, `kill()`, and close after exit; stdio and resource-scope ownership remain deferred |
 | Explicit-result operations | `uv::ops::close(owner)`, `uv::ops::resolve(...)`, and `uv::ops::fs::{open,read,write,close}` |
-| Raw layer | `uv::raw` is the target namespace; the low-level namespace/error-policy migration is unfinished |
+| Raw layer | `uv::raw::process` is available; the broader low-level namespace/error-policy migration is unfinished |
 | Filesystem | `uv::fs::{open,read,write,close}` with `uv::ops::fs` result counterparts; directories and broader filesystem operations remain proposed |
 | Other domains | Process, watchers, threading and utility code exists, but their v3 surfaces have not been consolidated in these guides |
 
