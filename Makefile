@@ -102,15 +102,15 @@ package:
 		echo "VERSION is required, example: make package VERSION=2.0.0"; \
 		exit 1; \
 	fi
-	@if ! printf '%s\n' "$(VERSION)" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+([-.][0-9A-Za-z.-]+)?$$'; then \
+	@if ! printf '%s\n' "$(VERSION)" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?(\+[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?$$'; then \
 		echo "Invalid VERSION: $(VERSION)"; \
-		echo "Expected semver-like value, example: 2.0.0 or 2.0.0-rc.1"; \
+		echo "Expected semantic version, example: 2.0.0 or 2.0.0-rc.1"; \
 		exit 1; \
 	fi
-	printf '%s\n' "$(VERSION)" > VERSION
 	rm -rf $(DIST_DIR)/uvpp-$(VERSION) $(DIST_DIR)/uvpp-$(VERSION).tar.gz $(DIST_DIR)/checksums.txt
 	mkdir -p $(DIST_DIR)/uvpp-$(VERSION)
-	cp -R README.md CMakeLists.txt cmake VERSION include docs examples benchmarks $(DIST_DIR)/uvpp-$(VERSION)/
+	cp -R README.md CMakeLists.txt cmake include docs examples benchmarks $(DIST_DIR)/uvpp-$(VERSION)/
+	printf '%s\n' "$(VERSION)" > $(DIST_DIR)/uvpp-$(VERSION)/VERSION
 	@if [ -f LICENSE ]; then cp LICENSE $(DIST_DIR)/uvpp-$(VERSION)/; fi
 	tar -czf $(DIST_DIR)/uvpp-$(VERSION).tar.gz -C $(DIST_DIR) uvpp-$(VERSION)
 	cd $(DIST_DIR) && sha256sum uvpp-$(VERSION).tar.gz > checksums.txt
