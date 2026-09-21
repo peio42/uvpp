@@ -12,6 +12,7 @@ as available below are experimental and may change before release.
 4. [Ownership and lifetime](ownership-and-lifetime.md): owners, views, close, and resource scopes.
 5. [Errors](errors.md): throwing awaits, results, and setup failures.
 6. [Buffers](buffers.md): borrowed payloads and completion lifetimes.
+7. [Filesystem](filesystem.md): owned files and coroutine I/O.
 
 ## Networking
 
@@ -26,11 +27,12 @@ as available below are experimental and may change before release.
 | --- | --- |
 | Common execution | `uv::loop`, cold `uv::co::task<T>`, `spawn_handle<T>`, join, cooperative stop, timer sleep |
 | Structured execution | `uv::co::task_scope` for `task<void>` children |
-| Resource cleanup | `uv::co::resource_scope` for TCP/pipe connections and listeners, and UDP sockets |
+| Resource cleanup | `uv::co::resource_scope` for TCP/pipe connections and listeners, UDP sockets, and files |
 | Network owners | `tcp_connection`, `tcp_listener`, `pipe_connection`, `pipe_listener`, `udp_socket` |
-| Explicit-result operations | `uv::ops::close(owner)` and `uv::ops::resolve(...)`; a complete owner-I/O counterpart is not yet available |
+| Explicit-result operations | `uv::ops::close(owner)`, `uv::ops::resolve(...)`, and `uv::ops::fs::{open,read,write,close}` |
 | Raw layer | `uv::raw` is the target namespace; the low-level namespace/error-policy migration is unfinished |
-| Other domains | Filesystem, process, watchers, threading and utility code exists, but their v3 surfaces have not been consolidated in these guides |
+| Filesystem | `uv::fs::{open,read,write,close}` with `uv::ops::fs` result counterparts; directories and broader filesystem operations remain proposed |
+| Other domains | Process, watchers, threading and utility code exists, but their v3 surfaces have not been consolidated in these guides |
 
 Do not infer that a header's presence establishes the final v3 API. In particular,
 there is no documented v3 `write_copy`, `read_exactly`, general detached task,

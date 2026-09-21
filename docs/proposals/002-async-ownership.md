@@ -237,6 +237,14 @@ and active listener accept destruction terminate deterministically rather than
 releasing storage early. They exercise both explicit listener `close()` and lexical
 destruction while accept is active.
 
+The filesystem owner slice now applies the same stable-owner principle to an
+opened descriptor. Its cleanup is a request rather than `uv_close()`: a submitted
+`uv_fs_close` completion is terminal even if it reports an error, since retrying
+could act on a reused descriptor number. `resource_scope` therefore invalidates
+its `file_view` and releases the terminal file before reporting that error. An
+unclosed standalone `file` currently diagnoses destruction; the broader fallback
+policy remains open.
+
 The slice rejects destruction while its experimental read or write operation is
 active: this is an explicit contract violation, diagnosed by an assertion and
 termination in release builds. It must not be relaxed until a resource scope and

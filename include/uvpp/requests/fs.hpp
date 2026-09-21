@@ -62,7 +62,7 @@ namespace uv::fs::raw {
       callback_ = {};
 
       if (callback) {
-        detail::invoke_callback(callback, *this);
+        uv::detail::invoke_callback(callback, *this);
       }
     }
 

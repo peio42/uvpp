@@ -46,6 +46,12 @@ introduce another ownership hierarchy. DNS also provides paired request surfaces
 `co_await uv::ops::resolve(...)` returns
 `uv::result<uv::resolved_addresses>`. Full connect/read/write/send counterparts
 are still proposed; do not assume `uv::ops::write` or similar names exist.
+Filesystem provides the first complete owner-I/O pair: `uv::fs::open/read/write/close`
+throw native operational failures at the await expression, while
+`uv::ops::fs::open/read/write/close` return `result<file>`,
+`result<file_read_result>`, `result<size_t>`, and `status`. See
+[Filesystem](filesystem.md) for borrowed-buffer and terminal-close rules.
+
 The target raw layer uses explicit operational results; its namespace and error
 policy are not yet migrated throughout the implementation.
 

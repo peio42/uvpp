@@ -182,8 +182,13 @@ DNS resolution now supplies the first paired request surface: `uv::resolve(...)`
 throws native submission/completion failures and `uv::ops::resolve(...)` returns
 `result<resolved_addresses>`, including completed `UV_ECANCELED`. It owns copied
 values rather than exposing libuv's address list; resolver hints use the
-value-type `resolve_options`, not native `addrinfo`. Connect/read/write/send
-adaptation remains unfinished. See the
+value-type `resolve_options`, not native `addrinfo`. Filesystem now supplies the
+first complete paired owner-I/O slice: `uv::fs::{open,read,write,close}` throws
+native submission/completion failures, while `uv::ops::fs::{open,read,write,close}`
+returns `result<file>`, `result<file_read_result>`, `result<size_t>`, and
+`status`. Its close completion is terminal even on error, so result delivery
+cannot trigger an unsafe descriptor retry. Connect/read/write/send adaptation
+remains unfinished. See the
 [v3 error guide](../user/errors.md) for current availability.
 
 Validate equivalent immediate/delayed native failures in both styles, allocation

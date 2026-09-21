@@ -10,6 +10,7 @@
 #include <vector>
 
 #include "uvpp/co/task.hpp"
+#include "uvpp/fs/coroutines.hpp"
 #include "uvpp/net/pipe_connection.hpp"
 #include "uvpp/net/pipe_listener.hpp"
 #include "uvpp/net/tcp_connection.hpp"
@@ -22,6 +23,9 @@ namespace uv::co {
 // deliberately owns no task frames: compose it with task_scope, join those tasks
 // first, then co_await finish() to close and release every adopted owner.
 class [[nodiscard]] resource_scope {
+private:
+  class file_record;
+
 public:
   explicit resource_scope(uv::loop &execution_loop) noexcept : loop_{&execution_loop} {}
 
@@ -135,6 +139,21 @@ public:
     friend class resource_scope;
   };
 
+  class [[nodiscard]] file_registration {
+  public:
+    [[nodiscard]] uv::fs::file_view view() const noexcept {
+      return uv::fs::file_view{access_};
+    }
+
+  private:
+    explicit file_registration(std::shared_ptr<uv::fs::detail::file_access> access) noexcept
+      : access_{std::move(access)} {}
+
+    std::shared_ptr<uv::fs::detail::file_access> access_{};
+
+    friend class resource_scope;
+  };
+
   // Transfers the sole tcp_connection owner into the scope. Reserving and
   // creating its access token before the move give allocation failure a strong
   // rollback: caller ownership has not yet changed.
@@ -225,6 +244,26 @@ public:
     access->listener = resource->listener.get();
     resources_.push_back(std::move(resource));
     return pipe_listener_registration{std::move(access)};
+  }
+
+  // A filesystem registration gives tasks only a borrowed view.  `finish()`
+  // waits for an actual uv_fs_close completion after all borrowed I/O has
+  // settled.  A close completion error is terminal: the scope releases this
+  // owner before reporting it so a retry cannot close a reused descriptor.
+  [[nodiscard]] file_registration own(uv::fs::file &&opened) {
+    if (state_ != cleanup_state::open) {
+      throw std::logic_error{"uv::co::resource_scope cannot own after finish"};
+    }
+    if (!opened.has_execution_loop(*loop_)) {
+      throw std::logic_error{"uv::co::resource_scope registered a file from a different loop"};
+    }
+
+    resources_.reserve(resources_.size() + 1);
+    auto access = std::make_shared<uv::fs::detail::file_access>();
+    auto resource = std::make_unique<file_record>(std::move(opened), access);
+    access->owner = resource->file.get();
+    resources_.push_back(std::move(resource));
+    return file_registration{std::move(access)};
   }
 
   // finish() is deliberately a task because it is the asynchronous cleanup
@@ -386,6 +425,38 @@ private:
 
   private:
     std::shared_ptr<uv::detail::udp_socket_access> access{};
+  };
+
+  class file_record final : public resource_record_base {
+  public:
+    file_record(uv::fs::file &&owned, std::shared_ptr<uv::fs::detail::file_access> access_token)
+      : file{std::make_unique<uv::fs::file>(std::move(owned))}, access{std::move(access_token)} {}
+
+    cleanup_phase phase() const noexcept override { return cleanup_phase::close_resources; }
+
+    task<void> finish() override {
+      if (released_) {
+        co_return;
+      }
+      if (file->has_active_operation()) {
+        throw std::logic_error{
+            "uv::co::resource_scope requires task join before filesystem cleanup"};
+      }
+      auto closed = co_await uv::ops::fs::close(*file);
+      // uv_fs_close completion, including an error completion, consumes the
+      // descriptor identity. Invalidate every borrowed view and destroy the
+      // terminal owner before propagating the operational result.
+      access->owner = nullptr;
+      file.reset();
+      released_ = true;
+      closed.value();
+    }
+
+    std::unique_ptr<uv::fs::file> file{};
+
+  private:
+    std::shared_ptr<uv::fs::detail::file_access> access{};
+    bool released_ = false;
   };
 
   class loop_check_awaiter {
