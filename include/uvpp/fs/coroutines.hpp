@@ -214,6 +214,7 @@ public:
       &detail_open_awaiter::on_complete);
     if (status_ < 0) {
       continuation_ = {};
+      uv_fs_req_cleanup(this->native());
       return false;
     }
     submitted_ = true;
@@ -329,6 +330,7 @@ public:
     if (status_ < 0) {
       state_->read_active = false;
       continuation_ = {};
+      uv_fs_req_cleanup(this->native());
       return false;
     }
     submitted_ = true;
@@ -442,6 +444,7 @@ public:
     if (status_ < 0) {
       state_->write_active = false;
       continuation_ = {};
+      uv_fs_req_cleanup(this->native());
       return false;
     }
     submitted_ = true;
@@ -561,6 +564,7 @@ public:
       state_->close_waiters = nullptr;
       state_->close_active = false;
       continuation_ = {};
+      uv_fs_req_cleanup(this->native());
       return false;
     }
     return true;
