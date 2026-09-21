@@ -58,6 +58,11 @@ For an installed checkout, replace `add_subdirectory(uvpp)` with
 `find_package(uvpp REQUIRED)`. Pin the development revision you validated when
 fetching the dependency; these guides do not imply a published stable v3 package.
 
+For a source checkout, CMake derives a build identity from its Git tag and
+revision. Supply `-DUVPP_VERSION=3.0.0-rc.1` to set it explicitly. CMake package
+compatibility always uses the numeric `major.minor.patch` part, so a build such as
+`3.0.0-dev.147+4054a07` remains compatible as version `3.0.0`.
+
 ## Repository checks
 
 Google Test is additionally required for the repository tests.

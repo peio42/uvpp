@@ -1,10 +1,16 @@
 cmake_minimum_required(VERSION 3.14)
 
-file(READ "${CMAKE_CURRENT_SOURCE_DIR}/VERSION" _uvpp_version)
-string(STRIP "${_uvpp_version}" _uvpp_version)
+include(cmake/uvppVersion.cmake)
+uvpp_resolve_version("${CMAKE_CURRENT_SOURCE_DIR}")
+
+message(STATUS "uvpp package version: ${UVPP_PACKAGE_VERSION} (${UVPP_VERSION_SOURCE})")
+message(STATUS "uvpp build identity: ${UVPP_BUILD_IDENTITY}")
+if(UVPP_GIT_DESCRIBE)
+  message(STATUS "uvpp Git describe: ${UVPP_GIT_DESCRIBE}")
+endif()
 
 project(uvpp
-  VERSION ${_uvpp_version}
+  VERSION ${UVPP_PACKAGE_VERSION}
   DESCRIPTION "Header-only C++20 wrapper around libuv"
   LANGUAGES CXX
 )

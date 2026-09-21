@@ -65,6 +65,13 @@ For focused work, run `make test-filter TEST_FILTER='Suite.Name'`. Add
 `GTEST_ARGS=--gtest_brief=1` to a test command to show only test failures.
 
 Packaging produces `dist/uvpp-<package-version>.tar.gz` and `dist/checksums.txt`.
+The generated archive contains its `VERSION` file; packaging does not modify the
+checkout.
+
+When building a checkout with CMake, `UVPP_VERSION` can supply an explicit
+release identity (for example, `-DUVPP_VERSION=3.0.0-rc.1`). Otherwise CMake
+derives a build identity from Git. `PROJECT_VERSION` remains the numeric
+`major.minor.patch` compatibility version used by CMake packages.
 The examples directory still includes low-level programs awaiting API migration;
 the v3 introduction is the program above and the user guides below.
 
