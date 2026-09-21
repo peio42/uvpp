@@ -41,6 +41,46 @@ TEST(UvppV3SignalSource, remainsSubscribedBetweenSuccessiveNextCalls) {
   EXPECT_NO_THROW(loop.close());
 }
 
+TEST(UvppV3SignalSource, deliveryReleasesWaiterBeforeResumingTheContinuation) {
+  uv::loop loop;
+  uv::signal_source source(loop, SIGUSR1);
+  uv::timer first_sender(loop);
+  uv::timer second_sender(loop);
+  bool first_continuation_rearmed = false;
+  std::optional<uv::signal_number> first;
+  std::optional<uv::signal_number> second;
+
+  first_sender.start(1ms, [&](uv::timer &self) {
+    ASSERT_EQ(::raise(SIGUSR1), 0);
+    self.close();
+  });
+  second_sender.start(20ms, [&](uv::timer &self) {
+    // The second signal is deliberately separate from the first callback. The
+    // continuation must already have installed its next() wait by this point.
+    EXPECT_TRUE(first_continuation_rearmed);
+    ASSERT_EQ(::raise(SIGUSR1), 0);
+    self.close();
+  });
+
+  auto receive = [&]() -> uv::co::task<void> {
+    first.emplace(co_await source.next());
+    first_continuation_rearmed = true;
+    // Architectural invariant: delivery releases the waiter slot before
+    // resuming this coroutine, so this immediate reinstallation is valid.
+    second.emplace(co_await source.next());
+    co_await source.close();
+  };
+
+  auto execution = uv::co::spawn(loop, receive());
+  loop.run();
+
+  EXPECT_TRUE(execution.done());
+  EXPECT_NO_THROW(execution.rethrow_if_failed());
+  EXPECT_EQ(first, SIGUSR1);
+  EXPECT_EQ(second, SIGUSR1);
+  EXPECT_NO_THROW(loop.close());
+}
+
 TEST(UvppV3SignalSource, coalescesNotificationReceivedWithoutAWaiter) {
   uv::loop loop;
   uv::signal_source source(loop, SIGUSR1);
