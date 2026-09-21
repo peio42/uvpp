@@ -55,6 +55,20 @@ the same transition without waiting. A closed source cannot be restarted. Keep t
 loop alive and drive it through close completion; destruction starts cleanup but
 does not run a nested loop. `resource_scope` does not yet adopt signal sources.
 
+Construction may fail after libuv has initialized its native handle, for example
+when `uv_signal_start()` rejects signal number `0`. That rollback starts
+`uv_close()` and retains its state until the close callback. If construction is
+caught, drive the loop before calling `loop.close()`:
+
+```cpp
+try {
+  uv::signal_source invalid{loop, 0};
+} catch (const uv::error&) {
+  loop.run(); // completes constructor-rollback close
+}
+loop.close();
+```
+
 The owner is move-only and moving it preserves its native address. `native()` and
 `native_handle()` provide explicit borrowed libuv access; they do not transfer
 close authority. As with every high-level owner, the native `data` member remains
