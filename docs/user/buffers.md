@@ -18,6 +18,11 @@ mutable caller storage until completion. Only use the returned byte count; a
 stream result additionally reports `eof()`, and a UDP result reports `partial()`
 and a copied peer address. The result does not own the caller's bytes.
 
+The callback filesystem `read` and `write` operations follow the same rule:
+their supplied spans remain borrowed through the completion callback. Use
+`uv::fs::write_copy` or `uv::fs::read_owned` when the operation must own its
+source or destination storage.
+
 ```cpp
 std::array<std::byte, 4096> storage;
 auto read = co_await socket.read_some(storage);

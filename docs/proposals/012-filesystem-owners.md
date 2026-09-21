@@ -13,7 +13,9 @@ results](006-errors-and-results.md).
 
 Provide a high-level filesystem owner and paired throwing/result coroutine
 operations without imposing caller-owned `uv_fs_t` storage. Existing callback
-filesystem APIs remain available during the raw namespace migration.
+filesystem APIs remain available during the raw namespace migration; their
+default `read` and `write` borrow caller storage, while `read_owned` and
+`write_copy` make ownership explicit.
 
 ## Implemented vertical slice
 
