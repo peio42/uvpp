@@ -68,5 +68,9 @@ make test-all
 make examples
 ```
 
+To run a focused GoogleTest case while developing, use
+`make test-filter TEST_FILTER='Suite.Name'`. Add `GTEST_ARGS=--gtest_brief=1`
+to a test command to print only failures.
+
 Continue with [loop execution](loop.md), [coroutines](coroutines.md), and
 [ownership and cleanup](ownership-and-lifetime.md) before adding network I/O.

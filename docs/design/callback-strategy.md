@@ -59,4 +59,4 @@ first quiesces its pending accept and provisional child, while connection/UDP cl
 rejects incompatible active I/O.
 
 See [ownership](ownership-strategy.md), [errors](error-handling-strategy.md), and
-[coroutine lifecycle tests](../../tests/test-co.cpp).
+[coroutine lifecycle tests](../../tests/test-co-core.cpp).

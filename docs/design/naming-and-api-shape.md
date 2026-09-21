@@ -28,7 +28,7 @@ pipe, UDP, and scope prototypes. Relevant implementation references:
 | Results | [error vocabulary](../../include/uvpp/core/error.hpp), [stream I/O](../../include/uvpp/detail/stream_io.hpp) | Result names do not imply one uniform value/error interface. |
 
 Existing usage and lifecycle coverage can be found in
-[coroutine tests](../../tests/test-co.cpp), [TCP tests](../../tests/test-tcp.cpp),
+[coroutine tests](../../tests/test-co-core.cpp), [TCP tests](../../tests/test-tcp.cpp),
 [pipe tests](../../tests/test-pipe.cpp), and [UDP tests](../../tests/test-udp.cpp).
 This is a naming and surface review, not a fresh lifecycle validation.
 

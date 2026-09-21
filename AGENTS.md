@@ -32,6 +32,18 @@ uv::loop loop;
 
 - Build and run the default test suite with `make test`.
 - Run both compiler suites with `make test-all`.
+- During iterative work, use `make test-filter TEST_FILTER='Suite.Name'` to run
+  the affected GoogleTest case or suite. The Makefile tracks source and header
+  dependencies incrementally. This target deliberately excludes the separate
+  UDP allocation binary; use `make test` or `make test-all` before completion.
+- To keep routine test output compact, add `GTEST_ARGS=--gtest_brief=1`, for
+  example `make test-all GTEST_ARGS=--gtest_brief=1`. This preserves failures
+  while suppressing successful per-test output. Set `GTEST_ARGS=` for normal
+  GoogleTest progress output.
+- In managed Codex environments, a test binary may fail to launch inside the
+  filesystem sandbox with `Permission denied`. Do not retry the same test in
+  the sandbox. Request `sandbox_permissions: require_escalated` once for the
+  corresponding `make test`, `make test-all`, or filtered test command.
 - Build examples with `make examples`.
 - Build a local package with `make package VERSION=<package-version>` using the
   intended package version.

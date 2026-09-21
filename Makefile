@@ -1,4 +1,4 @@
-.PHONY: clean build test examples build-gcc build-clang build-all test-gcc test-clang test-all \
+.PHONY: clean build test test-filter examples build-gcc build-clang build-all test-gcc test-clang test-all \
 	test-asan-ubsan measure-cleanup package
 
 CXX ?= g++
@@ -9,6 +9,8 @@ DIST_DIR ?= dist
 CXXFLAGS ?= -Wall -std=c++20 -Iinclude -I..
 DEPFLAGS ?= -MMD -MP
 LDLIBS ?= -luv -pthread -lgtest
+GTEST_ARGS ?=
+TEST_FILTER ?= *
 EXAMPLE_LDLIBS ?= -luv -pthread
 
 TEST_SRCS = tests/main.cpp $(wildcard tests/test-*.cpp)
@@ -31,8 +33,6 @@ build: $(TEST_BIN) $(ALLOCATION_TEST_BIN) examples
 $(BUILD_DIR)/%.o: %.cpp
 	mkdir -p $(dir $@)
 	$(CXX) $(CXXFLAGS) $(DEPFLAGS) -MF $(@:.o=.d) -c $< -o $@
-
-$(sort $(TEST_OBJS) $(ALLOCATION_TEST_OBJS)): %.o: %.d
 
 $(TEST_BIN): $(TEST_OBJS)
 	mkdir -p $(dir $@)
@@ -59,8 +59,13 @@ $(TEST_DEPS) $(EXAMPLE_DEPS) $(METRICS_DEPS): ;
 -include $(TEST_DEPS) $(EXAMPLE_DEPS) $(METRICS_DEPS)
 
 test: build
-	$(TEST_BIN)
-	$(ALLOCATION_TEST_BIN)
+	$(TEST_BIN) $(GTEST_ARGS)
+	$(ALLOCATION_TEST_BIN) $(GTEST_ARGS)
+
+# Runs only tests selected by a GoogleTest filter.  This is intended for
+# incremental development; test and test-all remain the complete validation.
+test-filter: $(TEST_BIN)
+	$(TEST_BIN) $(GTEST_ARGS) --gtest_filter="$(TEST_FILTER)"
 
 build-gcc:
 	$(MAKE) build CXX=g++ CXX_ID=gcc
