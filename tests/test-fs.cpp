@@ -757,12 +757,13 @@ TEST(Uvpp2Fs, runsStaticMkdirCallback) {
   std::filesystem::remove_all(path);
 }
 
-TEST(Uvpp2FsSafe, ownsRequestsCleanupAndBuffers) {
+TEST(Uvpp2FsSafe, borrowsCallerBuffersUntilCompletion) {
   auto path = temp_path("safe-read-write.txt");
   std::filesystem::remove(path);
 
   uv::loop loop;
   std::array payload{'s', 'a', 'f', 'e'};
+  std::array<std::byte, 4> output{};
   bool done = false;
   int callbacks = 0;
 
@@ -778,12 +779,12 @@ TEST(Uvpp2FsSafe, ownsRequestsCleanupAndBuffers) {
           ASSERT_TRUE(write_result);
           EXPECT_EQ(write_result.count(), payload.size());
 
-          uv::fs::read(loop, file, payload.size(), 0,
-            [&, file](uv::fs::read_result read_result) {
+          uv::fs::read(loop, file, std::span{output}, 0,
+            [&, file](uv::fs::byte_count_result read_result) {
               ++callbacks;
               ASSERT_TRUE(read_result);
               ASSERT_EQ(read_result.count(), payload.size());
-              EXPECT_EQ(std::memcmp(read_result.bytes().data(), payload.data(), payload.size()), 0);
+              EXPECT_EQ(std::memcmp(output.data(), payload.data(), payload.size()), 0);
 
               uv::fs::close(loop, file, [&](uv::fs::status_result close_result) {
                 ++callbacks;
@@ -797,6 +798,47 @@ TEST(Uvpp2FsSafe, ownsRequestsCleanupAndBuffers) {
   loop.run();
   EXPECT_TRUE(done);
   EXPECT_EQ(callbacks, 4);
+  loop.close();
+
+  std::filesystem::remove(path);
+}
+
+TEST(Uvpp2FsSafe, providesExplicitCopyingAndOwningVariants) {
+  auto path = temp_path("safe-owned-read-write.txt");
+  std::filesystem::remove(path);
+
+  uv::loop loop;
+  const std::array expected{'o', 'w', 'n', 'e', 'd'};
+  bool done = false;
+
+  uv::fs::open(loop, path.string(), O_CREAT | O_TRUNC | O_RDWR, 0644,
+    [&](uv::fs::open_result open_result) {
+      ASSERT_TRUE(open_result);
+      const auto file = open_result.file();
+
+      {
+        auto source = expected;
+        uv::fs::write_copy(loop, file, std::as_bytes(std::span{source}), 0,
+          [&, file](uv::fs::byte_count_result write_result) {
+            ASSERT_TRUE(write_result);
+            ASSERT_EQ(write_result.count(), expected.size());
+
+            uv::fs::read_owned(loop, file, expected.size(), 0,
+              [&, file](uv::fs::read_result read_result) {
+                ASSERT_TRUE(read_result);
+                EXPECT_EQ(std::memcmp(read_result.bytes().data(), expected.data(), expected.size()), 0);
+
+                uv::fs::close(loop, file, [&](uv::fs::status_result close_result) {
+                  EXPECT_TRUE(close_result);
+                  done = true;
+                });
+              });
+          });
+      }
+    });
+
+  loop.run();
+  EXPECT_TRUE(done);
   loop.close();
 
   std::filesystem::remove(path);

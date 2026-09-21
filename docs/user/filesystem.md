@@ -87,5 +87,27 @@ stop yields `UV_ECANCELED` without submission; once an operation is submitted,
 the implementation requests `uv_cancel` and retains the request and borrowed
 buffer until libuv's terminal callback.
 
-This slice does not yet include directory owners, scatter/gather filesystem I/O,
-copying I/O variants, `read_exactly`, or a queueing policy.
+The coroutine slice does not yet include directory owners, scatter/gather
+filesystem I/O, copying I/O variants, `read_exactly`, or a queueing policy.
+
+## Callback filesystem I/O
+
+The callback facade in `<uvpp/fs/operations.hpp>` also borrows caller storage by
+default. `read` fills the supplied mutable span and `write` reads from the
+supplied const span. Keep both buffers alive, address-stable, and unmodified
+until their completion callback runs.
+
+```cpp
+std::array<std::byte, 4096> buffer;
+
+uv::fs::read(loop, file, buffer, 0, [](uv::fs::byte_count_result result) {
+  if (result) {
+    // The caller-owned buffer contains result.count() bytes.
+  }
+});
+```
+
+`write_copy` explicitly retains a copy of source bytes until completion.
+`read_owned` allocates and returns an `owned_buffer` in `read_result`. Use these
+forms when the callback caller cannot keep its own storage alive for the
+operation.

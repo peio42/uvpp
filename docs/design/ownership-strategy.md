@@ -61,6 +61,12 @@ integer wrapper, not an asynchronous file owner. Raw directory handles require
 explicit close. Do not extend network scope behavior to those resources without
 a dedicated lifetime contract.
 
+Callback filesystem `read` and `write` own their request state but borrow their
+caller-supplied byte spans through completion. `read_owned` and `write_copy` are
+the explicit allocation and copy variants. libuv may retain copied buffer
+descriptors internally; uvpp does not use that to extend the lifetime of the
+underlying bytes.
+
 Native `data` is a non-owning application pointer. Typed getters do not perform
 runtime type checking. `loop_view` and walked `handle_view` values likewise borrow;
 wrapper recovery is valid only for the exact low-level wrapper representation,

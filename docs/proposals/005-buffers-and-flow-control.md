@@ -11,9 +11,10 @@ This proposal is not an implemented API or a release commitment. Names are provi
 ## Motivation and current behavior
 
 Streams and UDP expose allocation and receive callbacks with borrowed results.
-Filesystem reads can return owned storage. Low-level writes borrow payloads until
-completion. These are useful controls but require users to build buffer recycling
-and memory limits themselves.
+Filesystem callback and coroutine reads and writes can borrow caller storage;
+filesystem callback reads also have an explicit owned-storage form. These are
+useful controls but require users to build buffer recycling and memory limits
+themselves.
 
 ## Proposed design
 
@@ -96,7 +97,10 @@ cancellation retains buffer storage until the native operation is finished.
 ## Implementation progress and validation
 
 Existing views, owned buffers, and queue-size introspection are foundations. The
-proposed read adapters, pools, and bounded flow-control layer are not implemented.
+callback filesystem facade now provides borrowed `read`/`write`, explicit
+`read_owned`, and `write_copy`; its request state never owns borrowed bytes.
+The proposed read adapters, pools, and bounded flow-control layer are not
+implemented.
 
 The experimental `uv::tcp_connection::write(std::string_view)` is the first
 coroutine write primitive. It borrows the passed characters until actual

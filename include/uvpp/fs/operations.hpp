@@ -1468,7 +1468,9 @@ namespace uv::fs {
   using open_callback = std::function<void(open_result)>;
   using status_callback = std::function<void(status_result)>;
   using byte_count_callback = std::function<void(byte_count_result)>;
-  using read_callback = std::function<void(read_result)>;
+  using owned_read_callback = std::function<void(read_result)>;
+  // Compatibility spelling for the result type returned by read_owned().
+  using read_callback = owned_read_callback;
   using stat_callback = std::function<void(stat_result)>;
   using path_callback = std::function<void(path_result)>;
   using temp_file_callback = std::function<void(temp_file_result)>;
@@ -1596,10 +1598,27 @@ namespace uv::fs {
     close(loop_view{loop.native()}, file, std::move(callback));
   }
 
-  inline void read(loop_view loop, file_descriptor file, std::size_t size, int64_t offset, read_callback callback) {
+  inline void read(loop_view loop, file_descriptor file, std::span<std::byte> bytes, int64_t offset,
+                   byte_count_callback callback) {
+    auto *state = new detail::callback_state<byte_count_callback>{{}, std::move(callback)};
+    detail::submit_owned(state, [&] {
+      raw::read(loop, state->request, file, bytes, offset,
+        [state](raw::request &request, raw::byte_count_result result) {
+          detail::finish_byte_count(state, request, result);
+        });
+    });
+  }
+
+  inline void read(loop &loop, file_descriptor file, std::span<std::byte> bytes, int64_t offset,
+                   byte_count_callback callback) {
+    read(loop_view{loop.native()}, file, bytes, offset, std::move(callback));
+  }
+
+  inline void read_owned(loop_view loop, file_descriptor file, std::size_t size, int64_t offset,
+                         owned_read_callback callback) {
     struct state_type {
       raw::request request;
-      read_callback callback;
+      owned_read_callback callback;
       owned_buffer buffer;
     };
 
@@ -1617,12 +1636,29 @@ namespace uv::fs {
     });
   }
 
-  inline void read(loop &loop, file_descriptor file, std::size_t size, int64_t offset, read_callback callback) {
-    read(loop_view{loop.native()}, file, size, offset, std::move(callback));
+  inline void read_owned(loop &loop, file_descriptor file, std::size_t size, int64_t offset,
+                         owned_read_callback callback) {
+    read_owned(loop_view{loop.native()}, file, size, offset, std::move(callback));
   }
 
   inline void write(loop_view loop, file_descriptor file, std::span<const std::byte> bytes, int64_t offset,
                     byte_count_callback callback) {
+    auto *state = new detail::callback_state<byte_count_callback>{{}, std::move(callback)};
+    detail::submit_owned(state, [&] {
+      raw::write(loop, state->request, file, bytes, offset,
+        [state](raw::request &request, raw::byte_count_result result) {
+          detail::finish_byte_count(state, request, result);
+        });
+    });
+  }
+
+  inline void write(loop &loop, file_descriptor file, std::span<const std::byte> bytes, int64_t offset,
+                    byte_count_callback callback) {
+    write(loop_view{loop.native()}, file, bytes, offset, std::move(callback));
+  }
+
+  inline void write_copy(loop_view loop, file_descriptor file, std::span<const std::byte> bytes, int64_t offset,
+                         byte_count_callback callback) {
     struct state_type {
       raw::request request;
       byte_count_callback callback;
@@ -1643,9 +1679,9 @@ namespace uv::fs {
     });
   }
 
-  inline void write(loop &loop, file_descriptor file, std::span<const std::byte> bytes, int64_t offset,
-                    byte_count_callback callback) {
-    write(loop_view{loop.native()}, file, bytes, offset, std::move(callback));
+  inline void write_copy(loop &loop, file_descriptor file, std::span<const std::byte> bytes, int64_t offset,
+                         byte_count_callback callback) {
+    write_copy(loop_view{loop.native()}, file, bytes, offset, std::move(callback));
   }
 
   inline void stat(loop_view loop, std::string_view path, stat_callback callback) {
