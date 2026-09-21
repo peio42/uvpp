@@ -11,9 +11,9 @@ implemented or frozen.
 | Layer | Target responsibility | Current implementation |
 | --- | --- | --- |
 | `uv::raw` | Explicit low-level handles, requests, and operational results | Namespace and error-policy migration remains unfinished; existing wrappers still largely live in `uv` |
-| `uv` | Shared vocabulary and stable high-level resource owners | TCP/pipe connections and listeners, UDP sockets, filesystem files, loop, addresses, buffers, common results |
+| `uv` | Shared vocabulary and stable high-level resource owners | TCP/pipe connections and listeners, UDP sockets, filesystem files, `signal_source`, loop, addresses, buffers, common results |
 | `uv::co` | Cold tasks, spawning, cancellation, and structured composition | `task<T>`, `spawn_handle<T>`, join, cooperative stop, timer sleep, task and resource scopes |
-| `uv::ops` | Explicit-result operations on the same owners | Owner close, DNS resolution, and filesystem open/read/write/close |
+| `uv::ops` | Explicit-result operations on the same owners | Owner close, signal-source next, DNS resolution, and filesystem open/read/write/close |
 
 Filesystem targets `uv::fs` and `uv::raw::fs`; existing `uv::fs::raw` code has
 not yet completed this migration. Existing filesystem, process, DNS, watcher,
@@ -49,6 +49,13 @@ High-level operations own their control state, but writes/sends borrow payloads.
 Cancellation does not complete work or release borrowed bytes. Terminal delivery
 releases operation slots before resuming user code. Current owners permit one
 operation per direction, including duplex I/O; see [I/O concurrency](io-concurrency.md).
+
+`signal_source` owns one persistent native signal subscription and one exclusive
+coroutine consumer slot. Ordinary signal delivery keeps the subscription active;
+completed task cancellation releases only that consumer slot and leaves the source
+usable. Terminal source close stops native delivery before releasing its waiter.
+One notification may be retained while no waiter is active; it is intentionally
+coalesced rather than becoming an unbounded queue.
 
 ## Errors and costs
 

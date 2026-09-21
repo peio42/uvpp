@@ -12,6 +12,12 @@ move ownership of stable storage. Their native addresses and callback reconstruc
 remain valid after a move. Named native accessors borrow; they do not transfer
 close authority or permit replacing an operation's callback slots.
 
+`signal_source` also moves stable native storage. It starts one signal subscription
+at construction, owns the libuv callback independently of any individual `next()`
+wait, and retains state through native close completion. Direct destruction begins
+that close without driving a nested loop. Its one pending notification is a bounded
+coalescing policy, not a payload queue.
+
 ## Close and destruction
 
 The owners expose awaitable `close()`, initiating `request_close()`, and explicit

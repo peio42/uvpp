@@ -126,6 +126,12 @@ submission, but an in-flight operation remains alive through actual completion.
 In particular, a borrowed write buffer must survive the request even after stop
 was requested.
 
+`signal_source::next()` adds a distinct persistent-subscription case: a completed
+task stop detaches the one waiter and reports `UV_ECANCELED`, but leaves
+`uv_signal_start()` active. The next wait from a non-stopped task may therefore
+receive a later signal. Terminal `signal_source::close()` instead stops the native
+subscription, detaches its waiter, and then waits for native close completion.
+
 The TCP/pipe/UDP resource-scope prototype now expresses handoff as
 `resources.own(std::move(connection))` followed by
 `tasks.spawn(handle(connection.view()))`: the resource scope remains the sole

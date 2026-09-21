@@ -13,6 +13,7 @@ as available below are experimental and may change before release.
 5. [Errors](errors.md): throwing awaits, results, and setup failures.
 6. [Buffers](buffers.md): borrowed payloads and completion lifetimes.
 7. [Filesystem](filesystem.md): owned files and coroutine I/O.
+8. [Signals](signals.md): persistent signal subscriptions and individual waits.
 
 ## Networking
 
@@ -29,6 +30,7 @@ as available below are experimental and may change before release.
 | Structured execution | `uv::co::task_scope` for `task<void>` children |
 | Resource cleanup | `uv::co::resource_scope` for TCP/pipe connections and listeners, UDP sockets, and files |
 | Network owners | `tcp_connection`, `tcp_listener`, `pipe_connection`, `pipe_listener`, `udp_socket` |
+| Signal owner | `signal_source`, persistent `next()`, `uv::ops::next`, and terminal close |
 | Explicit-result operations | `uv::ops::close(owner)`, `uv::ops::resolve(...)`, and `uv::ops::fs::{open,read,write,close}` |
 | Raw layer | `uv::raw` is the target namespace; the low-level namespace/error-policy migration is unfinished |
 | Filesystem | `uv::fs::{open,read,write,close}` with `uv::ops::fs` result counterparts; directories and broader filesystem operations remain proposed |

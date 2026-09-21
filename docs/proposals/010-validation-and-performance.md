@@ -105,6 +105,12 @@ accept exclusion, pending-accept cancellation, scope shutdown, and the direct
 close violation. Sandboxes that prohibit Unix-domain pipe binding report these
 transport tests as explicit skips.
 
+The coroutine signal-source tests exercise persistent subscription across two
+signals, one pending-notification handoff, current-wait cancellation followed by
+reuse, concurrent-wait `UV_EBUSY`, and terminal close cancellation. They use
+`SIGUSR1` and `raise()` on platforms where libuv delivers it; platform-specific
+signal behavior remains part of the broader portability matrix.
+
 `make measure-cleanup` builds and runs a dependency-free benchmark for repeated
 multi-connection `resource_scope::finish()` calls. It reports C++ allocations made
 while `finish()` is active (explicitly excluding libuv C allocations) and cleanup
