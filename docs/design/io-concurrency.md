@@ -16,6 +16,7 @@ source where needed and releases its slot before the awaiting task resumes.
 | Resource | Inbound slot | Outbound slot | Permitted overlap |
 | --- | --- | --- | --- |
 | `tcp_connection` | one `read_some()` | one `write()` | one read and one write |
+| `fs::file` | one `read()` | one `write()` | one read and one write |
 | `pipe_connection` | one `read_some()` or `receive_handle()` | one `write()` or `write_with_handle()` | one inbound and one outbound operation |
 | `udp_socket` | one `recv_from()` | one `send_to()` | one receive and one send |
 | `tcp_listener` / `pipe_listener` | one `accept()` | — | — |
@@ -40,9 +41,10 @@ the single-writer programs supported today.
 ## Closing
 
 `tcp_connection`, `pipe_connection`, and `udp_socket` reject `close()` and
-`request_close()` with `UV_EBUSY` while either I/O slot is occupied. The failed
-close leaves the active operation and owner state unchanged. Callers must await
-or otherwise join that work before closing.
+`request_close()` with `UV_EBUSY` while either I/O slot is occupied. `fs::file`
+rejects its awaitable `close()` with the same result. A failed close leaves the
+active operation and owner state unchanged. Callers must await or otherwise join
+that work before closing.
 
 Listeners treat their one active `accept()` differently: close quiesces the
 accept, delivers its cancellation after provisional-child cleanup, then starts

@@ -1,6 +1,6 @@
 # Resource Scopes
 
-Status: partially implemented (TCP/pipe/UDP experimental slice).
+Status: partially implemented (TCP/pipe/UDP/filesystem experimental slices).
 
 Architecture: [000 — V3 architecture](000-v3-architecture.md).
 
@@ -9,7 +9,7 @@ Dependencies: [002 — Asynchronous ownership](002-async-ownership.md),
 [004 — Shared operation state](004-operation-state.md).
 
 Target: v3 exploration. The current API is deliberately limited to adopted TCP/pipe
-connections/listeners and UDP sockets; generic type erasure and cleanup-error
+connections/listeners, UDP sockets, and files; generic type erasure and cleanup-error
 aggregation remain proposed.
 
 ## Motivation
@@ -61,12 +61,13 @@ uv::co::task<void> serve(uv::loop &loop, uv::ipv4 address) {
 }
 ```
 
-The current TCP/pipe/UDP prototype uses these spellings. `own(tcp_connection&&)`
+The current TCP/pipe/UDP/filesystem prototype uses these spellings. `own(tcp_connection&&)`
 returns a scope-bound registration whose `.view()` produces `tcp_connection_view`;
 `own(tcp_listener&&)` returns a non-owning listener registration exposing
 `accept()`, `own(pipe_listener&&)` does the same for local pipes, and
 `own(pipe_connection&&)`/`own(udp_socket&&)` return equivalent
-borrowed-view registrations. Neither registration owns its adopted resource.
+borrowed-view registrations, and `own(fs::file&&)` returns a `file_view` that
+permits I/O but no independent close. Neither registration owns its adopted resource.
 Starting the cold task returned by `finish()` on the associated loop seals the
 scope's registration phase; constructing or abandoning it has no state effect.
 The current TCP/pipe/UDP `finish()` serializes listener then dependent-owner close

@@ -1,17 +1,21 @@
 #include <array>
 #include <chrono>
 #include <filesystem>
+#include <fstream>
 #include <memory>
 #include <optional>
 #include <span>
 #include <stdexcept>
 #include <string>
 #include <vector>
+#include <fcntl.h>
+#include <unistd.h>
 
 #include "gtest/gtest.h"
 #include "uvpp/co/resource_scope.hpp"
 #include "uvpp/co/sleep.hpp"
 #include "uvpp/co/task_scope.hpp"
+#include "uvpp/fs/coroutines.hpp"
 #include "uvpp/handles/timer.hpp"
 #include "uvpp/handles/pipe.hpp"
 #include "uvpp/handles/tcp.hpp"
@@ -331,6 +335,135 @@ TEST(UvppV3Coroutine, resolvePreexistingStopCompletesWithoutSubmitting) {
   EXPECT_EQ(outcome->error(), uv::make_error_code(UV_ECANCELED));
   EXPECT_NO_THROW(execution.rethrow_if_failed());
   EXPECT_NO_THROW(loop.close());
+}
+
+TEST(UvppV3Filesystem, openWriteReadCloseUsesOneStableOwner) {
+  const auto path = std::filesystem::temp_directory_path() /
+      ("uvpp-v3-filesystem-" + std::to_string(::getpid()) + "-roundtrip");
+  std::filesystem::remove(path);
+  uv::loop loop;
+  std::array<std::byte, 5> input{
+      std::byte{'h'}, std::byte{'e'}, std::byte{'l'}, std::byte{'l'}, std::byte{'o'}};
+  std::array<std::byte, 5> output{};
+  std::optional<uv::fs::file_read_result> read_result;
+
+  auto roundtrip = [&]() -> uv::co::task<void> {
+    auto opened = co_await uv::fs::open(path.string(), O_CREAT | O_TRUNC | O_RDWR, 0600);
+    EXPECT_TRUE(opened.is_open());
+    EXPECT_EQ(co_await uv::fs::write(opened, std::span<const std::byte>{input}, 0), input.size());
+    read_result.emplace(co_await uv::fs::read(opened, std::span<std::byte>{output}, 0));
+    co_await uv::fs::close(opened);
+    EXPECT_FALSE(opened.is_open());
+  };
+
+  auto execution = uv::co::spawn(loop, roundtrip());
+  loop.run();
+
+  EXPECT_NO_THROW(execution.rethrow_if_failed());
+  ASSERT_TRUE(read_result.has_value());
+  EXPECT_EQ(read_result->count(), output.size());
+  EXPECT_FALSE(read_result->eof());
+  EXPECT_EQ(output, input);
+  loop.close();
+  std::filesystem::remove(path);
+}
+
+TEST(UvppV3Filesystem, opsReturnsOpenAndWriteFailuresWithoutThrowing) {
+  const auto path = std::filesystem::temp_directory_path() /
+      ("uvpp-v3-filesystem-" + std::to_string(::getpid()) + "-read-only");
+  std::filesystem::remove(path);
+  {
+    std::ofstream created{path};
+    created << "x";
+  }
+  uv::loop loop;
+  std::optional<uv::result<uv::fs::file>> missing;
+  std::optional<uv::result<std::size_t>> write_result;
+  std::optional<uv::status> close_result;
+  const std::array<std::byte, 1> data{std::byte{'x'}};
+
+  auto operations = [&]() -> uv::co::task<void> {
+    missing.emplace(co_await uv::ops::fs::open("/uvpp-definitely-missing-parent/file", O_RDONLY, 0));
+    auto opened = co_await uv::ops::fs::open(path.string(), O_RDONLY, 0);
+    EXPECT_TRUE(opened);
+    if (!opened) {
+      co_return;
+    }
+    auto file = std::move(opened).value();
+    write_result.emplace(co_await uv::ops::fs::write(file, std::span<const std::byte>{data}, 0));
+    close_result.emplace(co_await uv::ops::fs::close(file));
+  };
+
+  auto execution = uv::co::spawn(loop, operations());
+  loop.run();
+
+  EXPECT_NO_THROW(execution.rethrow_if_failed());
+  ASSERT_TRUE(missing.has_value());
+  EXPECT_FALSE(*missing);
+  ASSERT_TRUE(write_result.has_value());
+  EXPECT_FALSE(*write_result);
+  ASSERT_TRUE(close_result.has_value());
+  EXPECT_TRUE(*close_result);
+  loop.close();
+  std::filesystem::remove(path);
+}
+
+TEST(UvppV3Filesystem, resourceScopeClosesAnAdoptedFile) {
+  const auto path = std::filesystem::temp_directory_path() /
+      ("uvpp-v3-filesystem-" + std::to_string(::getpid()) + "-scope");
+  std::filesystem::remove(path);
+  uv::loop loop;
+  const std::array<std::byte, 1> data{std::byte{'s'}};
+
+  auto scoped = [&]() -> uv::co::task<void> {
+    uv::co::resource_scope resources{loop};
+    auto opened = co_await uv::fs::open(path.string(), O_CREAT | O_TRUNC | O_RDWR, 0600);
+    auto registered = resources.own(std::move(opened));
+    EXPECT_EQ(co_await uv::fs::write(registered.view(), std::span<const std::byte>{data}, 0), 1u);
+    co_await resources.finish();
+  };
+
+  auto execution = uv::co::spawn(loop, scoped());
+  loop.run();
+
+  EXPECT_NO_THROW(execution.rethrow_if_failed());
+  loop.close();
+  std::filesystem::remove(path);
+}
+
+TEST(UvppV3Filesystem, concurrentCloseAwaitersJoinOneTerminalRequest) {
+  const auto path = std::filesystem::temp_directory_path() /
+      ("uvpp-v3-filesystem-" + std::to_string(::getpid()) + "-close-join");
+  std::filesystem::remove(path);
+  uv::loop loop;
+  bool first_closed = false;
+  bool second_closed = false;
+
+  auto close_twice = [&]() -> uv::co::task<void> {
+    auto opened = co_await uv::fs::open(path.string(), O_CREAT | O_TRUNC | O_RDWR, 0600);
+    uv::co::task_scope closers{loop};
+    auto first = [&]() -> uv::co::task<void> {
+      co_await uv::fs::close(opened);
+      first_closed = true;
+    };
+    auto second = [&]() -> uv::co::task<void> {
+      co_await uv::fs::close(opened);
+      second_closed = true;
+    };
+    closers.spawn(first());
+    closers.spawn(second());
+    co_await closers.join();
+    EXPECT_FALSE(opened.is_open());
+  };
+
+  auto execution = uv::co::spawn(loop, close_twice());
+  loop.run();
+
+  EXPECT_NO_THROW(execution.rethrow_if_failed());
+  EXPECT_TRUE(first_closed);
+  EXPECT_TRUE(second_closed);
+  loop.close();
+  std::filesystem::remove(path);
 }
 
 TEST(UvppV3Coroutine, sleepForDeliversTaskFailureToTheSpawnHandle) {

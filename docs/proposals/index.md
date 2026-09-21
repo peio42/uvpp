@@ -23,6 +23,7 @@ an agreed release scope. This branch targets v3.
 | [009 — Lifetime diagnostics](009-lifetime-diagnostics.md) | Draft | Optional lifecycle checks and instrumentation |
 | [010 — Validation and performance](010-validation-and-performance.md) | Partially implemented | Lifecycle tests, portability, sanitizers, builds, and benchmarks |
 | [011 — Resource scopes](011-resource-scopes.md) | Partially implemented | Composable asynchronous resource cleanup alongside task scopes |
+| [012 — Filesystem owners](012-filesystem-owners.md) | Partially implemented | Coroutine file ownership and paired open/read/write/close |
 
 ## Shared Constraints
 

@@ -7,7 +7,7 @@ low-level wrappers own inline native storage, disable copying/moving, and requir
 explicit close without a destructor fallback. These wrappers are still awaiting
 the complete `uv::raw` namespace migration.
 
-Implemented high-level TCP/pipe connections/listeners and UDP sockets instead
+Implemented high-level TCP/pipe connections/listeners, UDP sockets, and files
 move ownership of stable storage. Their native addresses and callback reconstruction
 remain valid after a move. Named native accessors borrow; they do not transfer
 close authority or permit replacing an operation's callback slots.
@@ -24,6 +24,12 @@ Direct-owner destruction initiates asynchronous close when preconditions hold.
 Destroying owners with incompatible active I/O, or listeners with pending accept,
 is a terminating violation. Destructors never drive the loop. The application
 retains and drives the loop until all native close callbacks finish.
+
+`uv::fs::file` is a request-based exception: `uv_fs_close` has a completion
+status. Submission failure leaves its descriptor open. After a native close
+completion, even an error completion, the descriptor identity is terminal and
+cannot be retried safely. Direct destruction diagnoses an unclosed file rather
+than starting unobserved request cleanup.
 
 ## Tasks, views, and bytes
 
@@ -62,7 +68,8 @@ never for foreign handles or high-level native state.
 
 ## Experimental v3 resource-scope cleanup
 
-`uv::co::resource_scope` owns TCP/pipe connections and listeners and UDP sockets.
+`uv::co::resource_scope` owns TCP/pipe connections and listeners, UDP sockets,
+and files.
 Its cold `finish()` task borrows the scope. Construction has no state effect;
 startup checks loop affinity before transitioning from `open` or `interrupted`
 to `active`. Starting cleanup seals adoption permanently. An overlapping attempt
@@ -86,7 +93,9 @@ is introduced. Destruction with remaining resources terminates, including after
 an observed cleanup failure. Merely creating an unstarted finish task does not
 satisfy asynchronous exit, and that task must not outlive the scope it borrows.
 
-Current handle close has no native completion error. Cleanup is fail-fast, with
-no aggregate-error type; callers preserve primary task failures separately.
-Generic cleanup-error aggregation and request-based resource policies remain
-proposed in [011](../proposals/011-resource-scopes.md).
+Current handle close has no native completion error. Files use `uv_fs_close`:
+their scope record releases the terminal owner before propagating a completion
+error, so a retry only retires that record and never repeats close. Cleanup is
+fail-fast, with no aggregate-error type; callers preserve primary task failures
+separately. Generic cleanup-error aggregation remains proposed in
+[011](../proposals/011-resource-scopes.md).
