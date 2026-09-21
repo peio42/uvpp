@@ -9,6 +9,25 @@
 
 using namespace std::chrono_literals;
 
+TEST(UvppV3SignalSource, failedConstructionRetainsInitializedHandleThroughNativeClose) {
+  uv::loop loop;
+
+  // libuv rejects signal 0 in uv_signal_start() after uv_signal_init() has
+  // initialized the handle. Constructor rollback must therefore retain native
+  // storage through uv_close(), and callers must drive that close before the
+  // loop can be closed.
+  try {
+    [[maybe_unused]] uv::signal_source invalid(loop, 0);
+    FAIL() << "signal 0 must be rejected by uv_signal_start";
+  } catch (const uv::error &error) {
+    EXPECT_EQ(error.code().value(), UV_EINVAL);
+  }
+
+  EXPECT_EQ(loop.try_close(), uv::make_error_code(UV_EBUSY));
+  loop.run();
+  EXPECT_NO_THROW(loop.close());
+}
+
 TEST(UvppV3SignalSource, remainsSubscribedBetweenSuccessiveNextCalls) {
   uv::loop loop;
   uv::signal_source source(loop, SIGUSR1);
