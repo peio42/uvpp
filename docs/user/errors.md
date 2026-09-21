@@ -51,6 +51,10 @@ throw native operational failures at the await expression, while
 `uv::ops::fs::open/read/write/close` return `result<file>`,
 `result<file_read_result>`, `result<size_t>`, and `status`. See
 [Filesystem](filesystem.md) for borrowed-buffer and terminal-close rules.
+`signal_source` also pairs `co_await source.next()`, which throws an operational
+failure, with `co_await uv::ops::next(source)`, which returns
+`result<signal_number>`. A completed wait cancellation is `UV_ECANCELED`; a
+second concurrent waiter is `UV_EBUSY`. See [Signals](signals.md).
 
 The target raw layer uses explicit operational results; its namespace and error
 policy are not yet migrated throughout the implementation.

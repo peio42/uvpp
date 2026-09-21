@@ -184,6 +184,13 @@ check loop affinity. The public owner `close()` operation is a separate facade
 over this mechanism, with its contract specified in
 [002](002-async-ownership.md).
 
+`signal_source` uses the same close-completion bookkeeping while retaining a
+family-specific repeated-event slot. Its native signal callback exchanges the
+current delivery slot before resuming a waiter. Stop completion clears that slot
+without stopping the subscription; source close stops native delivery, clears the
+slot, delivers `UV_ECANCELED`, then begins native close. A one-value pending slot
+is owned by the source between waits and coalesces repeated notifications.
+
 Validate failure at each setup stage, native submission failure, absent callbacks,
 resubmission from completion, destruction from completion, owned-result extraction,
 and exactly-once cleanup. Exercise DNS, filesystem, write, and close before calling

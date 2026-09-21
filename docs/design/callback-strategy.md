@@ -50,6 +50,13 @@ and release it only after terminal quiescence. Keep callback state alive through
 in-flight native delivery, and prevent an old completion from clearing a slot
 installed by resumed user code. This broader frontend remains proposed.
 
+`signal_source` is the first implemented persistent coroutine event source. Its
+native callback either detaches and delivers its one `next()` waiter or records one
+coalesced pending notification. Ordinary delivery does not release the native
+subscription. A completed task stop detaches only the waiter and its cancellation
+registration; source close first calls `uv_signal_stop()`, then detaches the
+waiter with `UV_ECANCELED`, before starting `uv_close()`.
+
 ## Close completion
 
 High-level close state joins repeated waiters around one native close. Native

@@ -207,6 +207,15 @@ stable address of both connected and accepted owners. They also exercise the
 current termination diagnostic for destroying a connection with active read/write
 or a listener with active accept.
 
+`signal_source` now validates the repeated-event direction with an active-on-
+construction `SIGUSR1` subscription. `next()` is a one-event coroutine wait over
+that persistent source, with one coalesced notification retained between waits.
+It rejects competing consumers with `UV_EBUSY`; a completed cooperative stop
+returns `UV_ECANCELED` without stopping the source, while terminal close stops the
+native source and cancels its current waiter. The paired explicit surface is
+`uv::ops::next(source)`. Tests cover repeated delivery, pending delivery,
+cancellation followed by reuse, concurrent-wait exclusion, and close completion.
+
 Set the minimum buffer lifetime contracts from 005 before prototyping. Use the
 prototype to revise the initial 002/003/004/006/007 contracts, rather than waiting
 for their full implementation. Ordinary loop-thread coroutine use must not require

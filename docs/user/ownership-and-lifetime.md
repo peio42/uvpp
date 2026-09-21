@@ -22,6 +22,11 @@ are met. It never runs a nested loop. Destroying a connection/socket with active
 borrowed I/O, or a listener with an active accept, is a terminating contract
 violation. Use explicit close or resource scopes to observe completion.
 
+`signal_source` is another move-only high-level owner. Its close transition first
+stops the persistent native subscription and completes a current `next()` with
+`UV_ECANCELED`; it then waits for the native close callback. Signal sources are
+not yet resource-scope registrations. See [Signals](signals.md).
+
 ## Borrowing
 
 Produce borrowed connection/socket views explicitly with `.view()`. A view is not
