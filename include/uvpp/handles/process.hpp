@@ -739,6 +739,10 @@ struct process_state {
 
   void release_owner() noexcept {
     owner_released = true;
+    // async_close_state owns deletion after an already-started close. This
+    // notification is also safe before exit; process_state::owner_released
+    // separately records that native close must be deferred until then.
+    close.owner_released();
     if (!exited) {
       return;
     }
@@ -829,7 +833,7 @@ public:
     // Unlike ordinary libuv initializers, uv_spawn() requires uv_close() for
     // every result, including a failed spawn. No C++ owner exists during
     // constructor unwind, so the native close callback owns this state.
-    state->owner_released = true;
+    state->release_owner();
     uv_close(reinterpret_cast<uv_handle_t *>(&state->native),
              &detail::process_state::on_close);
     (void)state.release();
