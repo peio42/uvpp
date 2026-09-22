@@ -690,6 +690,8 @@ struct process_state {
   void (*deliver_waiter)(void *, int, process_exit) noexcept = nullptr;
   process_exit exit{};
   bool exited = false;
+  // Distinct from async_close_state ownership: process owner release may
+  // precede the legal start of native close.
   bool owner_released = false;
 
   static process_state &from_handle(uv_process_t *raw) noexcept {
@@ -824,14 +826,13 @@ public:
       return;
     }
 
-    // libuv requires closing a process handle even when uv_spawn() fails after
-    // attaching it to the loop. No C++ owner exists during constructor unwind.
-    if (state->native.loop != nullptr) {
-      state->owner_released = true;
-      uv_close(reinterpret_cast<uv_handle_t *>(&state->native),
-               &detail::process_state::on_close);
-      (void)state.release();
-    }
+    // Unlike ordinary libuv initializers, uv_spawn() requires uv_close() for
+    // every result, including a failed spawn. No C++ owner exists during
+    // constructor unwind, so the native close callback owns this state.
+    state->owner_released = true;
+    uv_close(reinterpret_cast<uv_handle_t *>(&state->native),
+             &detail::process_state::on_close);
+    (void)state.release();
     throw_if_error(status);
   }
 

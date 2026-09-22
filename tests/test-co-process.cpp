@@ -38,6 +38,36 @@ TEST(UvppV3Process, spawnsSynchronouslyWaitsAndCloses) {
   EXPECT_NO_THROW(loop.close());
 }
 
+TEST(UvppV3Process, exitDeliveryReleasesTheWaitSlotBeforeResuming) {
+  uv::loop loop;
+  uv::process child(loop, shell("exit 9"));
+  std::optional<uv::process_exit> first;
+  std::optional<uv::result<uv::process_exit>> second;
+
+  auto wait = [&]() -> uv::co::task<void> {
+    first.emplace(co_await child.wait());
+
+    // The exit callback must release its exclusive waiter before resuming this
+    // continuation. The second wait then reads the retained terminal result.
+    second.emplace(co_await uv::ops::wait(child));
+    co_await child.close();
+  };
+
+  auto execution = uv::co::spawn(loop, wait());
+  loop.run();
+
+  EXPECT_TRUE(execution.done());
+  EXPECT_NO_THROW(execution.rethrow_if_failed());
+  ASSERT_TRUE(first.has_value());
+  ASSERT_TRUE(second.has_value());
+  ASSERT_TRUE(*second);
+  EXPECT_EQ(first->status, 9);
+  EXPECT_EQ(second->value().status, 9);
+  EXPECT_EQ(first->signal, 0);
+  EXPECT_EQ(second->value().signal, 0);
+  EXPECT_NO_THROW(loop.close());
+}
+
 TEST(UvppV3Process, remembersExitBeforeWait) {
   uv::loop loop;
   uv::process child(loop, shell("exit 5"));
@@ -109,6 +139,71 @@ TEST(UvppV3Process, rejectsASecondConcurrentWaiter) {
   ASSERT_TRUE(second.has_value());
   EXPECT_FALSE(*second);
   EXPECT_EQ(second->error(), uv::make_error_code(UV_EBUSY));
+  EXPECT_NO_THROW(loop.close());
+}
+
+TEST(UvppV3Process, rejectsWaitFromADifferentLoop) {
+  uv::loop loop;
+  uv::loop other_loop;
+  uv::process child(loop, shell("exit 0"));
+  bool rejected = false;
+
+  auto wait = [&]() -> uv::co::task<void> {
+    try {
+      (void)co_await child.wait();
+    } catch (const std::logic_error &) {
+      rejected = true;
+    }
+  };
+
+  auto execution = uv::co::spawn(other_loop, wait());
+  EXPECT_TRUE(execution.done());
+  EXPECT_NO_THROW(execution.rethrow_if_failed());
+  EXPECT_TRUE(rejected);
+  EXPECT_NO_THROW(other_loop.close());
+
+  loop.run();
+  ASSERT_TRUE(child.exited());
+  child.request_close();
+  loop.run();
+  EXPECT_NO_THROW(loop.close());
+}
+
+TEST(UvppV3Process, closeJoinersShareOneNativeClose) {
+  uv::loop loop;
+  uv::process child(loop, shell("exit 0"));
+  loop.run();
+  ASSERT_TRUE(child.exited());
+
+  bool first_initiated = false;
+  bool second_initiated = false;
+  bool first_resumed = false;
+  bool second_resumed = false;
+  auto first = [&]() -> uv::co::task<void> {
+    auto close = child.close();
+    co_await close;
+    first_initiated = close.initiated_close();
+    first_resumed = true;
+  };
+  auto second = [&]() -> uv::co::task<void> {
+    auto close = child.close();
+    co_await close;
+    second_initiated = close.initiated_close();
+    second_resumed = true;
+  };
+
+  auto first_execution = uv::co::spawn(loop, first());
+  auto second_execution = uv::co::spawn(loop, second());
+  loop.run();
+
+  EXPECT_TRUE(first_execution.done());
+  EXPECT_TRUE(second_execution.done());
+  EXPECT_NO_THROW(first_execution.rethrow_if_failed());
+  EXPECT_NO_THROW(second_execution.rethrow_if_failed());
+  EXPECT_TRUE(first_initiated);
+  EXPECT_FALSE(second_initiated);
+  EXPECT_TRUE(first_resumed);
+  EXPECT_TRUE(second_resumed);
   EXPECT_NO_THROW(loop.close());
 }
 
