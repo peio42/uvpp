@@ -1,11 +1,12 @@
 # Coroutines
 
-Status: draft.
+Status: partially implemented.
 
 Architecture: [000 — V3 architecture](000-v3-architecture.md).
 
 Target: v3. This supersedes the exploratory coroutine strategy previously kept in
-`docs/design/`. The API names below are sketches, not available functions.
+`docs/design/`. Proposed names remain sketches unless the implementation-progress
+section and current user/design documentation identify them as available.
 
 ## Motivation and current behavior
 

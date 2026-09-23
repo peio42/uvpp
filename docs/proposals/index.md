@@ -12,13 +12,13 @@ an agreed release scope. This branch targets v3.
 | Proposal | Status | Scope |
 | --- | --- | --- |
 | [000 — V3 architecture](000-v3-architecture.md) | Accepted | Layers, namespaces, common loop, ownership boundaries, and error surfaces |
-| [001 — Coroutines](001-coroutines.md) | Draft | Tasks, awaitables, repeated events, startup and continuation contracts |
-| [002 — Asynchronous ownership](002-async-ownership.md) | Draft | Stable resource owners, close, and exceptional cleanup |
+| [001 — Coroutines](001-coroutines.md) | Partially implemented | Tasks, awaitables, repeated events, startup and continuation contracts |
+| [002 — Asynchronous ownership](002-async-ownership.md) | Partially implemented | Stable resource owners, close, and exceptional cleanup |
 | [003 — Cancellation and task scopes](003-cancellation-and-task-scopes.md) | Partially implemented | Stop, deadlines, joining, and structured composition |
-| [004 — Shared operation state](004-operation-state.md) | Draft | Callback/coroutine submission, rollback, and completion machinery |
-| [005 — Buffers and flow control](005-buffers-and-flow-control.md) | Draft | Ownership, read adapters, recycling, and bounded queues |
+| [004 — Shared operation state](004-operation-state.md) | Partially implemented | Callback/coroutine submission, rollback, and completion machinery |
+| [005 — Buffers and flow control](005-buffers-and-flow-control.md) | Partially implemented | Ownership, read adapters, recycling, and bounded queues |
 | [006 — Errors and results](006-errors-and-results.md) | Partially implemented | Error vocabulary, throwing facades, and explicit `uv::ops` results |
-| [007 — Loop scheduling](007-loop-scheduling.md) | Draft | Common-loop continuations, optional cross-thread posting, and shutdown |
+| [007 — Loop scheduling](007-loop-scheduling.md) | Partially implemented | Common-loop continuations, optional cross-thread posting, and shutdown |
 | [008 — Move-only callbacks](008-move-only-callbacks.md) | Draft | Callable ownership, replacement, and storage costs |
 | [009 — Lifetime diagnostics](009-lifetime-diagnostics.md) | Draft | Optional lifecycle checks and instrumentation |
 | [010 — Validation and performance](010-validation-and-performance.md) | Partially implemented | Lifecycle tests, portability, sanitizers, builds, and benchmarks |

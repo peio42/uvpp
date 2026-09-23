@@ -30,8 +30,10 @@ states otherwise. There is no implicit posting queue or second runtime.
 
 The application drives the loop through completion and native close, then calls
 `loop.close()`. Loop and resource destructors never run a nested loop. The current
-active spawn-handle destructor terminates; the retention fallback in proposals
-is not implemented.
+active spawn-handle destructor terminates as an implementation-stage diagnostic.
+This is not the target contract: active destruction is intended to request stop
+and retain execution state through actual completion, with explicit routing for
+failures no longer observable through the public handle.
 
 ## Native identity and ownership
 

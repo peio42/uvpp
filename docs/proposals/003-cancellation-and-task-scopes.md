@@ -6,7 +6,8 @@ Architecture: [000 — V3 architecture](000-v3-architecture.md).
 
 Target: v3 development on this branch.
 
-This proposal is not an implemented API or a release commitment. Names are provisional.
+This proposal is not completely implemented or an API-freeze commitment. Names
+outside the implementation-progress section remain provisional.
 
 ## Motivation and current behavior
 
@@ -96,8 +97,11 @@ tasks, supports loop-thread-only `request_stop()`, and permits multiple same-loo
 `join()` observers. Completion and result consumption remain separate: non-void
 `take_result()` moves the value once and rethrows a stored root failure; void roots
 retain `rethrow_if_failed()`. Destroying an active root handle remains a termination
-diagnostic rather than an implicit cancellation/retention policy. The state has one
-explicit heap allocation so it remains address-stable across handle moves and while
+diagnostic rather than the target cancellation/retention policy. Termination is
+not the intended final v3 contract: implementation work is planned to request
+stop, retain execution through actual completion after public-handle destruction,
+and route otherwise unobserved failures explicitly. The state has one explicit
+heap allocation so it remains address-stable across handle moves and while
 join awaiters are suspended. Tests also verify that a root stop request after a
 submitted borrowed TCP write leaves the write and its payload alive until the
 native completion callback, and that `join()` completes only afterwards.

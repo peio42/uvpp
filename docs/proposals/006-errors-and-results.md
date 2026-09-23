@@ -125,6 +125,15 @@ An internal result adapter may implement the ergonomic facade, but a public
 `as_result` spelling is not a second required error-selection API alongside
 `uv::ops`. Exact callback and awaitable entry signatures remain to be prototyped.
 
+One construction question remains explicitly open before API freeze:
+
+> Should fallible high-level resource construction also have an explicit-result
+> factory under `uv::ops`?
+
+Current throwing constructors do not settle this question. If such factories are
+adopted, they must report native construction/submission failures through the
+explicit result without changing the resource's ownership or lifetime protocol.
+
 An operational error is an expected error defined by the operation contract: a
 native submission or completion failure, including a completed cancellation, is
 reported by `uv::ops` as an error result. An input state such as a closed or busy
