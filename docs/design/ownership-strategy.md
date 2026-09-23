@@ -21,6 +21,24 @@ coalescing policy, not a payload queue.
 
 ## Close and destruction
 
+High-level owners do not share one destructor algorithm. Each resource family
+defines its own termination protocol, while all families preserve the same
+lifetime invariants:
+
+- native storage survives until the native terminal callback or request cleanup;
+- borrowed inputs survive actual completion, not merely a cancellation request;
+- operation and cancellation slots are released before user code resumes;
+- cancellation request, native cancellation, completion, and reclamation are
+  distinct events;
+- one owner retains cleanup authority, while native access and views only borrow;
+- no destructor drives the loop recursively.
+
+A destructor may initiate asynchronous cleanup only when doing so preserves the
+family's borrowed-data and external-resource semantics. Otherwise the family must
+diagnose a contract violation or retain its state until cleanup becomes legal.
+This is why network owners, files, signals, and processes deliberately have
+different destruction behavior without weakening the common invariants.
+
 The owners expose awaitable `close()`, initiating `request_close()`, and explicit
 `uv::ops::close(owner)`. They share one internal close transition and retain storage
 through the native callback. Connection/UDP active borrowed I/O rejects close with
@@ -49,7 +67,12 @@ than starting unobserved request cleanup.
 Cold tasks acquire a loop at spawn or child await. A `spawn_handle<T>` retains a
 root frame and supports same-loop join; destruction while active currently
 terminates. Task scopes own child execution and must settle before destruction.
-The proposed active-handle retention fallback is not implemented.
+Termination is an implementation-stage diagnostic, not the v3 target. The target
+is for active destruction to request cooperative stop, retain execution and native
+operation state through actual completion, and route failures that can no longer
+be observed through the handle. That target is not yet implemented; its retention,
+reclamation, and unobserved-failure mechanisms must be completed before the
+public task contract is frozen.
 
 Borrowed views never become another resource owner. Scope views retain validity
 bookkeeping, not native lifetime; cleanup invalidates them before releasing storage.

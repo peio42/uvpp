@@ -1,12 +1,13 @@
 # Asynchronous Resource Ownership
 
-Status: draft.
+Status: partially implemented.
 
 Architecture: [000 — V3 architecture](000-v3-architecture.md).
 
 Target: v3 development on this branch.
 
-This proposal is not an implemented API or a release commitment. Names are provisional.
+This proposal is not completely implemented or an API-freeze commitment. Names
+outside the implementation-progress section remain provisional.
 
 ## Motivation and current behavior
 

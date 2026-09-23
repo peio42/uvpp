@@ -11,6 +11,8 @@ does not by itself change the current API contracts.
 - [Naming and API shape](naming-and-api-shape.md): current-code review, established v3 naming rules, and recommendations awaiting consolidation.
 - [API policy decisions](api-policy-decisions.md): concrete naming and result-shape policies for future API additions.
 - [Callback strategy](callback-strategy.md): runtime callbacks, static callbacks, callback slots, trampolines, and exception boundaries.
+- [Operation state](operation-state.md): shared terminal-delivery invariants and recurring shapes that must not yet become public abstractions.
+- [V3 consistency registry](v3-consistency-registry.md): per-family raw migration, error surfaces, ownership, cancellation, native access, concurrency, and documentation status.
 - [Error handling strategy](error-handling-strategy.md): immediate failures, async completion results, EOF, and callback failure policy.
 - [Experimental v3 I/O concurrency](io-concurrency.md): operation exclusivity, permitted duplex I/O, and close interactions for coroutine owners.
 - [Ownership strategy](ownership-strategy.md): handle lifetime, request lifetime, buffers, user data, loop ownership, and deallocation rules.
