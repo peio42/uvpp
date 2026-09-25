@@ -48,14 +48,17 @@ TEST(UvppV3CoroutineDeathTest, taskScopeDestructionWithoutJoinTerminates) {
   }()), "");
 }
 
-TEST(UvppV3CoroutineDeathTest, spawnHandleDestructionWhileActiveTerminates) {
+TEST(UvppV3CoroutineDeathTest, abandonedActiveSpawnFailureTerminates) {
   EXPECT_DEATH(([&] {
     uv::loop loop;
     auto worker = []() -> uv::co::task<void> {
-      co_await uv::co::sleep_for(1ms);
+      co_await uv::co::sleep_for(0ms);
+      throw std::runtime_error{"unobserved abandoned root failure"};
     };
-    auto execution = uv::co::spawn(loop, worker());
-    (void)execution;
+    {
+      auto execution = uv::co::spawn(loop, worker());
+    }
+    loop.run();
   }()), "");
 }
 
@@ -133,21 +136,4 @@ TEST(UvppV3CoroutineDeathTest, tcpConnectionDestructionWithActivePipeHandleExpor
   }()), "");
 
   std::filesystem::remove(path);
-}
-
-TEST(UvppV3CoroutineDeathTest, tcpListenerDestructionWithActiveAcceptTerminates) {
-  if (!loopback_tcp_is_permitted()) {
-    GTEST_SKIP() << "loopback TCP is not permitted in this environment";
-  }
-
-  EXPECT_DEATH(([&] {
-    uv::loop loop;
-    {
-      uv::tcp_listener listener(loop, uv::ipv4{"127.0.0.1", 0});
-      auto waiter = [&]() -> uv::co::task<void> {
-        (void)co_await listener.accept();
-      };
-      auto execution = uv::co::spawn(loop, waiter());
-    }
-  }()), "");
 }

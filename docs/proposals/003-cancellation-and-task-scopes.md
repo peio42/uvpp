@@ -96,13 +96,18 @@ on an explicit loop. It binds a dedicated cancellation state inherited by child
 tasks, supports loop-thread-only `request_stop()`, and permits multiple same-loop
 `join()` observers. Completion and result consumption remain separate: non-void
 `take_result()` moves the value once and rethrows a stored root failure; void roots
-retain `rethrow_if_failed()`. Destroying an active root handle remains a termination
-diagnostic rather than the target cancellation/retention policy. Termination is
-not the intended final v3 contract: implementation work is planned to request
-stop, retain execution through actual completion after public-handle destruction,
-and route otherwise unobserved failures explicitly. The state has one explicit
-heap allocation so it remains address-stable across handle moves and while
-join awaiters are suspended. Tests also verify that a root stop request after a
+retain `rethrow_if_failed()`. Destroying an active root handle now marks public
+observation abandoned and requests stop rather than destroying the root frame. A
+completion baton, created at spawn, retains the address-stable shared state
+independently of the public handle and is resumed only after the root reaches
+`final_suspend`; it then delivers completion, resumes detached joiners, and may
+reclaim the root safely. This validates active destruction during a native timer
+wait, survival of an already-installed joiner, and synchronous completion from a
+stop callback. A root failure after active-handle abandonment currently terminates
+rather than becoming silent. General exactly-once unobserved-failure routing,
+including a completed handle destroyed without observation, remains work. The
+state has one explicit heap allocation and the baton currently adds one
+coroutine-frame allocation. Tests also verify that a root stop request after a
 submitted borrowed TCP write leaves the write and its payload alive until the
 native completion callback, and that `join()` completes only afterwards.
 

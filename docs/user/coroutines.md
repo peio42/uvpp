@@ -43,17 +43,25 @@ Awaiting a temporary child task consumes it, binds it to its parent loop, and
 delivers its value by move. A child exception is thrown at the parent `co_await`;
 an uncaught one is observable through the root `spawn_handle`.
 
-Keep the returned `spawn_handle<T>` alive while the task is running, and drive
-the loop until it completes. `co_await execution.join()` is a same-loop completion
-barrier and may be used by multiple tasks. It does not consume the result. For a
-non-void root, `take_result()` moves the value exactly once; it rethrows a stored
-task exception. `has_result()` reports whether that value remains available.
-For a void root, use `rethrow_if_failed()` after completion.
+Keep the returned `spawn_handle<T>` alive while the task is running when its
+result or failure must be observed, and drive the loop until actual completion.
+`co_await execution.join()` is a same-loop completion barrier and may be used by
+multiple tasks. It does not consume the result. For a non-void root,
+`take_result()` moves the value exactly once; it rethrows a stored task exception.
+`has_result()` reports whether that value remains available. For a void root, use
+`rethrow_if_failed()` after completion.
 
 `request_stop()` requests cooperative cancellation for the root and nested child
 tasks; it is loop-thread-only and does not imply completion. Destroying an active
-`spawn_handle<T>` terminates the process instead of releasing a coroutine frame
-that libuv may still reference. There is no implicit detach.
+`spawn_handle<T>` marks its public observation as abandoned and requests stop.
+The root frame, its native requests, and borrowed payloads remain retained until
+actual completion; existing `join()` awaiters remain valid. This is not public
+detach: the application must still drive and retain the loop through cleanup.
+
+An exception from a root whose active public handle was abandoned currently calls
+`std::terminate()` when that root completes. Configurable unobserved-failure
+routing, including completed handles destroyed without observing failure, remains
+experimental work.
 
 ## Experimental task scopes
 
@@ -117,11 +125,11 @@ buffer must therefore remain valid and unchanged until that completion even afte
 a stop request. A task can observe the inherited request with
 `co_await uv::co::stop_requested()`.
 
-Task frames and spawn bookkeeping may allocate. Continuations can resume from
-native completion on the same loop thread; there is no implicit worker-thread
-hop or general posting queue. Public detach and automatic retention after active
-spawn-handle destruction remain unimplemented; do not rely on the target fallback
-in proposals as an available behavior.
+Task frames and spawn bookkeeping may allocate. An active root additionally has
+one internal completion-baton allocation, which retains it independently of the
+public spawn handle until it reaches final suspension. Continuations can resume
+from native completion on the same loop thread; there is no implicit worker-thread
+hop or general posting queue. Public detach remains unimplemented.
 
 See [networking](networking/tcp.md) for owner operations and
 [errors](errors.md) for exception observation.

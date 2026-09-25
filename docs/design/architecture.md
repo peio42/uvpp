@@ -29,11 +29,11 @@ coroutine continuations run on the same loop thread unless an API explicitly
 states otherwise. There is no implicit posting queue or second runtime.
 
 The application drives the loop through completion and native close, then calls
-`loop.close()`. Loop and resource destructors never run a nested loop. The current
-active spawn-handle destructor terminates as an implementation-stage diagnostic.
-This is not the target contract: active destruction is intended to request stop
-and retain execution state through actual completion, with explicit routing for
-failures no longer observable through the public handle.
+`loop.close()`. Loop and resource destructors never run a nested loop. Active
+spawn-handle destruction requests stop and releases only public observation; an
+internal completion baton retains execution state through actual completion and
+reclaims the root only after final suspension. Unobserved root failures currently
+terminate after active-handle abandonment; configurable routing remains unfinished.
 
 ## Native identity and ownership
 

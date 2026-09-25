@@ -369,6 +369,126 @@ TEST(UvppV3Coroutine, spawnHandleStopCancelsRootAndNestedChildren) {
   EXPECT_NO_THROW(loop.close());
 }
 
+TEST(UvppV3Coroutine, activeSpawnHandleDestructionRequestsStopAndRetainsRoot) {
+  uv::loop loop;
+  bool canceled = false;
+  bool completed = false;
+
+  auto worker = [&]() -> uv::co::task<void> {
+    try {
+      co_await uv::co::sleep_for(1h);
+    } catch (const uv::error &error) {
+      canceled = error.code().value() == UV_ECANCELED;
+    }
+    completed = true;
+  };
+
+  {
+    auto execution = uv::co::spawn(loop, worker());
+    EXPECT_FALSE(execution.done());
+  }
+
+  // The public observer is gone, but the root and its timer storage stay alive
+  // until stop reaches the terminal native callback.
+  EXPECT_FALSE(completed);
+  loop.run();
+
+  EXPECT_TRUE(canceled);
+  EXPECT_TRUE(completed);
+  EXPECT_NO_THROW(loop.close());
+}
+
+TEST(UvppV3Coroutine, activeSpawnHandleDestructionKeepsExistingJoinersAlive) {
+  uv::loop loop;
+  std::optional<uv::co::spawn_handle<>> execution;
+  bool joined = false;
+  bool canceled = false;
+
+  auto worker = [&]() -> uv::co::task<void> {
+    try {
+      co_await uv::co::sleep_for(1h);
+    } catch (const uv::error &error) {
+      canceled = error.code().value() == UV_ECANCELED;
+    }
+  };
+  execution.emplace(uv::co::spawn(loop, worker()));
+
+  auto joiner = [&]() -> uv::co::task<void> {
+    co_await execution->join();
+    joined = true;
+  };
+  auto joiner_execution = uv::co::spawn(loop, joiner());
+  execution.reset();
+
+  loop.run();
+
+  EXPECT_TRUE(canceled);
+  EXPECT_TRUE(joined);
+  EXPECT_NO_THROW(joiner_execution.rethrow_if_failed());
+  EXPECT_NO_THROW(loop.close());
+}
+
+TEST(UvppV3Coroutine, activeSpawnHandleDestructionSurvivesSynchronousStopCompletion) {
+  uv::loop loop;
+  bool completed = false;
+
+  auto worker = [&]() -> uv::co::task<void> {
+    co_await synchronous_stop_awaiter{};
+    completed = true;
+  };
+
+  {
+    auto execution = uv::co::spawn(loop, worker());
+    EXPECT_FALSE(execution.done());
+  }
+
+  // request_stop() resumes this root synchronously. Reclamation must still be
+  // deferred until its final-suspend protocol has transferred to the baton.
+  EXPECT_TRUE(completed);
+  EXPECT_NO_THROW(loop.close());
+}
+
+TEST(UvppV3Coroutine, activeSpawnHandleDestructionRetainsSubmittedBorrowedWrite) {
+  if (!loopback_tcp_is_permitted()) {
+    GTEST_SKIP() << "loopback TCP is not permitted in this environment";
+  }
+
+  connected_tcp_pair pair;
+  pair.connect();
+  std::string data{"borrowed root write survives handle destruction"};
+  bool write_completed = false;
+  bool observed_stop = false;
+
+  auto root = [&]() -> uv::co::task<void> {
+    co_await pair.client->write(data);
+    write_completed = true;
+    observed_stop = co_await uv::co::stop_requested();
+    pair.loop.stop();
+  };
+  {
+    auto execution = uv::co::spawn(pair.loop, root());
+  }
+
+  // Destruction requests stop but a submitted write cannot be physically
+  // cancelled. It keeps both the root frame and its borrowed payload alive.
+  int close_status = 0;
+  try {
+    pair.client->request_close();
+  } catch (const uv::error &error) {
+    close_status = error.code().value();
+  }
+  EXPECT_EQ(close_status, UV_EBUSY);
+  EXPECT_FALSE(write_completed);
+
+  pair.loop.run();
+
+  EXPECT_TRUE(write_completed);
+  EXPECT_TRUE(observed_stop);
+  data.front() = 'B'; // The borrow ends only after native write completion.
+  EXPECT_EQ(data.front(), 'B');
+  pair.close();
+}
+
 TEST(UvppV3Coroutine, spawnHandleStopWaitsForSubmittedBorrowedWrite) {
   if (!loopback_tcp_is_permitted()) {
     GTEST_SKIP() << "loopback TCP is not permitted in this environment";

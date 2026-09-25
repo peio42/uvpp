@@ -63,8 +63,10 @@ policy are not yet migrated throughout the implementation.
 
 Result-oriented operations are not automatically `noexcept`: allocation and
 other documented C++ preparation failures can throw. Wrong-loop use currently
-raises `std::logic_error` in owner awaits. Active-handle destruction and certain
-lifetime violations terminate. Neither is a recoverable native error result.
+raises `std::logic_error` in owner awaits. Certain lifetime violations terminate.
+Destroying an active spawn handle requests stop and retains its execution until
+actual completion; if that abandoned root then fails, the current temporary
+unobserved-failure policy terminates. Neither is a recoverable native error result.
 
 Cancellation is a request; only actual completion releases borrowed storage.
 Completed cooperative cancellation uses `UV_ECANCELED`. An in-flight write/send
