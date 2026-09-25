@@ -118,6 +118,8 @@ public:
       }
     }
 
+    bool has_failure() const noexcept { return exception_ != nullptr; }
+
     bool has_result() const noexcept { return value_.has_value(); }
 
     T take_result() {
@@ -253,6 +255,8 @@ public:
       }
     }
 
+    bool has_failure() const noexcept { return exception_ != nullptr; }
+
   private:
     using handle_type = std::coroutine_handle<promise_type>;
 
@@ -378,15 +382,16 @@ private:
 // Observes the cooperative stop state inherited by the current task.
 [[nodiscard]] inline stop_requested_awaiter stop_requested() noexcept { return {}; }
 
-// Experimental root-execution owner. It owns one root frame, supplies the root
-// cancellation state inherited by descendants, and keeps completion observation
-// separate from single-consumer value extraction. It must outlive outstanding
-// native work: destroying an active handle terminates rather than invalidating
-// a coroutine frame still referenced by libuv.
+// Experimental root-execution observer. It supplies the root cancellation state
+// inherited by descendants and keeps completion observation separate from
+// single-consumer value extraction. The running root owns an internal completion
+// baton, so destroying this public handle requests stop without invalidating a
+// coroutine frame still referenced by libuv.
 template<class T>
 class [[nodiscard]] spawn_handle {
 private:
   struct state;
+  class completion_baton;
 
 public:
   spawn_handle() = delete;
@@ -469,32 +474,80 @@ private:
 
     static std::coroutine_handle<> on_completed(void *context) noexcept {
       auto &self = *static_cast<state *>(context);
-      self.completed = true;
+      // The completion baton holds a shared reference to this state. Returning
+      // it transfers out of the root final-suspend protocol before completion
+      // delivery can release the last execution owner and destroy the root.
+      return std::exchange(self.baton, std::coroutine_handle<>{});
+    }
+
+    void deliver_completion() noexcept {
+      completed = true;
 
       // Detach every user continuation before resuming any of them. A resumed
       // joiner may otherwise observe callback-frame references still owned by
       // this completion delivery.
-      auto joiners = std::move(self.joiners);
-      self.joiners.clear();
-      if (joiners.empty()) {
-        return std::noop_coroutine();
+      auto completed_joiners = std::move(joiners);
+      this->joiners.clear();
+      for (auto joiner : completed_joiners) {
+        joiner.resume();
       }
 
-      // Return one continuation by symmetric transfer. The remaining waiters
-      // are already detached, so resuming them cannot expose this state with
-      // callback-frame references still installed.
-      auto first = joiners.front();
-      for (std::size_t index = 1; index < joiners.size(); ++index) {
-        joiners[index].resume();
+      // A failure after the sole public handle was abandoned has no result
+      // observer. Keep the existing diagnostic rather than silently discarding
+      // it; configurable unobserved-failure routing is a later slice.
+      if (public_handle_abandoned && handle.promise().has_failure()) {
+        std::terminate();
       }
-      return first;
     }
 
     handle_type handle{};
     uv::loop *loop = nullptr;
     detail::cancellation_state cancellation{};
     std::vector<std::coroutine_handle<>> joiners{};
+    std::coroutine_handle<> baton{};
     bool completed = false;
+    bool public_handle_abandoned = false;
+  };
+
+  // This suspended coroutine is created before the root starts and holds the
+  // execution reference independently of the public spawn_handle. The root
+  // transfers to it from final_suspend; therefore its final reference may
+  // destroy the root only after that root is safely suspended.
+  class completion_baton {
+  public:
+    struct promise_type {
+      completion_baton get_return_object() noexcept {
+        return completion_baton{handle_type::from_promise(*this)};
+      }
+
+      std::suspend_always initial_suspend() noexcept { return {}; }
+      std::suspend_never final_suspend() noexcept { return {}; }
+      void return_void() noexcept {}
+      void unhandled_exception() noexcept { std::terminate(); }
+    };
+
+    using handle_type = std::coroutine_handle<promise_type>;
+
+    completion_baton() = default;
+    completion_baton(const completion_baton &) = delete;
+    completion_baton &operator=(const completion_baton &) = delete;
+
+    completion_baton(completion_baton &&other) noexcept
+      : handle_{std::exchange(other.handle_, {})} {}
+
+    std::coroutine_handle<> release() noexcept {
+      return std::exchange(handle_, {});
+    }
+
+    static completion_baton make(std::shared_ptr<state> retained) {
+      retained->deliver_completion();
+      co_return;
+    }
+
+  private:
+    explicit completion_baton(handle_type handle) noexcept : handle_{handle} {}
+
+    handle_type handle_{};
   };
 
 public:
@@ -532,13 +585,16 @@ private:
   }
 
   void release() noexcept {
-    if (state_ == nullptr) {
+    auto released = std::move(state_);
+    if (released == nullptr) {
       return;
     }
-    if (!state_->completed) {
-      std::terminate();
+    if (!released->completed) {
+      // Keep a local reference while request_stop() invokes callbacks: a stop
+      // callback may synchronously complete the root and run the baton.
+      released->public_handle_abandoned = true;
+      released->cancellation.request_stop();
     }
-    state_.reset();
   }
 
   std::shared_ptr<state> state_{};
@@ -557,10 +613,15 @@ template<class T>
   std::shared_ptr<typename spawn_handle<T>::state> state;
   try {
     state = std::make_shared<typename spawn_handle<T>::state>(handle, execution_loop);
+    state->baton = spawn_handle<T>::completion_baton::make(state).release();
     handle.promise().bind(execution_loop, &state->cancellation);
     handle.promise().set_completion(state.get(), &spawn_handle<T>::state::on_completed);
   } catch (...) {
     if (state != nullptr) {
+      if (state->baton) {
+        state->baton.destroy();
+        state->baton = {};
+      }
       state->handle.destroy();
       state->handle = {};
     } else {

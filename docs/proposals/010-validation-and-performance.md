@@ -50,7 +50,8 @@ For the initial task/ownership prototype, verify cold construction, root context
 binding, inherited child context, single consumption, and rejection of cross-loop
 joins and resource-affinity mismatches. Destroy active spawn handles while native
 work cannot be cancelled, then verify retained state, actual completion, cleanup,
-and unobserved-failure routing. Scope joins must precede destruction of external
+and the current unobserved-failure diagnostic; validate configurable routing when
+that policy is implemented. Scope joins must precede destruction of external
 borrowed data. Exercise the internal close-completion primitive, exceptional
 scope exit, and the public coroutine close contract.
 

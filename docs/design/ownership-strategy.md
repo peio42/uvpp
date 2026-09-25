@@ -64,9 +64,10 @@ than starting unobserved request cleanup.
 
 ## Tasks, views, and bytes
 
-Cold tasks acquire a loop at spawn or child await. A `spawn_handle<T>` retains a
-root frame and supports same-loop join; destruction while active currently
-terminates. Task scopes own child execution and must settle before destruction.
+Cold tasks acquire a loop at spawn or child await. A `spawn_handle<T>` observes a
+root frame and supports same-loop join; active destruction requests stop while an
+internal completion baton retains the root through actual completion. Task scopes
+own child execution and must settle before destruction.
 Termination is an implementation-stage diagnostic, not the v3 target. The target
 is for active destruction to request cooperative stop, retain execution and native
 operation state through actual completion, and route failures that can no longer

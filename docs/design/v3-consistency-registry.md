@@ -36,7 +36,7 @@ blind rename.
 | Filesystem file | `uv::fs::*` / `uv::ops::fs::*` for open/read/write/close | Stable shared file state; unclosed destruction terminates; native close completion is terminal even on error | Implemented | Submitted request attempts `uv_cancel`; buffer/request live to callback | Descriptor access only as documented; no `uv_handle_t` |
 | Signal source | Throwing `next` / `uv::ops::next`; paired close | Stable movable subscription owner; destruction stops and closes asynchronously | Not implemented; absence explicit pending generic subscription policy | Cancels waiter, not subscription; close is terminal | `native`, `native_handle` |
 | Process | Throwing `wait`; `uv::ops::wait`, `kill`, and close | Stable movable owner; destruction before exit retains state, then closes | Not implemented; live-child cleanup and supervision policy are unresolved | Cancels waiter, never the child; exit remains retained | `native`, `native_handle` |
-| Root task | Throwing result observation; no `uv::ops` resource pair | `spawn_handle` owns root state; active destruction currently terminates, target retains after requesting stop | Not applicable; `task_scope` owns child executions | Cooperative stop; native work still requires terminal completion | No native handle |
+| Root task | Throwing result observation; no `uv::ops` resource pair | `spawn_handle` observes root state; active destruction requests stop while a completion baton retains through terminal completion | Not applicable; `task_scope` owns child executions | Cooperative stop; native work still requires terminal completion | No native handle |
 
 The open construction-policy question is:
 
