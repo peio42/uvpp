@@ -86,8 +86,12 @@ ordinary loop-thread task transitions.
   is fail-fast.
 - Distinguish timeout, requested stop, native cancellation failure, and I/O failure.
 - Define scope destruction without join; no implicit unsafe frame destruction.
-- Specify spawn-handle state retention/reclamation after destruction, unobserved
-  error routing, join consumption rules, and startup-failure ownership rollback.
+
+The root `spawn_handle` destruction contract is implemented for ordinary
+loop-thread use: active destruction requests stop, the completion baton retains
+execution through terminal completion, existing joiners remain valid, and an
+unobserved failure routes exactly once through the loop policy. Public detach and
+cross-thread spawn-handle control remain deferred.
 
 ## Implementation progress and validation
 
