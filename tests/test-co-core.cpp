@@ -227,6 +227,35 @@ TEST(UvppV3Coroutine, completedUnobservedFailureUsesTheLoopHandler) {
   EXPECT_NO_THROW(loop.close());
 }
 
+TEST(UvppV3Coroutine, unobservedFailureHandlerMayReplaceItself) {
+  uv::loop loop;
+  int first_reports = 0;
+  int replacement_reports = 0;
+
+  loop.set_unobserved_failure_handler([&](std::exception_ptr) {
+    ++first_reports;
+    loop.set_unobserved_failure_handler(
+        [&](std::exception_ptr) { ++replacement_reports; });
+  });
+
+  auto worker = []() -> uv::co::task<void> {
+    (void)co_await uv::co::stop_requested();
+    throw std::runtime_error{"replaced unobserved failure handler"};
+  };
+  {
+    auto first = uv::co::spawn(loop, worker());
+    ASSERT_TRUE(first.done());
+  }
+  {
+    auto second = uv::co::spawn(loop, worker());
+    ASSERT_TRUE(second.done());
+  }
+
+  EXPECT_EQ(first_reports, 1);
+  EXPECT_EQ(replacement_reports, 1);
+  EXPECT_NO_THROW(loop.close());
+}
+
 TEST(UvppV3Coroutine, observedRootFailureIsNotReported) {
   uv::loop loop;
   int reports = 0;

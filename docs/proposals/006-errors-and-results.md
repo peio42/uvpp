@@ -170,8 +170,10 @@ handle requests cancellation while execution state survives through actual
 completion and cleanup. `rethrow_if_failed()` and `take_result()` explicitly
 observe a failure; `join()` does not. A failure left unobserved when the public
 handle is lost is routed exactly once through a loop-level handler, whose default
-policy terminates. The handler runs on the loop thread and an escaping handler
-exception terminates. This applies even though public detach is deferred; see
+policy terminates. Under the current loop-thread-only spawn-handle contract, the
+handler runs on the loop thread; an escaping handler exception terminates. It may
+replace or clear itself during delivery; that change
+applies only to a subsequent failure. This applies even though public detach is deferred; see
 [003](003-cancellation-and-task-scopes.md).
 
 The optional posting component may also accept an error handler for posted
