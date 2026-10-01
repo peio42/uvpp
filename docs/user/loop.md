@@ -39,7 +39,8 @@ is routed to log or supervise it:
 
 ```cpp
 loop.set_unobserved_failure_handler([](std::exception_ptr failure) {
-  // Record failure. The handler runs on the loop thread.
+  // Record failure. Under the current loop-thread-only spawn-handle contract,
+  // this runs on the loop thread.
   (void)failure;
 });
 ```
@@ -47,6 +48,10 @@ loop.set_unobserved_failure_handler([](std::exception_ptr failure) {
 Installing the handler may allocate. The handler must not throw; an escaping
 handler exception terminates. Passing an empty `uv::loop::unobserved_failure_handler`
 restores the default terminating policy.
+
+A handler may replace or clear itself while it runs. The current invocation keeps
+its original callable alive; the replacement applies to the next unobserved
+failure.
 
 ## Time
 

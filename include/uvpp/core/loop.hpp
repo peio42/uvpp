@@ -107,7 +107,8 @@ private:
 class loop {
 public:
   // Receives a root-task exception that can no longer be observed through its
-  // spawn handle. The handler runs on the loop thread and must not throw.
+  // spawn handle. Under the current loop-thread-only spawn-handle contract, it
+  // runs on the loop thread and must not throw.
   using unobserved_failure_handler = std::function<void(std::exception_ptr)>;
 
   loop() { throw_if_error(uv_loop_init(&raw_)); }
@@ -178,7 +179,7 @@ public:
   // restores the default std::terminate() policy. Installing a handler may
   // allocate; invoking it is noexcept and terminates if the handler throws.
   void set_unobserved_failure_handler(unobserved_failure_handler handler) {
-    unobserved_failure_handler_ = std::move(handler);
+    unobserved_failure_handler_.replace(std::move(handler));
   }
 
   template<class F>
@@ -192,14 +193,16 @@ private:
   friend class co::spawn_handle;
 
   void report_unobserved_failure(std::exception_ptr failure) noexcept {
-    if (!unobserved_failure_handler_) {
+    const bool handled = unobserved_failure_handler_.invoke(
+        [&](unobserved_failure_handler &handler) { handler(failure); });
+    if (!handled) {
       std::terminate();
     }
-    detail::invoke_callback(unobserved_failure_handler_, failure);
   }
 
   uv_loop_t raw_{};
-  unobserved_failure_handler unobserved_failure_handler_{};
+  detail::persistent_callback_slot<unobserved_failure_handler>
+      unobserved_failure_handler_{};
 };
 
 inline loop_view default_loop() noexcept {
