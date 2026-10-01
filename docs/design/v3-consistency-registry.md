@@ -57,7 +57,7 @@ processes do not imply that an explicit-result creation surface has been rejecte
 | Filesystem file | One read and one write slot; same-direction overlap and close during active I/O report `UV_EBUSY` | Default read/write spans borrowed; `read_owned` owns destination; `write_copy` owns source | Implemented initial file slice; broader filesystem deferred |
 | Signal source | One waiter slot; competing `next` reports `UV_EBUSY`; one pending signal coalesced | No caller buffer; signal number copied | Implemented experimental owner; scope adoption deferred |
 | Process | One waiter slot; competing `wait` reports `UV_EBUSY`; exit result retained | Options copied/prepared for synchronous spawn; no borrowed async payload in current slice | Implemented experimental owner; stdio, supervision, and scope adoption deferred |
-| Root task | Multiple join observers; result consumption is single-use | Coroutine frames do not extend external borrows | Partially implemented; post-handle retention and failure routing are target work |
+| Root task | Multiple join observers; result consumption is single-use | Coroutine frames do not extend external borrows | Implemented experimental contract: active-handle destruction retains through terminal completion and routes unobserved failures exactly once; public detach and cross-thread control remain deferred |
 
 Update this registry whenever a family changes namespace, adds an error-policy
 pair, changes its terminal protocol, or expands its scope/cancellation surface.
