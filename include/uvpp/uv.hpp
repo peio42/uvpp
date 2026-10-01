@@ -4,6 +4,7 @@
 #include "uvpp/core/loop.hpp"
 #include "uvpp/core/types.hpp"
 #include "uvpp/core/version.hpp"
+#include "uvpp/loop_posting.hpp"
 #include "uvpp/handles/handle_view.hpp"
 #include "uvpp/fs/dir.hpp"
 #include "uvpp/fs/file.hpp"

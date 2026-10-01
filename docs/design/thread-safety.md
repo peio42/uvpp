@@ -56,9 +56,19 @@ synchronization.
 
 ## Higher-Level Scheduling
 
-The current wrappers do not provide a posting queue or executor. That extension
-is described in the [loop scheduling proposal](../proposals/007-loop-scheduling.md).
-Synchronization remains explicit and is not added to every handle/request.
+`uv::loop_posting` is an experimental, explicit cross-thread publication
+component. Its owner is created and closed on the loop thread; its copyable
+`loop_posting_endpoint` is the producer capability and exposes no native handle
+or loop access. `endpoint.post(...)` may be called from another thread and
+executes accepted work on the loop thread. `uv::ops::post(endpoint, ...)` reports
+queue-full and closed rejections as a `uv::status`.
+
+The component owns its synchronization, bounded queue, and `uv_async_t`; no lock
+or cross-thread lifetime management is added to ordinary handles, requests, tasks,
+or resource owners. Close is loop-thread-affine: it rejects new work, drains every
+accepted callable, and then closes the wakeup handle. See the
+[loop scheduling proposal](../proposals/007-loop-scheduling.md) for the remaining
+continuation-policy and validation work.
 
 ## Threading Primitives
 

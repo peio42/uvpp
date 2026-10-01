@@ -24,6 +24,33 @@ close owners, or complete native cleanup; resume driving the loop as needed.
 loop.stop();
 ```
 
+## Cross-thread posting
+
+`uv::loop_posting` is an experimental explicit producer-to-loop bridge. Create
+its owner on the loop thread and pass an endpoint to producer threads. A posted
+callable runs later on the loop thread.
+
+```cpp
+uv::loop_posting posting(loop);
+auto endpoint = posting.endpoint();
+
+std::thread producer([endpoint] {
+  endpoint.post([] {
+    // Runs on the loop thread.
+  });
+});
+producer.join();
+
+co_await posting.close(); // rejects new posts, drains accepted work, then closes
+```
+
+The queue is bounded. `endpoint.post()` throws for a full or closed component;
+`uv::ops::post(endpoint, callable)` returns `uv::status` instead. Accepted work
+runs once if the application continues to drive the loop through close completion.
+The owner must remain alive until then. Callables may be move-only; their queue
+storage may allocate. Exceptions in posted callables go to the component's failure
+handler, which defaults to `std::terminate()`.
+
 `alive()` reports whether libuv still sees active handles or requests.
 
 ## Unobserved root failures

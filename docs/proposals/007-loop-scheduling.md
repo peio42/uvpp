@@ -125,8 +125,13 @@ drain budget with the implemented API.
 
 ## Implementation progress and validation
 
-The low-level async handle exists. The posting component's first-slice contract is
-now selected but not implemented; coroutine continuation policy remains proposed.
+The low-level async handle and the first experimental posting component are
+implemented in [`loop_posting.hpp`](../../include/uvpp/loop_posting.hpp).
+`loop_posting` owns the bounded synchronized queue and native wakeup handle;
+`loop_posting_endpoint` is the copyable producer capability. The component drains
+accepted work before close, exposes `close()` as a same-loop coroutine completion,
+and reports rejection through `uv::ops::post`. Its exact public names and options
+remain experimental. Coroutine continuation policy remains proposed.
 Validate the ordinary coroutine layers on one loop without a separately constructed
 posting component before freezing their API. For the component, validate many
 producers, coalesced wakeups, posts racing with shutdown, rejection, loop-thread
