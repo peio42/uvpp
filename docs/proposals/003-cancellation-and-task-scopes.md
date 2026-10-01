@@ -103,11 +103,13 @@ independently of the public handle and is resumed only after the root reaches
 `final_suspend`; it then delivers completion, resumes detached joiners, and may
 reclaim the root safely. This validates active destruction during a native timer
 wait, survival of an already-installed joiner, and synchronous completion from a
-stop callback. A root failure after active-handle abandonment currently terminates
-rather than becoming silent. General exactly-once unobserved-failure routing,
-including a completed handle destroyed without observation, remains work. The
-state has one explicit heap allocation and the baton currently adds one
-coroutine-frame allocation. Tests also verify that a root stop request after a
+stop callback. `rethrow_if_failed()` and `take_result()` mark a stored failure as
+observed; `join()` deliberately does not. An unobserved failure is routed exactly
+once through the owning loop’s configurable failure handler when an active handle
+is abandoned or when a completed failed handle is destroyed. The default policy
+terminates, and a throwing handler also terminates. The state has one explicit
+heap allocation and the baton currently adds one coroutine-frame allocation.
+Tests also verify that a root stop request after a
 submitted borrowed TCP write leaves the write and its payload alive until the
 native completion callback, and that `join()` completes only afterwards.
 

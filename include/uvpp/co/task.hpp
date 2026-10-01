@@ -119,6 +119,7 @@ public:
     }
 
     bool has_failure() const noexcept { return exception_ != nullptr; }
+    std::exception_ptr failure() const noexcept { return exception_; }
 
     bool has_result() const noexcept { return value_.has_value(); }
 
@@ -256,6 +257,7 @@ public:
     }
 
     bool has_failure() const noexcept { return exception_ != nullptr; }
+    std::exception_ptr failure() const noexcept { return exception_; }
 
   private:
     using handle_type = std::coroutine_handle<promise_type>;
@@ -414,7 +416,9 @@ public:
   bool done() const noexcept { return state_ != nullptr && state_->completed; }
 
   void rethrow_if_failed() const {
-    completed_state().handle.promise().rethrow_if_failed();
+    auto &state = completed_state();
+    state.observe_failure_if_present();
+    state.handle.promise().rethrow_if_failed();
   }
 
   // Requests cooperative stop for this root and all nested children. It is
@@ -492,12 +496,25 @@ private:
         joiner.resume();
       }
 
-      // A failure after the sole public handle was abandoned has no result
-      // observer. Keep the existing diagnostic rather than silently discarding
-      // it; configurable unobserved-failure routing is a later slice.
-      if (public_handle_abandoned && handle.promise().has_failure()) {
-        std::terminate();
+      if (public_handle_abandoned) {
+        report_unobserved_failure_if_needed();
       }
+    }
+
+    void observe_failure_if_present() noexcept {
+      if (handle.promise().has_failure()) {
+        failure_observed = true;
+      }
+    }
+
+    void report_unobserved_failure_if_needed() noexcept {
+      if (!handle.promise().has_failure() || failure_observed || failure_reported) {
+        return;
+      }
+      // Set this before user code runs. The handler may be reentrant, but a
+      // root failure must have one and only one destination.
+      failure_reported = true;
+      loop->report_unobserved_failure(handle.promise().failure());
     }
 
     handle_type handle{};
@@ -507,6 +524,8 @@ private:
     std::coroutine_handle<> baton{};
     bool completed = false;
     bool public_handle_abandoned = false;
+    bool failure_observed = false;
+    bool failure_reported = false;
   };
 
   // This suspended coroutine is created before the root starts and holds the
@@ -558,7 +577,9 @@ public:
 
   T take_result()
     requires (!std::is_void_v<T>) {
-    return completed_state().handle.promise().take_result();
+    auto &state = completed_state();
+    state.observe_failure_if_present();
+    return state.handle.promise().take_result();
   }
 
 private:
@@ -594,6 +615,8 @@ private:
       // callback may synchronously complete the root and run the baton.
       released->public_handle_abandoned = true;
       released->cancellation.request_stop();
+    } else {
+      released->report_unobserved_failure_if_needed();
     }
   }
 

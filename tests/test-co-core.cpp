@@ -203,6 +203,114 @@ TEST(UvppV3Coroutine, sleepForDeliversTaskFailureToTheSpawnHandle) {
   loop.close();
 }
 
+TEST(UvppV3Coroutine, completedUnobservedFailureUsesTheLoopHandler) {
+  uv::loop loop;
+  int reports = 0;
+  std::exception_ptr reported_failure;
+  loop.set_unobserved_failure_handler([&](std::exception_ptr failure) {
+    ++reports;
+    reported_failure = failure;
+  });
+
+  auto worker = []() -> uv::co::task<void> {
+    (void)co_await uv::co::stop_requested();
+    throw std::runtime_error{"completed unobserved root failure"};
+  };
+  {
+    auto execution = uv::co::spawn(loop, worker());
+    ASSERT_TRUE(execution.done());
+  }
+
+  EXPECT_EQ(reports, 1);
+  ASSERT_NE(reported_failure, nullptr);
+  EXPECT_THROW(std::rethrow_exception(reported_failure), std::runtime_error);
+  EXPECT_NO_THROW(loop.close());
+}
+
+TEST(UvppV3Coroutine, observedRootFailureIsNotReported) {
+  uv::loop loop;
+  int reports = 0;
+  loop.set_unobserved_failure_handler([&](std::exception_ptr) { ++reports; });
+
+  auto worker = []() -> uv::co::task<void> {
+    (void)co_await uv::co::stop_requested();
+    throw std::runtime_error{"observed root failure"};
+  };
+  {
+    auto execution = uv::co::spawn(loop, worker());
+    EXPECT_THROW(execution.rethrow_if_failed(), std::runtime_error);
+  }
+
+  EXPECT_EQ(reports, 0);
+  EXPECT_NO_THROW(loop.close());
+}
+
+TEST(UvppV3Coroutine, takeResultObservesRootFailure) {
+  uv::loop loop;
+  int reports = 0;
+  loop.set_unobserved_failure_handler([&](std::exception_ptr) { ++reports; });
+
+  auto worker = []() -> uv::co::task<int> {
+    (void)co_await uv::co::stop_requested();
+    throw std::runtime_error{"take-result root failure"};
+  };
+  {
+    auto execution = uv::co::spawn(loop, worker());
+    EXPECT_THROW((void)execution.take_result(), std::runtime_error);
+  }
+
+  EXPECT_EQ(reports, 0);
+  EXPECT_NO_THROW(loop.close());
+}
+
+TEST(UvppV3Coroutine, joinDoesNotObserveRootFailure) {
+  uv::loop loop;
+  int reports = 0;
+  bool joined = false;
+  loop.set_unobserved_failure_handler([&](std::exception_ptr) { ++reports; });
+
+  auto worker = []() -> uv::co::task<void> {
+    (void)co_await uv::co::stop_requested();
+    throw std::runtime_error{"joined but unobserved root failure"};
+  };
+  {
+    auto execution = uv::co::spawn(loop, worker());
+    auto joiner = [&]() -> uv::co::task<void> {
+      co_await execution.join();
+      joined = true;
+    };
+    auto joiner_execution = uv::co::spawn(loop, joiner());
+    EXPECT_TRUE(joined);
+    EXPECT_NO_THROW(joiner_execution.rethrow_if_failed());
+  }
+
+  EXPECT_EQ(reports, 1);
+  EXPECT_NO_THROW(loop.close());
+}
+
+TEST(UvppV3Coroutine, abandonedActiveFailureUsesTheLoopHandlerExactlyOnce) {
+  uv::loop loop;
+  int reports = 0;
+  std::exception_ptr reported_failure;
+  loop.set_unobserved_failure_handler([&](std::exception_ptr failure) {
+    ++reports;
+    reported_failure = failure;
+  });
+
+  auto worker = []() -> uv::co::task<void> {
+    co_await synchronous_stop_awaiter{};
+    throw std::runtime_error{"abandoned active root failure"};
+  };
+  {
+    auto execution = uv::co::spawn(loop, worker());
+  }
+
+  EXPECT_EQ(reports, 1);
+  ASSERT_NE(reported_failure, nullptr);
+  EXPECT_THROW(std::rethrow_exception(reported_failure), std::runtime_error);
+  EXPECT_NO_THROW(loop.close());
+}
+
 TEST(UvppV3Coroutine, spawnHandleJoinsMultipleTasksAndConsumesValueOnce) {
   uv::loop loop;
   int joiners_completed = 0;

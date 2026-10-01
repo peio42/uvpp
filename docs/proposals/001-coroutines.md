@@ -198,8 +198,8 @@ retains its storage until actual completion. `task.hpp`, `cancellation.hpp`, and
 in focused headers. Active root-handle destruction now requests stop and an
 internal completion baton retains the root through actual completion, including
 native cleanup, before safe reclamation after `final_suspend`. A failure after
-active public-handle abandonment currently terminates; general unobserved-failure
-routing remains open. It deliberately has no resource-close join or public detach,
+active public-handle abandonment routes exactly once through the loop failure
+policy, whose default terminates. It deliberately has no resource-close join or public detach,
 so it does not settle the full public task contract. Because `uv_listen` is persistent but one `accept()`
 consumes one notification, it also deliberately has no queue or long-running
 handler policy before scopes define backpressure and shutdown.

@@ -52,6 +52,7 @@ joins and resource-affinity mismatches. Destroy active spawn handles while nativ
 work cannot be cancelled, then verify retained state, actual completion, cleanup,
 and the current unobserved-failure diagnostic; validate configurable routing when
 that policy is implemented. Scope joins must precede destruction of external
+Scope joins must precede destruction of external
 borrowed data. Exercise the internal close-completion primitive, exceptional
 scope exit, and the public coroutine close contract.
 
