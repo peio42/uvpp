@@ -13,8 +13,9 @@ only a tagged release is a published stable version.
 See the [v3 user guide](docs/user/index.md) for the available surface and limits.
 
 The architecture shares one `uv::loop` between low-level operations, high-level
-owners, and `uv::co` tasks. Owners retain stable native storage, asynchronous
-cleanup stays explicit, and native libuv `data` belongs to application code.
+owners, and `uv::co` tasks. Owners retain stable native storage and asynchronous
+cleanup stays explicit. Raw wrapper `data` remains application-owned; high-level
+owners reserve it for their implementation state.
 
 ## Quick start
 

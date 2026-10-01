@@ -19,7 +19,8 @@ accessors into a new common result contract.
 
 ## Implement lifecycle machinery
 
-Keep native requests address-stable and reconstruct state without native `data`.
+Keep raw native requests address-stable and reconstruct their wrapper state without
+native `data`. High-level operation state may reserve its native `data` field.
 Document callback/frame ownership and every input retained by libuv. Roll back
 claims and owned preparation state on submission failure; separately cover failure
 before submission, including callable and string allocation.

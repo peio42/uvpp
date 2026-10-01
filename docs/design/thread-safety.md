@@ -12,7 +12,9 @@ Rules:
 
 - `loop`, handles, and requests are not generally thread-safe;
 - callback slots must be installed and replaced from the loop-owning thread;
-- `user_data<T>()` is a raw application pointer and has no synchronization;
+- `uv::raw` `user_data<T>()` is an application pointer and has no synchronization;
+- high-level native `data` may belong to uvpp and must not be overwritten through
+  a borrowing native accessor;
 - destroying wrappers from another thread while the loop may reference them is a lifetime error;
 - native access through `native()` follows the same thread-safety rules as the underlying libuv object.
 

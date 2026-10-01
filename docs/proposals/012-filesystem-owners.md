@@ -27,7 +27,8 @@ loop is a programmer error.
 
 The owner allocates stable state before `uv_fs_open` submission. Each submitted
 operation keeps its `uv_fs_t` in its coroutine frame and uses private native
-address recovery, leaving `uv_req_t::data` for application code. Native callback
+address recovery. High-level operation state may reserve `uv_req_t::data`; raw
+request wrappers leave it for application code. Native callback
 delivery, and every immediate native-submission failure, call
 `uv_fs_req_cleanup` before task delivery. A pre-existing stop reports
 `UV_ECANCELED` without submission. After submission, cancellation only requests

@@ -71,8 +71,7 @@ loop.close();
 
 The owner is move-only and moving it preserves its native address. `native()` and
 `native_handle()` provide explicit borrowed libuv access; they do not transfer
-close authority. As with every high-level owner, the native `data` member remains
-for application use.
+close authority or permit replacing the uvpp-owned callback or `data` member.
 
 The source allocates stable owner storage at construction. `next()` adds no
 library allocation; coroutine frames and close waiters may still allocate.
