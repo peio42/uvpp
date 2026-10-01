@@ -2,6 +2,8 @@
 
 #include <chrono>
 #include <concepts>
+#include <exception>
+#include <functional>
 #include <memory>
 #include <optional>
 #include <system_error>
@@ -16,6 +18,11 @@
 // handle_view.hpp has no dependency on loop.hpp, so this include is safe here
 // and lets handle_view be a complete type throughout this header.
 #include "uvpp/handles/handle_view.hpp"
+
+namespace uv::co {
+template<class T>
+class spawn_handle;
+}
 
 namespace uv {
 
@@ -99,6 +106,10 @@ private:
 
 class loop {
 public:
+  // Receives a root-task exception that can no longer be observed through its
+  // spawn handle. The handler runs on the loop thread and must not throw.
+  using unobserved_failure_handler = std::function<void(std::exception_ptr)>;
+
   loop() { throw_if_error(uv_loop_init(&raw_)); }
 
   loop(const loop &) = delete;
@@ -163,6 +174,13 @@ public:
 
   void fork() { view().fork(); }
 
+  // Replaces the policy for unobserved root-task failures. An empty handler
+  // restores the default std::terminate() policy. Installing a handler may
+  // allocate; invoking it is noexcept and terminates if the handler throws.
+  void set_unobserved_failure_handler(unobserved_failure_handler handler) {
+    unobserved_failure_handler_ = std::move(handler);
+  }
+
   template<class F>
     requires std::invocable<F&, handle_view>
   void walk(F &&callback) { view().walk(std::forward<F>(callback)); }
@@ -170,7 +188,18 @@ public:
   std::vector<handle_view> handles() { return view().handles(); }
 
 private:
+  template<class T>
+  friend class co::spawn_handle;
+
+  void report_unobserved_failure(std::exception_ptr failure) noexcept {
+    if (!unobserved_failure_handler_) {
+      std::terminate();
+    }
+    detail::invoke_callback(unobserved_failure_handler_, failure);
+  }
+
   uv_loop_t raw_{};
+  unobserved_failure_handler unobserved_failure_handler_{};
 };
 
 inline loop_view default_loop() noexcept {

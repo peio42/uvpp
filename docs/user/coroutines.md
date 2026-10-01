@@ -58,10 +58,11 @@ The root frame, its native requests, and borrowed payloads remain retained until
 actual completion; existing `join()` awaiters remain valid. This is not public
 detach: the application must still drive and retain the loop through cleanup.
 
-An exception from a root whose active public handle was abandoned currently calls
-`std::terminate()` when that root completes. Configurable unobserved-failure
-routing, including completed handles destroyed without observing failure, remains
-experimental work.
+`rethrow_if_failed()` and `take_result()` observe a root exception. `join()` does
+not: it only reports completion. A root exception that remains unobserved when its
+public handle is lost is routed exactly once to the loop’s unobserved-failure
+handler, including for a handle destroyed after completion. The default handler
+calls `std::terminate()`; see [Loop](loop.md#unobserved-root-failures).
 
 ## Experimental task scopes
 

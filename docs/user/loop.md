@@ -26,6 +26,28 @@ loop.stop();
 
 `alive()` reports whether libuv still sees active handles or requests.
 
+## Unobserved root failures
+
+An exception is observed when `spawn_handle::rethrow_if_failed()` or
+`take_result()` is called after root completion. `join()` is only a completion
+barrier and does not observe an exception. If a failed root loses its public
+handle without observation, the loop routes that exception to its unobserved
+failure handler exactly once.
+
+The default policy is `std::terminate()`. Install a handler before the failure
+is routed to log or supervise it:
+
+```cpp
+loop.set_unobserved_failure_handler([](std::exception_ptr failure) {
+  // Record failure. The handler runs on the loop thread.
+  (void)failure;
+});
+```
+
+Installing the handler may allocate. The handler must not throw; an escaping
+handler exception terminates. Passing an empty `uv::loop::unobserved_failure_handler`
+restores the default terminating policy.
+
 ## Time
 
 `now()` returns libuv's cached loop time in milliseconds. Call `update_time()` to refresh it before reading if the loop has not just run.

@@ -20,8 +20,9 @@ contracts and result-oriented does not imply `noexcept`.
 Task promises capture exceptions; child awaits and completed spawn-handle result
 observation rethrow them. Current wrong-loop owner awaits raise `std::logic_error`.
 Active spawn-handle destruction requests stop; a subsequent root failure without a
-public observer currently terminates. These are implementation limits, not a claim
-that all proposal error/retention rules are implemented.
+public observer routes exactly once through the loop failure policy, which defaults
+to termination. These are implementation limits, not a claim that all proposal
+error/retention rules are implemented.
 
 ## Existing low-level failures and exceptions
 

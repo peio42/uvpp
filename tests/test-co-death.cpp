@@ -62,6 +62,33 @@ TEST(UvppV3CoroutineDeathTest, abandonedActiveSpawnFailureTerminates) {
   }()), "");
 }
 
+TEST(UvppV3CoroutineDeathTest, completedUnobservedSpawnFailureTerminates) {
+  EXPECT_DEATH(([&] {
+    uv::loop loop;
+    auto worker = []() -> uv::co::task<void> {
+      (void)co_await uv::co::stop_requested();
+      throw std::runtime_error{"completed unobserved root failure"};
+    };
+    auto execution = uv::co::spawn(loop, worker());
+    (void)execution;
+  }()), "");
+}
+
+TEST(UvppV3CoroutineDeathTest, throwingUnobservedFailureHandlerTerminates) {
+  EXPECT_DEATH(([&] {
+    uv::loop loop;
+    loop.set_unobserved_failure_handler([](std::exception_ptr) {
+      throw std::runtime_error{"failure handler escaped"};
+    });
+    auto worker = []() -> uv::co::task<void> {
+      (void)co_await uv::co::stop_requested();
+      throw std::runtime_error{"completed unobserved root failure"};
+    };
+    auto execution = uv::co::spawn(loop, worker());
+    (void)execution;
+  }()), "");
+}
+
 TEST(UvppV3CoroutineDeathTest, resourceScopeDestructionBeforeFinishTerminates) {
   if (!loopback_tcp_is_permitted()) {
     GTEST_SKIP() << "loopback TCP is not permitted in this environment";

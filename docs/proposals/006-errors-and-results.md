@@ -167,10 +167,11 @@ replacement is accepted. No exception escapes a libuv C callback. Coroutine prom
 and operation state deliver observed failures through awaits. A spawn handle
 provides asynchronous join and result/exception observation. Destroying an active
 handle requests cancellation while execution state survives through actual
-completion and cleanup; it must not silently discard subsequent failures. Specify
-an explicit destination for failures that can no longer be observed through join,
-including failures left unobserved when a completed handle is destroyed. This
-requirement applies even though public detach is deferred; see
+completion and cleanup. `rethrow_if_failed()` and `take_result()` explicitly
+observe a failure; `join()` does not. A failure left unobserved when the public
+handle is lost is routed exactly once through a loop-level handler, whose default
+policy terminates. The handler runs on the loop thread and an escaping handler
+exception terminates. This applies even though public detach is deferred; see
 [003](003-cancellation-and-task-scopes.md).
 
 The optional posting component may also accept an error handler for posted

@@ -32,8 +32,8 @@ The application drives the loop through completion and native close, then calls
 `loop.close()`. Loop and resource destructors never run a nested loop. Active
 spawn-handle destruction requests stop and releases only public observation; an
 internal completion baton retains execution state through actual completion and
-reclaims the root only after final suspension. Unobserved root failures currently
-terminate after active-handle abandonment; configurable routing remains unfinished.
+reclaims the root only after final suspension. An unobserved root failure is routed
+exactly once through the loop failure handler; its default policy terminates.
 
 ## Native identity and ownership
 
