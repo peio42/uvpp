@@ -111,7 +111,11 @@ terminates, and a throwing handler also terminates. The state has one explicit
 heap allocation and the baton currently adds one coroutine-frame allocation.
 Tests also verify that a root stop request after a
 submitted borrowed TCP write leaves the write and its payload alive until the
-native completion callback, and that `join()` completes only afterwards.
+native completion callback, and that `join()` completes only afterwards. The
+retention stress set installs eight joiners before public-handle destruction,
+checks `UV_EBUSY` while an orphan timer still needs terminal completion, abandons
+a DNS request through its terminal callback, and repeats synchronous abandoned
+failure routing 64 times without timing-based coordination.
 
 The experimental `uv::co::task_scope` now owns immediately-started `task<void>`
 children on one explicit `uv::loop`. `spawn()` consumes and binds a cold child,
@@ -161,6 +165,9 @@ Tests cover all-child join, fail-fast stop of both sleeping and synchronously
 completing siblings followed by first-error delivery,
 cross-loop join rejection, destruction without join, two concurrent accepted TCP
 handlers, and stop of timer/read/accept alongside an in-flight borrowed write.
+Root-retention stress tests cover multi-joiner abandonment, loop liveness through
+terminal cleanup, one-shot DNS abandonment, and repeated synchronous failure
+routing.
 Native cancellation for remaining families, deadline composition, and their
 uniform contracts remain proposed.
 

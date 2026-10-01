@@ -536,6 +536,108 @@ TEST(UvppV3Coroutine, activeSpawnHandleDestructionKeepsExistingJoinersAlive) {
   EXPECT_NO_THROW(loop.close());
 }
 
+TEST(UvppV3Coroutine, activeSpawnHandleDestructionKeepsAllInstalledJoinersAlive) {
+  uv::loop loop;
+  std::optional<uv::co::spawn_handle<>> execution;
+  int joined = 0;
+  bool canceled = false;
+
+  auto worker = [&]() -> uv::co::task<void> {
+    try {
+      co_await uv::co::sleep_for(1h);
+    } catch (const uv::error &error) {
+      canceled = error.code().value() == UV_ECANCELED;
+    }
+  };
+  execution.emplace(uv::co::spawn(loop, worker()));
+
+  std::vector<uv::co::spawn_handle<>> joiner_executions;
+  auto joiner = [&]() -> uv::co::task<void> {
+    co_await execution->join();
+    ++joined;
+  };
+  for (int index = 0; index < 8; ++index) {
+    joiner_executions.push_back(uv::co::spawn(loop, joiner()));
+  }
+  execution.reset();
+
+  loop.run();
+
+  EXPECT_TRUE(canceled);
+  EXPECT_EQ(joined, 8);
+  for (auto &joiner : joiner_executions) {
+    EXPECT_NO_THROW(joiner.rethrow_if_failed());
+  }
+  EXPECT_NO_THROW(loop.close());
+}
+
+TEST(UvppV3Coroutine, abandonedRootKeepsLoopBusyUntilTerminalCompletion) {
+  uv::loop loop;
+  bool completed = false;
+
+  auto worker = [&]() -> uv::co::task<void> {
+    try {
+      co_await uv::co::sleep_for(1h);
+    } catch (const uv::error &error) {
+      EXPECT_EQ(error.code().value(), UV_ECANCELED);
+    }
+    completed = true;
+  };
+  {
+    auto execution = uv::co::spawn(loop, worker());
+  }
+
+  // The canceled timer still needs its terminal close callback. An orphan root
+  // therefore continues to contribute libuv liveness until that callback runs.
+  EXPECT_EQ(loop.try_close(), uv::make_error_code(UV_EBUSY));
+  EXPECT_FALSE(completed);
+
+  loop.run();
+
+  EXPECT_TRUE(completed);
+  EXPECT_NO_THROW(loop.close());
+}
+
+TEST(UvppV3Coroutine, abandonedResolveRetainsItsRequestThroughTerminalCallback) {
+  uv::loop loop;
+  bool completed = false;
+  std::optional<uv::resolve_result> outcome;
+
+  auto worker = [&]() -> uv::co::task<void> {
+    outcome.emplace(co_await uv::ops::resolve("localhost", "80"));
+    completed = true;
+  };
+  {
+    auto execution = uv::co::spawn(loop, worker());
+  }
+
+  loop.run();
+
+  EXPECT_TRUE(completed);
+  ASSERT_TRUE(outcome.has_value());
+  EXPECT_NO_THROW(loop.close());
+}
+
+TEST(UvppV3Coroutine, repeatedSynchronousAbandonmentRoutesEveryFailureExactlyOnce) {
+  uv::loop loop;
+  int reports = 0;
+  loop.set_unobserved_failure_handler([&](std::exception_ptr failure) {
+    ++reports;
+    EXPECT_NE(failure, nullptr);
+  });
+
+  for (int index = 0; index < 64; ++index) {
+    auto worker = []() -> uv::co::task<void> {
+      co_await synchronous_stop_awaiter{};
+      throw std::runtime_error{"repeated abandoned root failure"};
+    };
+    auto execution = uv::co::spawn(loop, worker());
+  }
+
+  EXPECT_EQ(reports, 64);
+  EXPECT_NO_THROW(loop.close());
+}
+
 TEST(UvppV3Coroutine, activeSpawnHandleDestructionSurvivesSynchronousStopCompletion) {
   uv::loop loop;
   bool completed = false;
