@@ -12,8 +12,9 @@ requires migration; it does not override the target contract.
   stable storage without relocating a native handle or invalidating callbacks.
 - Make borrowing explicit through `.view()` and native access explicit through
   named helpers. Do not add implicit pointer or view conversions.
-- Reserve native `data` for application code. Typed access is a cast convenience,
-  not dynamic type checking or ownership.
+- For `uv::raw` wrappers, reserve native `data` for application code. Typed access
+  is a cast convenience, not dynamic type checking or ownership. High-level owners
+  and internal operation state may reserve native `data` for uvpp implementation.
 - Borrow write/send bytes by default. Copying and ownership transfer need explicit
   semantic names or types. Operation ownership does not imply payload ownership.
 - Expose asynchronous completion and cleanup. Cancellation is not completion;

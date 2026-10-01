@@ -104,10 +104,15 @@ the explicit allocation and copy variants. libuv may retain copied buffer
 descriptors internally; uvpp does not use that to extend the lifetime of the
 underlying bytes.
 
-Native `data` is a non-owning application pointer. Typed getters do not perform
-runtime type checking. `loop_view` and walked `handle_view` values likewise borrow;
-wrapper recovery is valid only for the exact low-level wrapper representation,
-never for foreign handles or high-level native state.
+For `uv::raw` wrappers, native `data` is a non-owning application pointer. Typed
+getters do not perform runtime type checking. High-level owners and internal
+operation state may instead reserve it for uvpp callback reconstruction or other
+implementation storage. Their native accessors are borrowing interoperability
+escape hatches: callers must not overwrite `data`, replace uvpp-owned callbacks,
+or independently close or manage the native lifetime. `loop_view` and walked
+`handle_view` values likewise borrow; wrapper recovery is valid only for the exact
+low-level wrapper representation, never for foreign handles or high-level native
+state.
 
 ## Experimental v3 resource-scope cleanup
 

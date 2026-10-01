@@ -161,8 +161,10 @@ virtual operation hierarchy or routing coroutines through `std::function`.
 
 Keep C++20 and header-only integration, focused includes, concepts for structural
 public template contracts, explicit native access and `.view()` borrowing,
-`std::chrono` durations, and application-owned native `data` fields. Raw primitives
-must not acquire hidden operation allocations, locks, or coroutine state. Existing
+`std::chrono` durations, and distinct raw/high-level native `data` rules. `uv::raw`
+wrapper fields remain application-owned; high-level owners and internal operation
+state may reserve them as implementation storage. Raw primitives must not acquire
+hidden operation allocations, locks, or coroutine state. Existing
 explicit storage costs and justified native-lifetime allocations must be documented;
 zero-allocation claims apply to measured paths, not all wrappers indiscriminately.
 High-level owners and coroutine frames may allocate, with costs made visible.

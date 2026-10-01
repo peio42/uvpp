@@ -178,7 +178,8 @@ applies only to a subsequent failure. This applies even though public detach is 
 
 The optional posting component may also accept an error handler for posted
 callables. Define behavior if an error handler throws. A loop-level
-handler must not consume native `data` or silently change all callback semantics.
+handler must not assume access to native `data` or silently change all callback
+semantics.
 
 ## Alternatives and Open Questions
 

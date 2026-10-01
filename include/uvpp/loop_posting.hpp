@@ -40,8 +40,7 @@ public:
 
   explicit loop_posting_state(uv::loop &execution_loop, std::size_t capacity,
                               std::size_t drain_budget) noexcept
-    : native_{.state = this}, loop{&execution_loop}, capacity_{capacity},
-      drain_budget_{drain_budget} {}
+    : loop{&execution_loop}, capacity_{capacity}, drain_budget_{drain_budget} {}
 
   loop_posting_state(const loop_posting_state &) = delete;
   loop_posting_state &operator=(const loop_posting_state &) = delete;
@@ -56,7 +55,8 @@ public:
   }
 
   void init() {
-    throw_if_error(uv_async_init(loop->native(), &native_.async, &on_async));
+    throw_if_error(uv_async_init(loop->native(), &async_, &on_async));
+    async_.data = this;
     initialized_ = true;
   }
 
@@ -74,7 +74,7 @@ public:
         native_status = UV_EAGAIN;
       } else {
         queue_.push_back(std::move(work));
-        native_status = uv_async_send(&native_.async);
+        native_status = uv_async_send(&async_);
         if (native_status < 0) {
           rejected = std::move(queue_.back());
           queue_.pop_back();
@@ -115,15 +115,6 @@ public:
   }
 
 private:
-  // This compact standard-layout bridge is the only object reconstructed from
-  // the native address. It avoids consuming libuv's application-owned `data`.
-  struct async_native final {
-    uv_async_t async{};
-    loop_posting_state *state = nullptr;
-  };
-
-  static_assert(std::is_standard_layout_v<async_native>);
-
   struct work_base {
     virtual ~work_base() = default;
     virtual void invoke() = 0;
@@ -138,7 +129,7 @@ private:
   };
 
   static loop_posting_state &from_native(uv_async_t *raw) noexcept {
-    return *reinterpret_cast<async_native *>(raw)->state;
+    return *static_cast<loop_posting_state *>(raw->data);
   }
 
   static void on_async(uv_async_t *raw) noexcept { from_native(raw).drain(); }
@@ -188,7 +179,7 @@ private:
         --active_batches_;
       }
       if (!queue_.empty()) {
-        if (uv_async_send(&native_.async) < 0) {
+        if (uv_async_send(&async_) < 0) {
           std::terminate();
         }
       }
@@ -209,10 +200,10 @@ private:
       return;
     }
     phase_ = phase::closing;
-    uv_close(reinterpret_cast<uv_handle_t *>(&native_.async), &on_close);
+    uv_close(reinterpret_cast<uv_handle_t *>(&async_), &on_close);
   }
 
-  async_native native_{};
+  uv_async_t async_{};
   uv::loop *loop = nullptr;
   mutable std::mutex mutex_{};
   std::deque<std::unique_ptr<work_base>> queue_{};

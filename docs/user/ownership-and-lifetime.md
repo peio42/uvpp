@@ -37,7 +37,9 @@ Produce borrowed connection/socket views explicitly with `.view()`. A view is no
 another close owner and does not retain native storage. Named native accessors
 (`native()`, `native_handle()`, `native_stream()` where applicable) also borrow;
 they do not authorize closing the handle or replacing an active callback slot.
-Native `data` belongs to application code.
+For high-level owners, they also do not authorize overwriting native `data`: uvpp
+may reserve it for implementation state. `uv::raw` wrapper `data` remains
+available for application use.
 
 Operation state does not own external bytes. Follow the [buffer rules](buffers.md)
 even after cancellation has been requested.
