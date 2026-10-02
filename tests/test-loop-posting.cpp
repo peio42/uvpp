@@ -121,12 +121,13 @@ TEST(UvppV3LoopPosting, endpointsRemainUsableAfterOwnerAndLoopDestruction) {
     }
     loop.close();
   }
-  std::thread producer([copy = *endpoint] {
+  // Transfer the last strong reference: state destruction occurs on the producer.
+  std::thread producer([copy = std::move(*endpoint)] {
     EXPECT_EQ(uv::ops::post(copy, [] {}).error(), uv::make_error_code(UV_ECANCELED));
     EXPECT_THROW(copy.post([] {}), uv::error);
   });
-  producer.join();
   endpoint.reset();
+  producer.join();
 }
 
 TEST(UvppV3LoopPosting, rejectedAndDeliveredCapturesCanReenterWithoutALockedDestructor) {

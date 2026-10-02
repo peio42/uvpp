@@ -54,7 +54,7 @@ public:
     // The native handle may be destroyed only after its close callback. The
     // public owner diagnoses a missing close; this catches an endpoint that
     // happened to retain the state until after that violation.
-    if (initialized_ && phase_ != phase::closed) {
+    if (initialized_ && !closed()) {
       std::terminate();
     }
   }
