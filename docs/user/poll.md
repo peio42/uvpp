@@ -30,6 +30,10 @@ The source does not watch or retain events between waits. Libuv uses level
 triggering: readiness that remains present is detected when polling is rearmed.
 Readiness is an indication to attempt I/O, not a payload queue or a guarantee that
 I/O will succeed. A successful wait does not read or write the descriptor.
+`poll_event::disconnect` is available when `UVPP_HAS_POLL_DISCONNECT` is true
+(libuv 1.9.0 or newer); `poll_event::prioritized` requires
+`UVPP_HAS_POLL_PRIORITIZED` (libuv 1.14.0 or newer). Unsupported events are absent
+from the public enum and rejected by `next()` if passed through `from_raw()`.
 `disconnect` is an optional notification, not a portable substitute for observing
 EOF through the actual I/O operation.
 

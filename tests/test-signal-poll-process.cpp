@@ -61,9 +61,16 @@ TEST(Uvpp2Poll, reportsReadableFileDescriptor) {
   uv::loop loop;
   uv::poll poll(loop, fds[0]);
 
-  auto requested = uv::poll_event::readable | uv::poll_event::disconnect;
-  EXPECT_TRUE(requested.has(uv::poll_event::readable));
+  auto requested = uv::poll_event::readable | uv::poll_event::writable;
+#if UVPP_HAS_POLL_DISCONNECT
+  requested |= uv::poll_event::disconnect;
   EXPECT_TRUE(uv::has_poll_event(requested, uv::poll_event::disconnect));
+#endif
+#if UVPP_HAS_POLL_PRIORITIZED
+  requested |= uv::poll_event::prioritized;
+  EXPECT_TRUE(uv::has_poll_event(requested, uv::poll_event::prioritized));
+#endif
+  EXPECT_TRUE(requested.has(uv::poll_event::readable));
 
   int called = 0;
   poll.start(uv::poll_event::readable, [&](uv::poll &self, uv::poll_result event) {

@@ -14,6 +14,7 @@
 #include "uvpp/co/task.hpp"
 #include "uvpp/core/error.hpp"
 #include "uvpp/core/loop.hpp"
+#include "uvpp/core/version.hpp"
 #include "uvpp/detail/async_close_state.hpp"
 #include "uvpp/detail/owner_close.hpp"
 #include "uvpp/handles/poll.hpp"
@@ -193,7 +194,14 @@ public:
         status_ = UV_EBUSY;
         return false;
       }
-      constexpr int allowed = UV_READABLE | UV_WRITABLE | UV_DISCONNECT | UV_PRIORITIZED;
+      constexpr int allowed = UV_READABLE | UV_WRITABLE
+#if UVPP_HAS_POLL_DISCONNECT
+          | UV_DISCONNECT
+#endif
+#if UVPP_HAS_POLL_PRIORITIZED
+          | UV_PRIORITIZED
+#endif
+          ;
       if (!requested_ || (requested_.raw() & ~allowed) != 0) {
         (void)state_->release_waiter(this);
         status_ = UV_EINVAL;
