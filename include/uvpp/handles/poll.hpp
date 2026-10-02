@@ -8,6 +8,7 @@
 #include "uvpp/core/callback.hpp"
 #include "uvpp/core/error.hpp"
 #include "uvpp/core/loop.hpp"
+#include "uvpp/core/version.hpp"
 #include "uvpp/handles/handle.hpp"
 
 namespace uv {
@@ -15,8 +16,12 @@ namespace uv {
   enum class poll_event : int {
     readable = UV_READABLE,
     writable = UV_WRITABLE,
+#if UVPP_HAS_POLL_DISCONNECT
     disconnect = UV_DISCONNECT,
-    prioritized = UV_PRIORITIZED
+#endif
+#if UVPP_HAS_POLL_PRIORITIZED
+    prioritized = UV_PRIORITIZED,
+#endif
   };
 
   class poll_events {

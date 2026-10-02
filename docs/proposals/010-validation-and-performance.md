@@ -173,3 +173,10 @@ focused Clang ASan/UBSan build with leak detection. Both complete compiler suite
 also pass, including the separate UDP allocation binary; two pre-existing
 platform/environment tests are skipped. This is local validation, not a
 cross-platform or performance guarantee.
+
+Poll event capability gates now cover `UV_DISCONNECT` (libuv 1.9.0) and
+`UV_PRIORITIZED` (libuv 1.14.0), including the public enum, per-wait mask
+validation, and affected tests. This does not resolve the remaining minimum-libuv
+compatibility gaps listed above. GCC and Clang compile checks at simulated
+1.8/1.9/1.13/1.14 header versions, with unavailable poll constants masked, pass;
+these checks are not builds against actual older libuv headers.
