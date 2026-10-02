@@ -65,7 +65,8 @@ Accepted work executes exactly once on the loop thread, provided the application
 continues to drive that loop through posting-component close completion. A producer's
 sequentially accepted posts execute in their acceptance order. There is no
 meaningful wall-clock ordering promise between concurrent producers. The queue is
-bounded in this slice; a full queue rejects immediately and never blocks a producer.
+bounded in this slice; a full queue rejects without waiting for capacity. Producers
+may still contend on the queue mutex.
 
 Wakeups are notifications, not work counts: libuv may coalesce several
 `uv_async_send()` calls into one callback. The callback takes a bounded batch from
@@ -132,6 +133,23 @@ implemented in [`loop_posting.hpp`](../../include/uvpp/loop_posting.hpp).
 accepted work before close, exposes `close()` as a same-loop coroutine completion,
 and reports rejection through `uv::ops::post`. Its exact public names and options
 remain experimental. Coroutine continuation policy remains proposed.
+The current defaults are capacity 1024 waiting callables and drain budget 64.
+The reusable batch is reserved before native initialization; callback delivery
+retains native state through waiter resumption and releases handler captures at
+close. The [posting tests](../../tests/test-loop-posting.cpp) now cover live
+producers and per-producer FIFO, coalesced pre-run wakeups, repeated admission/close
+races with exact accepted/delivered comparison, full/closed rejection, endpoints
+outliving the owner and loop, reentrant capture destruction, handler replacement,
+multiple close waiters with owner release, timer progression through a backlog,
+setup rejection, affinity, and terminating misuse/failure policies.
+`make test-tsan-posting` supplies focused queue/endpoint race instrumentation;
+ASan/UBSan and the ordinary GCC/Clang suites cover the same lifecycle tests.
+See [the loop guide](../user/loop.md#cross-thread-posting) and
+[thread safety](../design/thread-safety.md#posting-synchronization-and-retention)
+for implemented contracts and costs.
+
+Supported-version/platform validation, failure injection for native send and
+allocation rollback, and contention/latency measurements remain future gates.
 Validate the ordinary coroutine layers on one loop without a separately constructed
 posting component before freezing their API. For the component, validate many
 producers, coalesced wakeups, posts racing with shutdown, rejection, loop-thread

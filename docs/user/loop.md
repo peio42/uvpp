@@ -24,9 +24,12 @@ close owners, or complete native cleanup; resume driving the loop as needed.
 loop.stop();
 ```
 
+`alive()` reports whether libuv still sees active handles or requests.
+
 ## Cross-thread posting
 
-`uv::loop_posting` is an experimental explicit producer-to-loop bridge. Create
+Include `<uvpp/loop_posting.hpp>`. `uv::loop_posting` is an experimental explicit
+producer-to-loop bridge. Create
 its owner on the loop thread and pass an endpoint to producer threads. A posted
 callable runs later on the loop thread.
 
@@ -41,17 +44,62 @@ std::thread producer([endpoint] {
 });
 producer.join();
 
-co_await posting.close(); // rejects new posts, drains accepted work, then closes
+posting.request_close(); // rejects new posts; accepted work will drain
+loop.run();              // completes the drain and native close
+loop.close();
 ```
 
 The queue is bounded. `endpoint.post()` throws for a full or closed component;
 `uv::ops::post(endpoint, callable)` returns `uv::status` instead. Accepted work
 runs once if the application continues to drive the loop through close completion.
 The owner must remain alive until then. Callables may be move-only; their queue
-storage may allocate. Exceptions in posted callables go to the component's failure
-handler, which defaults to `std::terminate()`.
+storage may allocate. A [complete example](../../examples/loop-posting.cpp) shows
+move-only payloads and explicit submission results.
 
-`alive()` reports whether libuv still sees active handles or requests.
+The constructor accepts `(loop, capacity = 1024, drain_budget = 64)`. Both counts
+must be nonzero. Capacity counts waiting callables; a batch of up to
+`min(capacity, drain_budget)` additional callables may already be executing. A full
+queue reports `UV_EAGAIN`; admission closed by `request_close()` reports
+`UV_ECANCELED`. Submission never waits for capacity, but may contend on a mutex.
+Both surfaces may throw for allocation or callable construction before acceptance.
+On rejection the prepared callable is destroyed on the submitting thread, outside
+the queue lock. Its captures may already have been moved from the caller.
+
+Posting from the loop thread also queues work; it never executes inline. Sequential
+accepted posts from a producer retain their order. Concurrent producers have no
+wall-clock ordering guarantee. The drain returns to libuv between batches, but a
+long-running individual callable can still delay I/O. The wakeup handle is
+referenced: an open component keeps `loop.run()` alive even with an empty queue.
+
+All owner methods, including handler installation, closing, and destruction, are
+loop-thread operations. Copy endpoints to producer threads; submitting through
+stable endpoints is thread-safe, while concurrently modifying or destroying the
+same endpoint object is not. Endpoints retain posting state rather than the loop.
+After close they can outlive the owner and loop and continue returning rejection.
+Captured references and pointers retain their own lifetime obligations; queued
+work does not extend external borrowed storage.
+
+`request_close()` initiates shutdown immediately and is idempotent. The phase is
+sealed before draining: a callable or capture destructor that posts again receives
+rejection. `closed()` becomes true at native close completion. Destroying the owner
+before that point terminates. Do not close its internal handle through a walked
+native view; its callbacks and `data` are reserved by uvpp.
+
+Within a task spawned on this loop, `co_await posting.close()` initiates or joins
+the same shutdown. Multiple waiters are supported, and completed close is
+idempotent. Constructing the awaiter alone does not seal admission. A different
+task loop throws `std::logic_error`, including for an already closed component.
+Registering a waiter may allocate; close does not become cancellable when the
+task receives a stop request. Close completion settles the callables themselves,
+not asynchronous operations they may have started.
+
+Exceptions in posted callables are caught on the loop thread. Install a component
+handler before delivery with `posting.set_failure_handler(handler)`, where the
+handler accepts `std::exception_ptr`. It may replace itself or request close;
+replacement applies to the next failure. A returning handler allows the remaining
+accepted work to drain. An absent or throwing handler terminates. This policy is
+separate from the loop's unobserved root-task failure handler. Handler captures are
+released at close completion, even if producer endpoints survive.
 
 ## Unobserved root failures
 

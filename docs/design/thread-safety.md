@@ -72,6 +72,42 @@ accepted callable, and then closes the wakeup handle. See the
 [loop scheduling proposal](../proposals/007-loop-scheduling.md) for the remaining
 continuation-policy and validation work.
 
+### Posting synchronization and retention
+
+Admission, queue mutation, native send, and the transition to `uv_close()` share
+one mutex. Acceptance linearizes after insertion and successful send while holding
+that lock; unsuccessful send rolls the insertion back. Once admission is sealed,
+producers do not touch native storage. The queue, rather than a count of async
+callbacks, accounts for accepted work because native wakeups coalesce.
+
+The loop extracts at most the configured drain budget, then invokes and destroys
+captures outside the lock. An active-batch count prevents close during either
+invocation or capture destruction. A reusable batch vector is reserved before
+native initialization, so drain bookkeeping needs no vector growth in a C callback.
+Only loop driving consumes the batch; nested `loop.run()` remains unsupported.
+
+Owner and producer endpoints explicitly share stable posting state. Native close
+completion takes a temporary strong reference, marks closed and detaches waiters
+under the lock, then clears the failure handler and resumes waiters outside it.
+This retains callback storage if a resumed task releases the owner and awaiters.
+Clearing the handler also breaks any retained endpoint capture cycle at close.
+Endpoints may retain the inert state after the owner and loop are gone.
+
+Costs are explicit: shared state/control block, one type-erased allocation per
+prepared callable, deque growth during submission, batch storage reserved at
+construction, and possible close-waiter or failure-handler allocation. Rejected
+submissions currently prepare their callable before checking admission. No general
+allocation-free posting or latency claim is made. Capacity bounds waiting work,
+not payload bytes or transient preparation by concurrent producers; the extracted
+batch is bounded separately.
+
+`make test-tsan-posting` builds just the posting tests with ThreadSanitizer in a
+separate directory. It excludes death tests, which fork. Ordinary full compiler
+suites and ASan/UBSan also exercise the lifecycle and termination contracts.
+The focused target uses `timeout` to bound test execution at 120 seconds; it
+requires that utility alongside a supported TSan runtime. Other test targets can
+opt into the same bound with `TEST_RUNNER='timeout 120s'`.
+
 ## Threading Primitives
 
 Wrappers for libuv thread and synchronization primitives synchronize

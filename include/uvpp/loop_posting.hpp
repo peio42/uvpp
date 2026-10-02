@@ -27,7 +27,7 @@ class loop_posting_endpoint;
 
 namespace detail {
 
-class loop_posting_state final {
+class loop_posting_state final : public std::enable_shared_from_this<loop_posting_state> {
 public:
   using failure_handler = std::function<void(std::exception_ptr)>;
 
@@ -39,8 +39,13 @@ public:
   };
 
   explicit loop_posting_state(uv::loop &execution_loop, std::size_t capacity,
-                              std::size_t drain_budget) noexcept
-    : loop{&execution_loop}, capacity_{capacity}, drain_budget_{drain_budget} {}
+                              std::size_t drain_budget)
+    : loop{&execution_loop}, capacity_{capacity}, drain_budget_{drain_budget} {
+    if (capacity == 0 || drain_budget == 0) {
+      throw std::invalid_argument{"uv::loop_posting capacity and drain budget must be nonzero"};
+    }
+    batch_.reserve(std::min(capacity, drain_budget));
+  }
 
   loop_posting_state(const loop_posting_state &) = delete;
   loop_posting_state &operator=(const loop_posting_state &) = delete;
@@ -136,46 +141,51 @@ private:
 
   static void on_close(uv_handle_t *raw) noexcept {
     auto &self = from_native(reinterpret_cast<uv_async_t *>(raw));
+    // Resumed close waiters may release both the public owner and their awaiters.
+    auto retained = self.shared_from_this();
     std::vector<std::coroutine_handle<>> waiters;
     {
       std::lock_guard lock{self.mutex_};
       self.phase_ = phase::closed;
       waiters = std::move(self.close_waiters_);
     }
+    self.failure_handler_.replace({});
     for (auto waiter : waiters) {
       waiter.resume();
     }
   }
 
   void drain() noexcept {
-    std::vector<std::unique_ptr<work_base>> batch;
     {
       std::lock_guard lock{mutex_};
       if (phase_ == phase::closing || phase_ == phase::closed) {
         return;
       }
       const auto count = std::min(drain_budget_, queue_.size());
-      batch.reserve(count);
       for (std::size_t i = 0; i != count; ++i) {
-        batch.push_back(std::move(queue_.front()));
+        batch_.push_back(std::move(queue_.front()));
         queue_.pop_front();
       }
-      if (!batch.empty()) {
+      if (!batch_.empty()) {
         ++active_batches_;
       }
     }
 
-    for (auto &work : batch) {
+    const bool had_work = !batch_.empty();
+    for (auto &work : batch_) {
       try {
         work->invoke();
       } catch (...) {
         report_failure(std::current_exception());
       }
     }
+    // Captures may publish or request close from their destructors. Keep this
+    // batch active until destruction finishes, and never destroy them locked.
+    batch_.clear();
 
     {
       std::lock_guard lock{mutex_};
-      if (!batch.empty()) {
+      if (had_work) {
         --active_batches_;
       }
       if (!queue_.empty()) {
@@ -207,6 +217,7 @@ private:
   uv::loop *loop = nullptr;
   mutable std::mutex mutex_{};
   std::deque<std::unique_ptr<work_base>> queue_{};
+  std::vector<std::unique_ptr<work_base>> batch_{};
   std::vector<std::coroutine_handle<>> close_waiters_{};
   persistent_callback_slot<failure_handler> failure_handler_{};
   std::size_t capacity_ = 0;
@@ -227,9 +238,6 @@ public:
   explicit loop_posting(uv::loop &loop, std::size_t capacity = 1024,
                         std::size_t drain_budget = 64)
     : state_{std::make_shared<detail::loop_posting_state>(loop, capacity, drain_budget)} {
-    if (capacity == 0 || drain_budget == 0) {
-      throw std::invalid_argument{"uv::loop_posting capacity and drain budget must be nonzero"};
-    }
     state_->init();
   }
 

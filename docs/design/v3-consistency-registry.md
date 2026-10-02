@@ -37,6 +37,7 @@ blind rename.
 | Signal source | Throwing `next` / `uv::ops::next`; paired close | Stable movable subscription owner; destruction stops and closes asynchronously | Not implemented; absence explicit pending generic subscription policy | Cancels waiter, not subscription; close is terminal | `native`, `native_handle` |
 | Process | Throwing `wait`; `uv::ops::wait`, `kill`, and close | Stable movable owner; destruction before exit retains state, then closes | Not implemented; live-child cleanup and supervision policy are unresolved | Cancels waiter, never the child; exit remains retained | `native`, `native_handle` |
 | Root task | Throwing result observation; no `uv::ops` resource pair | `spawn_handle` observes root state; active destruction requests stop while a completion baton retains through terminal completion | Not applicable; `task_scope` owns child executions | Cooperative stop; native work still requires terminal completion | No native handle |
+| Loop posting | Throwing endpoint `post` / `uv::ops::post`; same-loop close await | Non-movable owner; endpoints share stable state; destruction before native close completion terminates | Not implemented | Close seals admission and drains; no cancellation of accepted work or close | No native accessor; internal `data` reserved |
 
 The open construction-policy question is:
 
@@ -58,6 +59,7 @@ processes do not imply that an explicit-result creation surface has been rejecte
 | Signal source | One waiter slot; competing `next` reports `UV_EBUSY`; one pending signal coalesced | No caller buffer; signal number copied | Implemented experimental owner; scope adoption deferred |
 | Process | One waiter slot; competing `wait` reports `UV_EBUSY`; exit result retained | Options copied/prepared for synchronous spawn; no borrowed async payload in current slice | Implemented experimental owner; stdio, supervision, and scope adoption deferred |
 | Root task | Multiple join observers; result consumption is single-use | Coroutine frames do not extend external borrows | Implemented experimental contract: active-handle destruction retains through terminal completion and routes unobserved failures exactly once; public detach and cross-thread control remain deferred |
+| Loop posting | Bounded queue, mutex admission, bounded drain batch; multiple close waiters | Callables owned, move-only supported; captured references remain borrowed | Implemented experimental posting; producer/close races and endpoint lifetime tested; continuation scheduling remains deferred |
 
 Update this registry whenever a family changes namespace, adds an error-policy
 pair, changes its terminal protocol, or expands its scope/cancellation surface.

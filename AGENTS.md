@@ -54,7 +54,10 @@ uv::loop loop;
 - Keep native handles and raw wrappers address-stable after native initialization.
   Do not make raw handles copyable or movable. A high-level owner may move by
   transferring stable storage without relocating native objects or invalidating callbacks.
-- Do not store wrapper internals in libuv `data`; `data` belongs to application code.
+- For raw wrappers, libuv `data` belongs to application code and must not be used
+  for wrapper reconstruction. High-level owners and internal operation state may
+  reserve it; their native accessors do not permit overwriting it or independently
+  replacing callbacks or managing lifetime/close.
 - Keep raw libuv access explicit through named helpers such as `native()`, `native_handle()`, and `native_stream()`.
 - Do not add implicit conversions to raw libuv pointers or borrowed view types.
 - Produce borrowed views through explicit `.view()` functions, such as `timer.view()` or `buffer.view()`.

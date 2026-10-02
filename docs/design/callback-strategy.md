@@ -12,8 +12,10 @@ storage remains in [proposal 008](../proposals/008-move-only-callbacks.md).
 Static dispatch avoids storing a callable, but does not remove string preparation,
 native work, wrapper slot size, or other operation costs.
 
-Trampolines reconstruct state from native storage layout. They must not use libuv
-`data` for wrapper internals. High-level owners have their own stable state layout;
+Raw trampolines reconstruct state from native storage layout without consuming
+application-owned `data`. High-level owners and internal operation state may
+reserve `data` for callback reconstruction; `loop_posting` uses this mechanism.
+High-level owners have their own stable storage;
 never recover a low-level wrapper from a high-level owner's native pointer.
 
 `detail::invoke_callback` and static invocation catch escaping user exceptions and

@@ -33,6 +33,7 @@ alignment; the tests provide examples of coverage, not a proof of every contract
 | Process owner | [process](../../include/uvpp/handles/process.hpp) | [process coroutines](../../tests/test-co-process.cpp) |
 | Native identity and views | [native storage](../../include/uvpp/core/native.hpp), [handle views](../../include/uvpp/handles/handle_view.hpp) | [layout](../../tests/test-layout.cpp) |
 | Loop and errors | [loop](../../include/uvpp/core/loop.hpp), [errors](../../include/uvpp/core/error.hpp) | [loop](../../tests/test-loop.cpp), [core](../../tests/test-core.cpp) |
+| Cross-thread posting | [posting owner and endpoints](../../include/uvpp/loop_posting.hpp) | [posting lifecycle and races](../../tests/test-loop-posting.cpp) |
 | Callbacks and requests | [invocation boundary](../../include/uvpp/core/callback.hpp), [submission](../../include/uvpp/requests/request.hpp), [DNS](../../include/uvpp/requests/dns.hpp) | [core](../../tests/test-core.cpp), [network](../../tests/test-network.cpp) |
 | Streams and UDP | [streams](../../include/uvpp/handles/stream.hpp), [UDP](../../include/uvpp/handles/udp.hpp) | [stream requests](../../tests/test-stream-requests.cpp), [UDP](../../tests/test-udp.cpp) |
 | Filesystem ownership | [operations](../../include/uvpp/fs/operations.hpp), [directories](../../include/uvpp/fs/dir.hpp) | [filesystem](../../tests/test-fs.cpp), [watchers](../../tests/test-fs-watch.cpp) |

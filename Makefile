@@ -1,5 +1,5 @@
 .PHONY: clean build test test-filter examples build-gcc build-clang build-all test-gcc test-clang test-all \
-	test-asan-ubsan measure-cleanup package checksums
+	test-asan-ubsan test-tsan-posting measure-cleanup package checksums
 
 CXX ?= g++
 CXX_ID ?= $(notdir $(CXX))
@@ -11,6 +11,7 @@ DEPFLAGS ?= -MMD -MP
 LDLIBS ?= -luv -pthread -lgtest
 GTEST_ARGS ?=
 TEST_FILTER ?= *
+TEST_RUNNER ?=
 EXAMPLE_LDLIBS ?= -luv -pthread
 
 TEST_SRCS = tests/main.cpp $(wildcard tests/test-*.cpp)
@@ -59,13 +60,13 @@ $(TEST_DEPS) $(EXAMPLE_DEPS) $(METRICS_DEPS): ;
 -include $(TEST_DEPS) $(EXAMPLE_DEPS) $(METRICS_DEPS)
 
 test: build
-	$(TEST_BIN) $(GTEST_ARGS)
-	$(ALLOCATION_TEST_BIN) $(GTEST_ARGS)
+	$(TEST_RUNNER) $(TEST_BIN) $(GTEST_ARGS)
+	$(TEST_RUNNER) $(ALLOCATION_TEST_BIN) $(GTEST_ARGS)
 
 # Runs only tests selected by a GoogleTest filter.  This is intended for
 # incremental development; test and test-all remain the complete validation.
 test-filter: $(TEST_BIN)
-	$(TEST_BIN) $(GTEST_ARGS) --gtest_filter="$(TEST_FILTER)"
+	$(TEST_RUNNER) $(TEST_BIN) $(GTEST_ARGS) --gtest_filter="$(TEST_FILTER)"
 
 build-gcc:
 	$(MAKE) build CXX=g++ CXX_ID=gcc
@@ -91,6 +92,18 @@ test-asan-ubsan:
 		$(MAKE) test CXX=clang++ CXX_ID=clang-asan-ubsan \
 		CXXFLAGS="$(CXXFLAGS) $(SANITIZER_FLAGS)" \
 		LDLIBS="$(LDLIBS) $(SANITIZER_FLAGS)"
+
+# Focused ThreadSanitizer coverage; death tests are excluded because they fork.
+# Override TSAN_CXX for another compiler with a supported TSan runtime.
+TSAN_CXX ?= g++
+test-tsan-posting:
+	TSAN_OPTIONS=halt_on_error=1 $(MAKE) test-filter CXX=$(TSAN_CXX) \
+		BUILD_DIR=build/posting-tsan \
+		TEST_SRCS="tests/main.cpp tests/test-loop-posting.cpp" \
+		TEST_FILTER='UvppV3LoopPosting.*' \
+		TEST_RUNNER="timeout 120s" \
+		CXXFLAGS="$(CXXFLAGS) -fsanitize=thread -fno-omit-frame-pointer -g" \
+		LDLIBS="$(LDLIBS) -fsanitize=thread"
 
 # Reports C++ allocations and finish() latency for repeated multi-connection TCP
 # cleanup. It is a measurement command, not a pass/fail performance budget.

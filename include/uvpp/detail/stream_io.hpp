@@ -53,8 +53,8 @@ private:
 
 // State is a family-specific, address-stable native state. Besides the stream,
 // loop, and I/O-slot accessors, callbacks need its explicit native-handle
-// recovery helper; using uv_handle_t::data for this would consume application
-// owned libuv storage.
+// recovery helper. These owners currently recover by layout; high-level native
+// `data` is reserved for implementation use, unlike raw wrapper user storage.
 template<class State>
 class stream_read_awaiter {
 public:
