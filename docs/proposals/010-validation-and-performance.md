@@ -121,7 +121,23 @@ while `finish()` is active (explicitly excluding libuv C allocations) and cleanu
 latency min/mean/p95/max, along with compiler, libuv version, and workload size.
 It establishes a reproducible collection method, not a numerical regression budget.
 
-Platform jobs, focused TSan work, fault injection beyond the existing UDP case,
+`make test-tsan-posting` builds a separate GCC ThreadSanitizer binary containing
+only posting tests and excludes forking death tests. Posting coverage compares
+accepted versus delivered work across repeated producer/close races, checks FIFO
+with live producers, and exercises surviving endpoints and reentrant capture
+destruction. Full compiler and ASan/UBSan suites also include the posting close
+and callback exception lifecycle tests. This focused target depends on a supported
+host TSan runtime; it does not instrument the system libuv or GoogleTest libraries
+and does not establish a cross-platform or minimum-libuv baseline.
+
+The posting validation slice has passed locally on Linux with libuv 1.51.0:
+both complete GCC/Clang suites, the complete Clang ASan/UBSan suite with leak
+detection, and the focused GCC TSan target. The standalone posting example also
+runs under ASan/UBSan. Sandboxed network restrictions and LeakSanitizer's ptrace
+limitation require running the complete suites outside that sandbox; these are
+host constraints, not skipped posting coverage.
+
+Platform jobs, broader TSan CI work, fault injection beyond the existing UDP case,
 installed-package validation, and recorded cross-platform benchmark baselines remain
 proposed. Acceptance requires those additions plus verified incremental rebuilding,
 a working platform matrix, and stable regression budgets.

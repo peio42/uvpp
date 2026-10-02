@@ -28,6 +28,7 @@ as available below are experimental and may change before release.
 | Surface | Available on this branch |
 | --- | --- |
 | Common execution | `uv::loop`, cold `uv::co::task<T>`, `spawn_handle<T>`, join, cooperative stop, timer sleep |
+| Cross-thread publication | `loop_posting`, copyable producer endpoints, `uv::ops::post`, bounded admission, drain-and-close |
 | Structured execution | `uv::co::task_scope` for `task<void>` children |
 | Resource cleanup | `uv::co::resource_scope` for TCP/pipe connections and listeners, UDP sockets, and files |
 | Network owners | `tcp_connection`, `tcp_listener`, `pipe_connection`, `pipe_listener`, `udp_socket` |

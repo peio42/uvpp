@@ -59,8 +59,11 @@ without evidence that the savings justify API and compilation costs.
 
 ## Implementation progress and validation
 
-Static callbacks and one-shot extraction already exist. Move-only runtime storage
-requires implementation. Persistent replacement already uses an active callable
+Static callbacks and one-shot extraction already exist. `loop_posting` now has
+private owning type erasure for move-only queued callables, with an allocation per
+prepared callable. This is not a general callback-slot migration or small-buffer
+implementation. General move-only runtime storage still requires implementation.
+Persistent replacement already uses an active callable
 and generation tracking in [callback slots](../../include/uvpp/core/callback.hpp);
 the new storage must preserve that behavior and its regression coverage.
 
