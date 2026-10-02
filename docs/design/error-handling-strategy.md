@@ -135,3 +135,11 @@ Tests in [test-core.cpp](../../tests/test-core.cpp),
 [test-threadpool-random.cpp](../../tests/test-threadpool-random.cpp) cover core
 status mapping, callback termination, one-shot slots, and selected failure paths.
 They are not an exhaustive failure-injection suite for every family.
+
+`poll_source::next(mask)` returns `poll_events` and throws operational errors at
+the await; `uv::ops::next(source, mask)` returns `result<poll_events>`. Both adapt
+native start and callback failures. Invalid masks report `UV_EINVAL`, competing
+waits `UV_EBUSY`, completed cancellation `UV_ECANCELED`, and waits on terminal or
+moved-from sources `UV_EBADF`. Construction remains throwing setup; execution-loop
+mismatch remains programmer misuse (`std::logic_error`). The historical raw
+`poll_result` is not the new owner's result shape.

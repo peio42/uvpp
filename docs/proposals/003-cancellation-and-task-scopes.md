@@ -182,3 +182,10 @@ ordering controls rather than timing-only sleeps for race coverage.
 Also validate context inheritance, active spawn-handle destruction with
 non-cancellable work, external borrow lifetimes through scope join, terminal
 subscription replacement, and deferred cleanup after the public handle is gone.
+
+## Poll-source implementation progress
+
+Poll waits now stop native polling and release their exclusive waiter before
+delivering `UV_ECANCELED`. The owner stays reusable under a non-stopped task
+context. Terminal close cancels an active wait and remains non-cancellable once
+initiated. See [poll cancellation](../user/poll.md#errors-cancellation-and-close).

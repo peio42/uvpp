@@ -241,3 +241,10 @@ dependencies here. Remove this proposal when its architecture is implemented and
 its remaining details are covered by current documentation or active specialized
 proposals. Follow the [proposal lifecycle](index.md#proposal-lifecycle): Git retains
 history; an ADR may preserve durable rationale when needed.
+
+## Poll-source implementation progress
+
+The experimental `uv::poll_source` owns stable native poll storage and borrows
+its descriptor. It provides per-wait masks, paired throwing/result waits, and
+terminal asynchronous close. Persistent subscriptions and scope adoption remain
+deferred; see the [implemented contract](../user/poll.md).

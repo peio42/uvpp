@@ -228,3 +228,11 @@ The old `tcp.try_bind()` example also has no implementation. Consider non-throwi
 bind only as part of a deliberately scoped immediate-error surface using the naming
 decision above. Preserve existing `loop.try_close()` and request cancellation until
 a breaking change is adopted.
+
+## Poll-source implementation progress
+
+Poll readiness now pairs throwing `next(mask)` with
+`uv::ops::next(source, mask) -> result<poll_events>`, covering both native start
+and callback errors. Mask validation, busy, cancelled, and closed waits follow
+the same policy. Construction remains throwing setup; cross-loop use remains
+`std::logic_error`. See [the user contract](../user/poll.md).

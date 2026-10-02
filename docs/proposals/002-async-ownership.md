@@ -282,3 +282,10 @@ assert ownership has been consumed and do not close resources. Prototype an owni
 incremental adapter with cleanup before every next read and close, owned entry names,
 and an explicit asynchronous exit. Decide allocation/buffering and failure behavior
 before promising a safe default directory API.
+
+## Poll-source implementation progress
+
+`poll_source` borrows the fd/socket and owns stable `uv_poll_t` storage. Its
+shared close-completion state supports repeated close joins, cancellation of an
+active waiter, and destruction fallback through native close. Scope adoption
+remains deferred. See the [owner contract](../user/poll.md).

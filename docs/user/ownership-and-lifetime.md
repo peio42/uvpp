@@ -97,3 +97,8 @@ listener registrations expose `accept()`. Views retain diagnostic bookkeeping,
 not native resource lifetime. Resource scope cleanup closes listeners before
 dependent owners. Generic resource registration and cleanup-error aggregation
 remain proposed.
+
+`poll_source` owns its native watcher but borrows the descriptor. Every wait stops
+polling before delivery; close cancels an active waiter and joins native cleanup
+without closing the descriptor. Scope adoption remains deferred. See
+[Descriptor readiness](poll.md).

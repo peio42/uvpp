@@ -236,3 +236,10 @@ Publish runnable filesystem and networking examples covering startup, loop drivi
 error styles, buffer ownership, and scope exit. Measure frame/request allocations
 and compare callback/static/coroutine paths using the
 [validation proposal](010-validation-and-performance.md).
+
+## Poll-source implementation progress
+
+`uv::poll_source::next(mask)` now awaits one readiness notification, returning
+`poll_events`; `uv::ops::next` returns `result<poll_events>`. Each wait arms then
+quiesces native polling before continuation delivery. No events are retained
+between waits. See [descriptor readiness](../user/poll.md).
