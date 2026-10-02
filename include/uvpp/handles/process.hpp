@@ -695,8 +695,8 @@ struct process_state {
   bool owner_released = false;
 
   static process_state &from_handle(uv_process_t *raw) noexcept {
-    auto *bytes = reinterpret_cast<char *>(raw);
-    return *reinterpret_cast<process_state *>(bytes - offsetof(process_state, native));
+    assert(raw->data != nullptr);
+    return *static_cast<process_state *>(raw->data);
   }
 
   bool closing() const noexcept { return close.closing(); }
@@ -782,8 +782,6 @@ struct process_state {
   }
 };
 
-static_assert(std::is_standard_layout_v<process_state>);
-
 using process_close_completion = owner_close_awaiter<process_state, false>;
 using process_close_result = owner_close_awaiter<process_state, true>;
 [[nodiscard]] process_close_completion close_completion(process &) noexcept;
@@ -825,6 +823,8 @@ public:
     native_options.cwd = options.cwd ? options.cwd->c_str() : nullptr;
 
     const int status = uv_spawn(loop.native(), &state->native, &native_options);
+    // Failed spawn also requires close; both callbacks recover this stable state.
+    state->native.data = state.get();
     if (status >= 0) {
       state_ = std::move(state);
       return;

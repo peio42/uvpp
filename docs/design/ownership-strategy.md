@@ -107,8 +107,12 @@ underlying bytes.
 For `uv::raw` wrappers, native `data` is a non-owning application pointer. Typed
 getters do not perform runtime type checking. High-level owners and internal
 operation state may instead reserve it for uvpp callback reconstruction or other
-implementation storage. Their native accessors are borrowing interoperability
-escape hatches: callers must not overwrite `data`, replace uvpp-owned callbacks,
+implementation storage. TCP/pipe connections and listeners, UDP sockets, signal
+sources, and high-level processes use it to point to their stable state, never
+the movable public owner. The pointer remains valid through native close, including
+constructor-failure cleanup; internal connect/write/send requests also reserve
+their own `data` through completion. Their native accessors are borrowing
+interoperability escape hatches: callers must not overwrite `data`, replace uvpp-owned callbacks,
 or independently close or manage the native lifetime. `loop_view` and walked
 `handle_view` values likewise borrow; wrapper recovery is valid only for the exact
 low-level wrapper representation, never for foreign handles or high-level native

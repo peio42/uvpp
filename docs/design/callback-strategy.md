@@ -13,8 +13,12 @@ Static dispatch avoids storing a callable, but does not remove string preparatio
 native work, wrapper slot size, or other operation costs.
 
 Raw trampolines reconstruct state from native storage layout without consuming
-application-owned `data`. High-level owners and internal operation state may
-reserve `data` for callback reconstruction; `loop_posting` uses this mechanism.
+application-owned `data`. High-level TCP/pipe connections and listeners, UDP
+sockets, signal sources, and processes bind handle `data` to their stable owner
+state. Internal connect requests
+use the same state pointer; stream-write and UDP-send requests bind request `data`
+to their stable awaiter at submission. These callbacks do not depend on state
+layout or member offsets. `loop_posting` also uses implementation-reserved `data`.
 High-level owners have their own stable storage;
 never recover a low-level wrapper from a high-level owner's native pointer.
 

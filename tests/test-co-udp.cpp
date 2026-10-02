@@ -12,6 +12,46 @@
 using namespace std::chrono_literals;
 using namespace uvpp::test;
 
+TEST(UvppV3Coroutine, udpOwnerMoveDuringReceivePreservesDeliveryAndClose) {
+  if (!loopback_tcp_is_permitted()) {
+    GTEST_SKIP() << "loopback networking is not permitted in this environment";
+  }
+
+  uv::loop loop;
+  uv::udp_socket initial(loop, uv::ipv4{"127.0.0.1", 0});
+  uv::udp_socket sender(loop, uv::ipv4{"127.0.0.1", 0});
+  auto *native = initial.native();
+  const auto address = initial.local_address().to_v4();
+  std::optional<uv::udp_socket> moved;
+  std::array<std::byte, 8> buffer{};
+  std::size_t received = 0;
+
+  auto receive = [&]() -> uv::co::task<void> {
+    received = (co_await initial.recv_from(buffer)).size();
+    co_await moved->close();
+  };
+  auto send = [&]() -> uv::co::task<void> {
+    co_await sender.send_to("moved", address);
+    co_await sender.close();
+  };
+
+  auto receiver = uv::co::spawn(loop, receive());
+  ASSERT_FALSE(receiver.done());
+  moved.emplace(std::move(initial));
+  EXPECT_EQ(moved->native(), native);
+  EXPECT_EQ(initial.native(), nullptr);
+  auto sending = uv::co::spawn(loop, send());
+  loop.run();
+
+  EXPECT_TRUE(receiver.done());
+  EXPECT_TRUE(sending.done());
+  EXPECT_NO_THROW(receiver.rethrow_if_failed());
+  EXPECT_NO_THROW(sending.rethrow_if_failed());
+  ASSERT_EQ(received, 5U);
+  EXPECT_EQ(std::string_view(reinterpret_cast<const char *>(buffer.data()), received), "moved");
+  EXPECT_NO_THROW(loop.close());
+}
+
 TEST(UvppV3Coroutine, publicUdpCloseReportsCompletionThroughOps) {
   if (!loopback_tcp_is_permitted()) {
     GTEST_SKIP() << "loopback networking is not permitted in this environment";

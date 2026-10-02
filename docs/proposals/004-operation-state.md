@@ -21,7 +21,8 @@ Build a small internal operation protocol shared by ergonomic `uv`, explicit-res
 `uv::ops`, and callback/coroutine
 frontends: prepare inputs, submit, record completion, clean native resources, and
 deliver the result exactly once. The protocol owns or explicitly borrows every
-input needed after submission. It does not consume libuv `data`.
+input needed after submission. Raw wrapper `data` remains application-owned;
+high-level owners and internal operation state may reserve it for reconstruction.
 
 Document family-specific state transitions, including submission failure without
 a future callback. Clear request callback slots and obsolete input storage before
@@ -86,6 +87,17 @@ mechanism. The experimental TCP connect awaiter owns stable `uv_connect_t` and
 before delivering a failed connection. It is a family-specific prototype, not yet
 a common coroutine frontend.
 
+TCP/pipe connection and listener states, UDP sockets, signal sources, and
+high-level processes now bind native handle `data` to their stable owner state.
+Connect requests bind request `data` to that same state; shared stream-write and
+UDP-send requests bind it to their stable awaiter at submission. Their callbacks
+no longer depend on member offsets, first-member casts, or standard-layout state.
+Bindings survive owner moves and remain available through native close, including
+failed construction and provisional accept/IPC-child cleanup. Raw wrapper recovery
+continues to use layout without consuming application `data`. This introduces no
+additional storage allocation and changes no operation-slot or payload-lifetime
+protocol.
+
 DNS resolution is a second request-family prototype. Its awaiter owns stable
 `uv_getaddrinfo_t` storage and copied node/service/`resolve_options` through native
 completion without consuming `uv_req_t::data`. It releases its stop registration
@@ -97,8 +109,8 @@ materialization remains outside the native operational result channel.
 
 TCP and pipe now share private stream-operation awaiters backed by a common
 `stream_io_state`. Each family provides only its native `uv_stream_t`, execution
-loop, I/O-slot state, and explicit native-handle recovery; this keeps application
-`uv_handle_t::data` untouched. The common one-shot `read_some()` protocol checks
+loop, I/O-slot state, and explicit native-handle recovery through
+`uv_handle_t::data`. The common one-shot `read_some()` protocol checks
 state, affinity, and pre-existing stop; claims allocation/read slots; starts the
 native source; then registers cancellation. Data, EOF, errors, and completed
 cancellation quiesce with `uv_read_stop()`, release allocation/read and

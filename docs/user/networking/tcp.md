@@ -50,3 +50,8 @@ Listener close can quiesce its pending accept but does not close accepted peers.
 Both owners support `uv::ops::close` and adoption into a resource scope.
 Follow [ownership and lifetime](../ownership-and-lifetime.md) on success and
 exception paths; owner destruction may leave native cleanup for the loop to drive.
+
+`native()` and `native_handle()` borrow libuv storage. Its `data` field belongs
+to uvpp; callers must not overwrite it, replace uvpp-owned callbacks, or
+independently close the handle. Moving the owner preserves this storage and its
+callback state. Raw wrappers keep `data` available to application code.

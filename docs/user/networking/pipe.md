@@ -54,3 +54,8 @@ accept. Await `close()` or `uv::ops::close(owner)` through native completion.
 Connections and listeners can also be adopted by a resource scope. See
 [ownership and lifetime](../ownership-and-lifetime.md) for exceptional cleanup
 and [buffers](../buffers.md) for byte lifetimes.
+
+`native()` and `native_handle()` borrow libuv storage. Its `data` field belongs
+to uvpp; callers must not overwrite it, replace uvpp-owned callbacks, or
+independently close the handle. Moving the owner preserves this storage and its
+callback state. Raw wrappers keep `data` available to application code.

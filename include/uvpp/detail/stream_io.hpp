@@ -19,7 +19,7 @@
 namespace uv::detail {
 
 // Common stream-operation slots. A stream family keeps this state alongside
-// its address-stable native handle; it is not stored in uv_handle_t::data.
+// its address-stable native handle; uv_handle_t::data points to that owner state.
 // Each direction has an independent exclusive slot: one read and one write may
 // overlap, while a second operation in either direction reports UV_EBUSY.
 struct stream_io_state {
@@ -53,7 +53,7 @@ private:
 
 // State is a family-specific, address-stable native state. Besides the stream,
 // loop, and I/O-slot accessors, callbacks need its explicit native-handle
-// recovery helper. These owners currently recover by layout; high-level native
+// recovery helper. These owners recover through data; high-level native
 // `data` is reserved for implementation use, unlike raw wrapper user storage.
 template<class State>
 class stream_read_awaiter {
@@ -235,6 +235,7 @@ public:
 
     io.write_active = true;
     continuation_ = continuation;
+    request_.data = this;
     status_ = send_handle_ == nullptr
         ? uv_write(&request_, state_->stream_handle(), &buffer_, 1,
               &stream_write_awaiter::on_write)
@@ -253,7 +254,8 @@ public:
 
 private:
   static stream_write_awaiter &from_native(uv_write_t *raw) noexcept {
-    return *reinterpret_cast<stream_write_awaiter *>(raw);
+    assert(raw->data != nullptr);
+    return *static_cast<stream_write_awaiter *>(raw->data);
   }
 
   static void on_write(uv_write_t *raw, int status) noexcept {

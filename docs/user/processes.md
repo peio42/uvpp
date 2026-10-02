@@ -49,4 +49,7 @@ therefore keeps that state alive. Process supervision, timeouts and
 `resource_scope` integration remain future work.
 
 `native()` and `native_handle()` expose borrowed libuv pointers. They do not grant
-an independent close path; bypassing the owner lifecycle is unsupported.
+an independent close path; bypassing the owner lifecycle is unsupported. Native
+`data` belongs to uvpp and must not be overwritten, and uvpp-owned callbacks must
+not be replaced. Moving the owner preserves its native storage and callback state.
+The separate `uv::raw::process` wrapper leaves `data` available to application code.
