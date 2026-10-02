@@ -56,8 +56,12 @@ uv::loop loop;
   transferring stable storage without relocating native objects or invalidating callbacks.
 - For raw wrappers, libuv `data` belongs to application code and must not be used
   for wrapper reconstruction. High-level owners and internal operation state may
-  reserve it; their native accessors do not permit overwriting it or independently
-  replacing callbacks or managing lifetime/close.
+  reserve it and should use it when this avoids an artificial dependency on object
+  layout. Prefer a stable state pointer for persistent high-level owners; internal
+  one-shot operations may use an awaiter/state pointer or native_storage, whichever
+  is simpler without unnecessary constraints. Native accessors do not permit
+  overwriting reserved data or independently replacing callbacks or managing
+  lifetime/close.
 - Keep raw libuv access explicit through named helpers such as `native()`, `native_handle()`, and `native_stream()`.
 - Do not add implicit conversions to raw libuv pointers or borrowed view types.
 - Produce borrowed views through explicit `.view()` functions, such as `timer.view()` or `buffer.view()`.

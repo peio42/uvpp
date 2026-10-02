@@ -62,7 +62,11 @@ after destruction. All C trampolines remain exception boundaries.
 ## Implementation and costs
 
 Keep native storage and conversion in the existing small storage base, preserving
-its layout assertions and native-to-wrapper round-trip tests. Low-level request
+its layout assertions and native-to-wrapper round-trip tests for raw wrappers.
+High-level/internal state may reserve native `data` and should use it when it
+avoids an artificial layout dependency. Prefer stable state pointers for persistent
+owners; one-shot operations may instead use `native_storage` when that is simpler
+without unnecessary constraints. Low-level request
 ownership remains caller-controlled. Coroutine requests can reside in stable frame
 storage when that frame is guaranteed to survive native completion; otherwise use
 explicit separately owned state. Do not assume allocation elision.
@@ -97,6 +101,13 @@ failed construction and provisional accept/IPC-child cleanup. Raw wrapper recove
 continues to use layout without consuming application `data`. This introduces no
 additional storage allocation and changes no operation-slot or payload-lifetime
 protocol.
+
+The internal `sleep_awaiter` now binds timer `data` to its stable coroutine-frame
+awaiter after successful initialization and before start. Timer and close callbacks
+recover through that pointer, including cancellation and start-failure cleanup.
+The first-member cast and standard-layout assertion are removed. This is a
+family-specific simplification, not a requirement to migrate every internal
+one-shot operation to `data`.
 
 DNS resolution is a second request-family prototype. Its awaiter owns stable
 `uv_getaddrinfo_t` storage and copied node/service/`resolve_options` through native

@@ -14,7 +14,11 @@ requires migration; it does not override the target contract.
   named helpers. Do not add implicit pointer or view conversions.
 - For `uv::raw` wrappers, reserve native `data` for application code. Typed access
   is a cast convenience, not dynamic type checking or ownership. High-level owners
-  and internal operation state may reserve native `data` for uvpp implementation.
+  and internal operation state may reserve native `data` for uvpp implementation,
+  and should use it when it avoids an artificial dependency on object layout.
+  Prefer a stable state pointer for persistent owners. For internal one-shot
+  operations, choose an awaiter/state pointer or `native_storage`, whichever is
+  simpler without unnecessary constraints; using `data` is not mandatory.
 - Borrow write/send bytes by default. Copying and ownership transfer need explicit
   semantic names or types. Operation ownership does not imply payload ownership.
 - Expose asynchronous completion and cleanup. Cancellation is not completion;

@@ -26,6 +26,23 @@ never recover a low-level wrapper from a high-level owner's native pointer.
 terminate. Native callbacks are `noexcept`. Coroutine promises capture task exceptions
 for observation at awaits or through spawn handles; exceptions never cross C frames.
 
+## Reconstruction choices
+
+High-level owners and internal operations may reserve native `data`; they should
+use it when it removes an artificial dependency on object layout. The legitimate
+choices are:
+
+- raw wrappers use layout/`native_storage` and leave `data` application-owned;
+- persistent high-level owners preferably bind `data` to their stable state;
+- internal one-shot operations use an awaiter/state pointer in `data` or
+  `native_storage`, whichever is simpler without unnecessary constraints.
+
+`sleep_awaiter` binds its initialized timer's `data` to the awaiter before native
+start. Timer delivery, cancellation, and start-failure cleanup retain that pointer
+through native close; only the close callback resumes the suspended frame.
+Reconstruction no longer requires a first-member timer or standard-layout awaiter.
+Other internal one-shot operations may keep their existing storage mechanism.
+
 ## One-shot completion
 
 Request terminal callbacks extract and clear their callable before invoking user

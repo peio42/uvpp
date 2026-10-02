@@ -38,6 +38,8 @@ it to a loop. `spawn(loop, task<T>)` consumes it, binds its execution context to
 that loop, and starts it, returning a move-only `spawn_handle<T>`. `sleep_for`
 uses an event-loop timer on that inherited loop; it does not call the blocking
 `uv_sleep()`. Positive durations below a millisecond round up to one millisecond.
+Once its timer is initialized, `sleep_for` resumes only after timer close
+completes, including after cancellation.
 
 Awaiting a temporary child task consumes it, binds it to its parent loop, and
 delivers its value by move. A child exception is thrown at the parent `co_await`;

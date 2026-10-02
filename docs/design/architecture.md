@@ -45,7 +45,9 @@ handles belonging to high-level owners are not low-level wrapper instances.
 High-level owners move by transferring stable storage. Close state retains that
 storage through the native close callback. Borrowed views do not retain resource
 ownership. Native access is explicit. Raw wrapper `data` remains application-owned;
-high-level owners reserve it for their implementation state.
+high-level owners and internal operations may reserve it for implementation state.
+Prefer it when it avoids an artificial dependency on object layout; the choice
+depends on the lifetime and simplest reconstruction mechanism, not just the layer.
 See [ownership](ownership-strategy.md) and [callback strategy](callback-strategy.md).
 
 High-level operations own their control state, but writes/sends borrow payloads.
