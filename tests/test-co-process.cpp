@@ -38,6 +38,33 @@ TEST(UvppV3Process, spawnsSynchronouslyWaitsAndCloses) {
   EXPECT_NO_THROW(loop.close());
 }
 
+TEST(UvppV3Process, moveWhileWaitingPreservesExitAndCloseDelivery) {
+  uv::loop loop;
+  uv::process initial(loop, shell("exit 7"));
+  auto *native = initial.native();
+  std::optional<uv::process> moved;
+  std::optional<uv::process_exit> exit;
+
+  auto wait = [&]() -> uv::co::task<void> {
+    exit.emplace(co_await initial.wait());
+    co_await moved->close();
+  };
+
+  auto execution = uv::co::spawn(loop, wait());
+  ASSERT_FALSE(execution.done());
+  moved.emplace(std::move(initial));
+  EXPECT_EQ(moved->native(), native);
+  EXPECT_EQ(initial.native(), nullptr);
+  loop.run();
+
+  EXPECT_TRUE(execution.done());
+  EXPECT_NO_THROW(execution.rethrow_if_failed());
+  ASSERT_TRUE(exit.has_value());
+  EXPECT_EQ(exit->status, 7);
+  EXPECT_EQ(exit->signal, 0);
+  EXPECT_NO_THROW(loop.close());
+}
+
 TEST(UvppV3Process, exitDeliveryReleasesTheWaitSlotBeforeResuming) {
   uv::loop loop;
   uv::process child(loop, shell("exit 9"));

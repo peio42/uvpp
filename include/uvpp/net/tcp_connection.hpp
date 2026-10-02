@@ -5,7 +5,6 @@
 #include <cstring>
 #include <memory>
 #include <string_view>
-#include <type_traits>
 #include <utility>
 #include <vector>
 
@@ -56,13 +55,13 @@ struct tcp_connection_state {
   bool handle_export_active = false;
 
   static tcp_connection_state &from_connect(uv_connect_t *raw) noexcept {
-    auto *bytes = reinterpret_cast<char *>(raw);
-    return *reinterpret_cast<tcp_connection_state *>(bytes - offsetof(tcp_connection_state, connect));
+    assert(raw->data != nullptr);
+    return *static_cast<tcp_connection_state *>(raw->data);
   }
 
   static tcp_connection_state &from_handle(uv_handle_t *raw) noexcept {
-    auto *bytes = reinterpret_cast<char *>(raw);
-    return *reinterpret_cast<tcp_connection_state *>(bytes - offsetof(tcp_connection_state, tcp));
+    assert(raw->data != nullptr);
+    return *static_cast<tcp_connection_state *>(raw->data);
   }
 
   bool closing() const noexcept { return close.closing(); }
@@ -158,8 +157,6 @@ struct tcp_connection_state {
   }
 
 };
-
-static_assert(std::is_standard_layout_v<tcp_connection_state>);
 
 using tcp_close_completion = owner_close_awaiter<tcp_connection_state, false>;
 using tcp_close_result = owner_close_awaiter<tcp_connection_state, true>;
@@ -270,6 +267,8 @@ public:
       if (status_ < 0) {
         return false;
       }
+      state.tcp.data = &state;
+      state.connect.data = &state;
       state.initialized = true;
       status_ = uv_tcp_connect(&state.connect, &state.tcp,
           reinterpret_cast<const sockaddr *>(&peer_), &detail::tcp_connection_state::on_connect);
@@ -389,7 +388,5 @@ namespace ops {
 }
 
 } // namespace ops
-
-static_assert(std::is_standard_layout_v<tcp_connection::write_awaiter>);
 
 } // namespace uv

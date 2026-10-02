@@ -9,7 +9,6 @@
 #include <span>
 #include <stdexcept>
 #include <string_view>
-#include <type_traits>
 #include <utility>
 #include <vector>
 
@@ -45,8 +44,8 @@ struct udp_socket_state {
   void *active_receive = nullptr;
 
   static udp_socket_state &from_handle(uv_handle_t *raw) noexcept {
-    auto *bytes = reinterpret_cast<char *>(raw);
-    return *reinterpret_cast<udp_socket_state *>(bytes - offsetof(udp_socket_state, udp));
+    assert(raw->data != nullptr);
+    return *static_cast<udp_socket_state *>(raw->data);
   }
   bool closing() const noexcept { return close.closing(); }
   bool has_active_operation() const noexcept {
@@ -243,6 +242,7 @@ public:
       if (state_->send_active) { status_ = UV_EBUSY; return false; }
       state_->send_active = true;
       continuation_ = continuation;
+      request_.data = this;
       status_ = uv_udp_send(&request_, &state_->udp, &buffer_, 1,
           reinterpret_cast<const sockaddr *>(&destination_), &send_to_awaiter::on_send);
       if (status_ < 0) { state_->send_active = false; continuation_ = {}; }
@@ -250,7 +250,10 @@ public:
     }
     void await_resume() { throw_if_error(status_); }
   private:
-    static send_to_awaiter &from_native(uv_udp_send_t *raw) noexcept { return *reinterpret_cast<send_to_awaiter *>(raw); }
+    static send_to_awaiter &from_native(uv_udp_send_t *raw) noexcept {
+      assert(raw->data != nullptr);
+      return *static_cast<send_to_awaiter *>(raw->data);
+    }
     static void on_send(uv_udp_send_t *raw, int status) noexcept {
       auto &self = from_native(raw);
       self.status_ = status;
@@ -283,6 +286,7 @@ private:
     state->loop = &loop;
     int status = uv_udp_init(loop.native(), &state->udp);
     if (status < 0) throw_if_error(status);
+    state->udp.data = state.get();
     status = uv_udp_bind(&state->udp, address, 0);
     if (status < 0) {
       auto *failed = state.release();

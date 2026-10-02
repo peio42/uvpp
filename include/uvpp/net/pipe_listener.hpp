@@ -8,7 +8,6 @@
 #include <stdexcept>
 #include <string>
 #include <string_view>
-#include <type_traits>
 #include <utility>
 #include <vector>
 
@@ -46,9 +45,8 @@ struct pipe_listener_state {
   async_close_state close{};
 
   static pipe_listener_state &from_handle(uv_handle_t *raw) noexcept {
-    auto *bytes = reinterpret_cast<char *>(raw);
-    return *reinterpret_cast<pipe_listener_state *>(
-        bytes - offsetof(pipe_listener_state, pipe));
+    assert(raw->data != nullptr);
+    return *static_cast<pipe_listener_state *>(raw->data);
   }
 
   bool closing() const noexcept { return close.closing(); }
@@ -94,8 +92,6 @@ struct pipe_listener_state {
     self.close.complete([&self]() noexcept { delete &self; });
   }
 };
-
-static_assert(std::is_standard_layout_v<pipe_listener_state>);
 
 } // namespace detail
 
@@ -183,6 +179,7 @@ public:
       if (status_ < 0) {
         return false;
       }
+      connection_->pipe.data = connection_.get();
       continuation_ = continuation;
       listener_->accept.claim(
           this, &accept_awaiter::on_connection, &accept_awaiter::on_listener_close_requested);
@@ -277,6 +274,7 @@ private:
     if (status < 0) {
       throw_if_error(status);
     }
+    state->pipe.data = state.get();
 #if UVPP_HAS_PIPE_BIND2
     status = uv_pipe_bind2(&state->pipe, name.data(), name.size(), 0);
 #else

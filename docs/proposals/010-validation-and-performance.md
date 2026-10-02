@@ -115,6 +115,13 @@ reuse, concurrent-wait `UV_EBUSY`, and terminal close cancellation. They use
 `SIGUSR1` and `raise()` on platforms where libuv delivers it; platform-specific
 signal behavior remains part of the broader portability matrix.
 
+The high-level `data` reconstruction slice retains the existing connect/accept,
+IPC transfer, signal delivery, failed-construction, cancellation, and close tests.
+Additional [UDP](../../tests/test-co-udp.cpp) and
+[process](../../tests/test-co-process.cpp) cases move an owner while a receive or
+exit wait is pending, then verify native address stability, result delivery, and
+close completion. Raw layout and user-data preservation tests remain in place.
+
 `make measure-cleanup` builds and runs a dependency-free benchmark for repeated
 multi-connection `resource_scope::finish()` calls. It reports C++ allocations made
 while `finish()` is active (explicitly excluding libuv C allocations) and cleanup

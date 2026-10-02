@@ -9,7 +9,6 @@
 #include <stdexcept>
 #include <string>
 #include <string_view>
-#include <type_traits>
 #include <utility>
 #include <vector>
 
@@ -101,15 +100,13 @@ struct pipe_connection_state {
   stream_io_state io{};
 
   static pipe_connection_state &from_connect(uv_connect_t *raw) noexcept {
-    auto *bytes = reinterpret_cast<char *>(raw);
-    return *reinterpret_cast<pipe_connection_state *>(
-        bytes - offsetof(pipe_connection_state, connect));
+    assert(raw->data != nullptr);
+    return *static_cast<pipe_connection_state *>(raw->data);
   }
 
   static pipe_connection_state &from_handle(uv_handle_t *raw) noexcept {
-    auto *bytes = reinterpret_cast<char *>(raw);
-    return *reinterpret_cast<pipe_connection_state *>(
-        bytes - offsetof(pipe_connection_state, pipe));
+    assert(raw->data != nullptr);
+    return *static_cast<pipe_connection_state *>(raw->data);
   }
 
   bool closing() const noexcept { return close.closing(); }
@@ -181,8 +178,6 @@ struct pipe_connection_state {
     self.close.complete([&self]() noexcept { delete &self; });
   }
 };
-
-static_assert(std::is_standard_layout_v<pipe_connection_state>);
 
 using pipe_close_completion = owner_close_awaiter<pipe_connection_state, false>;
 using pipe_close_result = owner_close_awaiter<pipe_connection_state, true>;
@@ -470,6 +465,7 @@ public:
           incoming_ = std::move(candidate);
           return true;
         }
+        candidate->tcp.data = candidate.get();
         candidate->initialized = true;
         status_ = uv_accept(state_->stream_handle(), candidate->stream_handle());
         if (status_ < 0) {
@@ -576,6 +572,9 @@ public:
       if (status_ < 0) {
         return false;
       }
+
+      state.pipe.data = &state;
+      state.connect.data = &state;
 
 #if UVPP_HAS_PIPE_CONNECT2
       status_ = uv_pipe_connect2(&state.connect, &state.pipe, name_.data(), name_.size(), 0,
@@ -708,7 +707,5 @@ namespace ops {
 }
 
 } // namespace ops
-
-static_assert(std::is_standard_layout_v<pipe_connection::write_awaiter>);
 
 } // namespace uv

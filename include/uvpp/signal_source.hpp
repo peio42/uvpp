@@ -6,7 +6,6 @@
 #include <cstddef>
 #include <memory>
 #include <stdexcept>
-#include <type_traits>
 #include <utility>
 
 #include <uv.h>
@@ -48,8 +47,8 @@ struct signal_source_state {
   bool pending = false;
 
   static signal_source_state &from_handle(uv_handle_t *raw) noexcept {
-    auto *bytes = reinterpret_cast<char *>(raw);
-    return *reinterpret_cast<signal_source_state *>(bytes - offsetof(signal_source_state, signal));
+    assert(raw->data != nullptr);
+    return *static_cast<signal_source_state *>(raw->data);
   }
 
   bool closing() const noexcept { return close.closing(); }
@@ -131,8 +130,6 @@ struct signal_source_state {
   }
 };
 
-static_assert(std::is_standard_layout_v<signal_source_state>);
-
 } // namespace detail
 
 // Experimental v3 persistent signal subscription. Construction starts watching
@@ -161,6 +158,7 @@ public:
     if (status < 0) {
       throw_if_error(status);
     }
+    state->signal.data = state.get();
     status = uv_signal_start(&state->signal, &detail::signal_source_state::on_signal, signum);
     if (status < 0) {
       auto *failed = state.release();

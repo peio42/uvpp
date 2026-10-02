@@ -72,6 +72,8 @@ loop.close();
 The owner is move-only and moving it preserves its native address. `native()` and
 `native_handle()` provide explicit borrowed libuv access; they do not transfer
 close authority or permit replacing the uvpp-owned callback or `data` member.
+`data` points to stable internal state and remains valid through native close; the
+low-level signal wrapper leaves its own `data` available to application code.
 
 The source allocates stable owner storage at construction. `next()` adds no
 library allocation; coroutine frames and close waiters may still allocate.

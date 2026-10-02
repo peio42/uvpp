@@ -34,3 +34,8 @@ Close rejects active I/O. After settling it, await `socket.close()` or
 [ownership](../ownership-and-lifetime.md), [buffers](../buffers.md), and
 [errors](../errors.md). There is no bounded receive queue or lossless backpressure
 guarantee in this slice.
+
+`native()` and `native_handle()` borrow libuv storage. Its `data` field belongs
+to uvpp; callers must not overwrite it, replace uvpp-owned callbacks, or
+independently close the handle. Moving the owner preserves this storage and its
+callback state. Raw wrappers keep `data` available to application code.
