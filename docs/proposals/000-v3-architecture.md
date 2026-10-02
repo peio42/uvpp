@@ -163,7 +163,11 @@ Keep C++20 and header-only integration, focused includes, concepts for structura
 public template contracts, explicit native access and `.view()` borrowing,
 `std::chrono` durations, and distinct raw/high-level native `data` rules. `uv::raw`
 wrapper fields remain application-owned; high-level owners and internal operation
-state may reserve them as implementation storage. Raw primitives must not acquire
+state may reserve them as implementation storage and should do so when it avoids
+an artificial dependency on object layout. Persistent high-level owners preferably
+point `data` at stable state. Internal one-shot operations may use an awaiter/state
+pointer or `native_storage`, whichever is simpler without unnecessary constraints;
+using `data` is not a layer-wide requirement. Raw primitives must not acquire
 hidden operation allocations, locks, or coroutine state. Existing
 explicit storage costs and justified native-lifetime allocations must be documented;
 zero-allocation claims apply to measured paths, not all wrappers indiscriminately.

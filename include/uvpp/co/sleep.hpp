@@ -1,10 +1,10 @@
 #pragma once
 
+#include <cassert>
 #include <chrono>
 #include <concepts>
 #include <coroutine>
 #include <cstdint>
-#include <type_traits>
 #include <utility>
 
 #include <uv.h>
@@ -36,6 +36,7 @@ public:
     if (status_ < 0) {
       return false;
     }
+    timer_.data = this;
     status_ = uv_timer_start(&timer_, &sleep_awaiter::timer_trampoline, timeout_, 0);
     if (status_ < 0) {
       uv_close(reinterpret_cast<uv_handle_t *>(&timer_), &sleep_awaiter::close_trampoline);
@@ -55,9 +56,9 @@ public:
 
 private:
   static sleep_awaiter &from_native(uv_timer_t *timer) noexcept {
-    // timer_ is the first member. This standard-layout operation object stays
-    // inside the suspended coroutine frame until uv_close completes.
-    return *reinterpret_cast<sleep_awaiter *>(timer);
+    // The suspended coroutine frame retains this awaiter through native close.
+    assert(timer->data != nullptr);
+    return *static_cast<sleep_awaiter *>(timer->data);
   }
 
   static void timer_trampoline(uv_timer_t *timer) noexcept {
@@ -100,8 +101,6 @@ private:
   int status_ = 0;
   bool close_started_ = false;
 };
-
-static_assert(std::is_standard_layout_v<sleep_awaiter>);
 
 template<class Rep, class Period>
 uint64_t timer_timeout(std::chrono::duration<Rep, Period> duration) noexcept {

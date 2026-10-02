@@ -34,9 +34,10 @@ Specialized proposals refine that architecture. Existing low-level code may stil
 need migration; historical behavior does not override the accepted v3 target.
 
 Keep C++20, header-only integration, explicit native access, application-owned
-`data` for raw wrappers, implementation-reserved `data` for high-level owners
-and internal operation state, and stable native addresses. Costs and asynchronous ownership remain
-explicit. Positive breaking changes take precedence over v2 source compatibility.
+`data` for raw wrappers, permission to reserve `data` for high-level owners and
+internal operation state, and stable native addresses. Prefer `data` when it
+avoids an artificial dependency on object layout. Costs and asynchronous ownership
+remain explicit. Positive breaking changes take precedence over v2 source compatibility.
 
 ## Dependency and Implementation Order
 
