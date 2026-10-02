@@ -157,3 +157,19 @@ unconditionally; filesystem `lutime` is also not gated. UDP `mmsg_chunk()` and
 these actual differences when defining a supported minimum libuv version; choose
 explicit baseline requirements or capability gates and test both configurations.
 Do not describe the existing macros as exhaustive older-version compatibility.
+
+## Poll-source implementation progress
+
+The [poll-source tests](../../tests/test-co-poll.cpp) exercise inactive setup,
+borrowed descriptor/non-blocking effects, repeated level readiness, mask changes,
+waiter exclusion, cancellation/reuse, active owner moves, reentrant destruction,
+close joins, invalid masks, and loop mismatch. Linux additionally exercises
+native start conflict through both error policies; callback failure is injected
+at the native delivery boundary. Windows validation, allocation measurements,
+and broader native failure injection remain open.
+
+On Linux with libuv 1.51.0, all 15 poll tests pass with GCC and Clang and in a
+focused Clang ASan/UBSan build with leak detection. Both complete compiler suites
+also pass, including the separate UDP allocation binary; two pre-existing
+platform/environment tests are skipped. This is local validation, not a
+cross-platform or performance guarantee.

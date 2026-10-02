@@ -223,3 +223,11 @@ For subscriptions, validate immediate replacement from terminal user delivery on
 EOF, error, cancellation, and stop; ordinary-event slot retention; setup rollback;
 and late callbacks that neither resume twice nor clear replacement slots. Test both
 callback and coroutine frontends, including destruction during terminal delivery.
+
+## Poll-source implementation progress
+
+`poll_source` uses shared close bookkeeping and a family-specific one-waiter
+slot. Success, native callback error, and cancellation stop polling and exchange
+the slot before user delivery. Native start failure unregisters cancellation and
+releases the slot synchronously. No pending-event queue is used; a new mask is
+selected at the next await. See [`poll_source.hpp`](../../include/uvpp/poll_source.hpp).

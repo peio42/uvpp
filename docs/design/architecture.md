@@ -11,9 +11,9 @@ implemented or frozen.
 | Layer | Target responsibility | Current implementation |
 | --- | --- | --- |
 | `uv::raw` | Explicit low-level handles, requests, and operational results | Namespace and error-policy migration remains unfinished; existing wrappers still largely live in `uv` |
-| `uv` | Shared vocabulary and stable high-level resource owners | TCP/pipe connections and listeners, UDP sockets, filesystem files, `signal_source`, loop, addresses, buffers, common results |
+| `uv` | Shared vocabulary and stable high-level resource owners | TCP/pipe connections and listeners, UDP sockets, filesystem files, `signal_source`, `poll_source`, loop, addresses, buffers, common results |
 | `uv::co` | Cold tasks, spawning, cancellation, and structured composition | `task<T>`, `spawn_handle<T>`, join, cooperative stop, timer sleep, task and resource scopes |
-| `uv::ops` | Explicit-result operations on the same owners | Owner close, signal-source next, DNS resolution, and filesystem open/read/write/close |
+| `uv::ops` | Explicit-result operations on the same owners | Owner close, signal/poll-source next, DNS resolution, and filesystem open/read/write/close |
 
 Filesystem targets `uv::fs` and `uv::raw::fs`; existing `uv::fs::raw` code has
 not yet completed this migration. Existing filesystem, process, DNS, watcher,
@@ -88,3 +88,13 @@ paths; [proposal 010](../proposals/010-validation-and-performance.md) tracks gat
 The [design index](index.md) links implementation and test evidence. A proposal
 sketch is not callable API; keep code, implemented documentation, and proposal
 progress synchronized as each slice lands.
+
+## Per-wait descriptor readiness
+
+`poll_source` owns stable `uv_poll_t` storage while borrowing its descriptor.
+Construction leaves polling inactive; `next(mask)` arms one exclusive native wait.
+Success, completion error, and cancellation stop polling and release the waiter
+before resuming user code. A later wait can select a new mask; no readiness is
+queued between waits. Close marks the source terminal before cancelling its
+waiter and retains storage through native close. This intentionally differs from
+the persistent `signal_source` subscription.

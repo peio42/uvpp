@@ -90,3 +90,13 @@ rejects incompatible active I/O.
 
 See [ownership](ownership-strategy.md), [errors](error-handling-strategy.md), and
 [coroutine lifecycle tests](../../tests/test-co-core.cpp).
+
+## Per-wait descriptor readiness
+
+`poll_source` arms one native poll callback for each `next(mask)`. Successful
+readiness, native callback error, and cancellation stop native polling, exchange
+the waiter slot, unregister cancellation, and resume the detached continuation.
+The ordinary delivery path does not access owner or awaiter state after resumption:
+user code may immediately rearm or destroy the owner. Close marks the state
+terminal before cancelling a waiter, preventing reentrant waits during cleanup.
+Unlike `signal_source`, it retains no pending event or active watcher between waits.

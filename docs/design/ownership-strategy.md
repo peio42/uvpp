@@ -151,3 +151,12 @@ error, so a retry only retires that record and never repeats close. Cleanup is
 fail-fast, with no aggregate-error type; callers preserve primary task failures
 separately. Generic cleanup-error aggregation remains proposed in
 [011](../proposals/011-resource-scopes.md).
+
+## Per-wait descriptor readiness
+
+`poll_source` moves stable native storage and borrows its fd/socket. The owner
+never releases that descriptor. Destruction marks the source terminal, stops
+polling, cancels its waiter, and retains state through native close; it never
+runs a nested loop. Native `data` points to the stable owner state. A loop must
+survive and be driven through cleanup, even though an inactive source does not
+keep that loop alive. Scope adoption remains deferred.

@@ -30,6 +30,7 @@ alignment; the tests provide examples of coverage, not a proof of every contract
 | --- | --- | --- |
 | V3 owners and composition | [owners](../../include/uvpp/net/tcp_connection.hpp), [tasks](../../include/uvpp/co/task.hpp), [resource scopes](../../include/uvpp/co/resource_scope.hpp) | [coroutines](../../tests/test-co-core.cpp) |
 | Persistent signals | [signal source](../../include/uvpp/signal_source.hpp) | [signal coroutines](../../tests/test-co-signal.cpp) |
+| Descriptor readiness | [poll source](../../include/uvpp/poll_source.hpp) | [poll coroutines](../../tests/test-co-poll.cpp) |
 | Process owner | [process](../../include/uvpp/handles/process.hpp) | [process coroutines](../../tests/test-co-process.cpp) |
 | Native identity and views | [native storage](../../include/uvpp/core/native.hpp), [handle views](../../include/uvpp/handles/handle_view.hpp) | [layout](../../tests/test-layout.cpp) |
 | Loop and errors | [loop](../../include/uvpp/core/loop.hpp), [errors](../../include/uvpp/core/error.hpp) | [loop](../../tests/test-loop.cpp), [core](../../tests/test-core.cpp) |
