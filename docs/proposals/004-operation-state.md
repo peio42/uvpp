@@ -245,3 +245,12 @@ family-specific. The listener's existing `accept_slot` additionally
 detaches a separate cancellation callback and retains its own cleanup protocol.
 [Focused slot tests](../../tests/test-one-shot-callback-slot.cpp) exercise ownership,
 reentrant replacement, destruction during delivery, and payload forwarding.
+
+## Filesystem-event implementation progress
+
+`fs_event_source` uses the shared one-shot waiter and owner-close protocols.
+Its native callback detaches the waiter before delivery without stopping the
+persistent subscription. Close marks state terminal and stops native delivery
+before cancelling the waiter; storage survives reentrant owner release.
+See the [implemented contract](../user/fs-events.md). Resource-scope adoption
+and broader platform/cost validation remain open.

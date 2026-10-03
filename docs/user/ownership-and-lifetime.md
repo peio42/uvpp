@@ -102,3 +102,9 @@ remain proposed.
 polling before delivery; close cancels an active waiter and joins native cleanup
 without closing the descriptor. Scope adoption remains deferred. See
 [Descriptor readiness](poll.md).
+
+`fs_event_source` owns stable watcher storage and a persistent subscription,
+while the watched filesystem remains external. Cancellation releases its waiter;
+terminal close stops the watcher, cancels that waiter, clears the coalesced pending
+outcome, and joins native close. Destruction starts asynchronous cleanup without
+driving the loop. See [Filesystem notifications](fs-events.md).

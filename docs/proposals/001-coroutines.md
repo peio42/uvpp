@@ -243,3 +243,12 @@ and compare callback/static/coroutine paths using the
 `poll_events`; `uv::ops::next` returns `result<poll_events>`. Each wait arms then
 quiesces native polling before continuation delivery. No events are retained
 between waits. See [descriptor readiness](../user/poll.md).
+
+## Filesystem-event implementation progress
+
+Repeated filesystem notifications are now available as `fs_event_source::next()`
+and `uv::ops::next(source)`. Pending consumption is synchronous at suspension;
+ordinary delivery releases the exclusive waiter before inline continuation
+resumption, while retaining the native subscription.
+See the [implemented contract](../user/fs-events.md). Resource-scope adoption
+and broader platform/cost validation remain open.

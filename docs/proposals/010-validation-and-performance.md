@@ -180,3 +180,28 @@ validation, and affected tests. This does not resolve the remaining minimum-libu
 compatibility gaps listed above. GCC and Clang compile checks at simulated
 1.8/1.9/1.13/1.14 header versions, with unavailable poll constants masked, pass;
 these checks are not builds against actual older libuv headers.
+
+## Filesystem-event implementation progress
+
+The [fs-event tests](../../tests/test-co-fs-event.cpp) cover owned callback names,
+flag merging, irreversible ambiguity and missing names, one-time pending
+consumption, cancellation/reuse, pre-existing stop preserving pending state,
+waiter exclusion, native callback failures in both policies, active-owner moves,
+immediate rearming, reentrant destruction during delivery/close, multiple stopped
+close joiners, late delivery, affinity, closed/moved-from use, failed-start
+retention, embedded-NUL rejection, and real native filesystem notifications.
+The historical callback and layout tests now exercise `uv::raw::fs_event`,
+including application-owned native `data` preservation.
+
+Local Linux/libuv 1.51.0 validation passes all 15 new cases under GCC and Clang.
+`make test-all GTEST_ARGS=--gtest_brief=1` passes both complete 374-case suites
+(372 passed, two existing TTY tests skipped), plus each separate UDP allocation
+binary; examples build as part of that target. A focused Clang ASan/UBSan build
+with leak checking passes fs-event, historical watcher, and layout tests (20
+passed, one existing TTY skip). The three affected public headers also compile
+independently under C++20. Network suites and LeakSanitizer were run outside the
+sandbox to avoid its network/ptrace restrictions.
+
+Cross-platform/backend validation, allocation fault injection for filename
+materialization, allocation measurements, and broader performance gates remain
+open; local coverage does not freeze the API or establish portable event semantics.

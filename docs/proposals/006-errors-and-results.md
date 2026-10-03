@@ -236,3 +236,13 @@ Poll readiness now pairs throwing `next(mask)` with
 and callback errors. Mask validation, busy, cancelled, and closed waits follow
 the same policy. Construction remains throwing setup; cross-loop use remains
 `std::logic_error`. See [the user contract](../user/poll.md).
+
+## Filesystem-event implementation progress
+
+`fs_event_source::next()` and `uv::ops::next(source) -> result<fs_event>`
+share native callback, busy, closed, and cancellation failures. Both close
+surfaces share native completion. Callback filename-copy exceptions are captured
+and rethrown at either await expression. Constructor setup remains throwing,
+and wrong-loop awaits raise `std::logic_error`.
+See the [implemented contract](../user/fs-events.md). Resource-scope adoption
+and broader platform/cost validation remain open.

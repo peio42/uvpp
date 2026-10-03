@@ -248,3 +248,16 @@ The experimental `uv::poll_source` owns stable native poll storage and borrows
 its descriptor. It provides per-wait masks, paired throwing/result waits, and
 terminal asynchronous close. Persistent subscriptions and scope adoption remain
 deferred; see the [implemented contract](../user/poll.md).
+
+## Filesystem-event implementation progress
+
+The experimental `uv::fs_event_source` now provides a persistent native
+subscription, one exclusive cancellable `next()` waiter, one coalesced pending
+outcome, and terminal non-cancellable close. `uv::ops::next/close` share the same
+state and lifetime protocol. Filename values are owned; missing or ambiguous
+coalesced names are absent. Native callback failures remain observable until
+consumed; C++ materialization exceptions rethrow at the await in both policies.
+The historical callback wrapper is now `uv::raw::fs_event`, with raw error-policy
+migration still open. See the [implemented contract](../user/fs-events.md).
+Resource-scope adoption, lossless queues, and broader platform/cost validation
+remain outside this slice.

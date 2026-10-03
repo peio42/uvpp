@@ -44,6 +44,7 @@
 #include "uvpp/handles/process.hpp"
 #include "uvpp/handles/signal.hpp"
 #include "uvpp/signal_source.hpp"
+#include "uvpp/fs_event_source.hpp"
 #include "uvpp/poll_source.hpp"
 #include "uvpp/handles/timer.hpp"
 #include "uvpp/handles/stream.hpp"

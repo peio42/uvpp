@@ -56,14 +56,17 @@ TEST(Uvpp2FsEvent, reportsDirectoryChanges) {
   std::filesystem::create_directory(dir);
 
   uv::loop loop;
-  uv::fs_event watcher(loop);
+  uv::raw::fs_event watcher(loop);
+  int application_data = 42;
+  watcher.native()->data = &application_data;
   uv::timer modifier(loop);
   uv::timer timeout(loop);
   bool changed = false;
 
-  watcher.start(dir.string(), [&](uv::fs_event &self, uv::fs_event_result event) {
+  watcher.start(dir.string(), [&](uv::raw::fs_event &self, uv::raw::fs_event_result event) {
     ASSERT_TRUE(event);
-    EXPECT_TRUE(event.has(uv::fs_event_kind::rename) || event.has(uv::fs_event_kind::change));
+    EXPECT_EQ(self.native()->data, &application_data);
+    EXPECT_TRUE(event.has(uv::raw::fs_event_kind::rename) || event.has(uv::raw::fs_event_kind::change));
 
     changed = true;
     self.stop();
