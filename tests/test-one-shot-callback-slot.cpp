@@ -16,7 +16,16 @@ TEST(UvppOneShotCallbackSlot, claimsAndReleasesOnlyForTheActiveOwner) {
   };
   EXPECT_FALSE(waiter.claimed_by(nullptr));
   EXPECT_FALSE(waiter.release(nullptr));
+  EXPECT_FALSE(waiter.claim(nullptr, deliver));
+  EXPECT_FALSE(waiter.claimed());
+  EXPECT_FALSE(waiter.claim(&first, nullptr));
+  EXPECT_FALSE(waiter.claimed());
+  waiter.deliver(1);
+  EXPECT_EQ(first, 0);
   EXPECT_TRUE(waiter.claim(&first, deliver));
+  EXPECT_TRUE(waiter.claimed_by(&first));
+  EXPECT_FALSE(waiter.claim(nullptr, deliver));
+  EXPECT_FALSE(waiter.claim(&first, nullptr));
   EXPECT_TRUE(waiter.claimed_by(&first));
   EXPECT_FALSE(waiter.claim(&second, deliver));
   EXPECT_FALSE(waiter.release(&second));

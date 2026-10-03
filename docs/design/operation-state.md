@@ -31,8 +31,9 @@ These observations do not justify a shared public event-source abstraction.
 
 The private [`one_shot_callback_slot<Args...>`](../../include/uvpp/detail/one_shot_callback_slot.hpp)
 used by signal, poll, and process states factors only exclusive claim, claim
-ownership tests, release, and detach-before-delivery. `claim()` requires a non-null
-context and callback and rejects an occupied slot. Ownership tests and `release()`
+ownership tests, release, and detach-before-delivery. `claim()` returns `false`
+for a null context, a null callback, or an occupied slot, leaving the slot unchanged.
+Ownership tests and `release()`
 require an active matching claim; a null context never owns an empty slot.
 Delivery clears both the consumer context and callback pointer before invoking
 the callback and does not access the slot afterward: the callback may destroy its

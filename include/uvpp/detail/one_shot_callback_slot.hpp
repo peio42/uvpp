@@ -1,6 +1,5 @@
 #pragma once
 
-#include <cassert>
 #include <utility>
 
 namespace uv::detail {
@@ -18,9 +17,7 @@ public:
   }
 
   bool claim(void *context, callback cb) noexcept {
-    assert(context != nullptr);
-    assert(cb != nullptr);
-    if (claimed()) {
+    if (context == nullptr || cb == nullptr || claimed()) {
       return false;
     }
     context_ = context;
