@@ -25,6 +25,7 @@
 #include "uvpp/co/task.hpp"
 #include "uvpp/detail/async_close_state.hpp"
 #include "uvpp/detail/owner_close.hpp"
+#include "uvpp/detail/one_shot_callback_slot.hpp"
 #include "uvpp/handles/handle.hpp"
 #include "uvpp/handles/stream.hpp"
 
@@ -686,8 +687,7 @@ struct process_state {
   uv_process_t native{};
   uv::loop *loop = nullptr;
   async_close_state close{};
-  void *waiter = nullptr;
-  void (*deliver_waiter)(void *, int, process_exit) noexcept = nullptr;
+  one_shot_callback_slot<int, process_exit> waiter{};
   process_exit exit{};
   bool exited = false;
   // Distinct from async_close_state ownership: process owner release may
@@ -702,32 +702,7 @@ struct process_state {
   bool closing() const noexcept { return close.closing(); }
   bool has_active_operation() const noexcept { return !exited; }
 
-  bool claim_waiter(void *context,
-                    void (*deliver)(void *, int, process_exit) noexcept) noexcept {
-    if (waiter != nullptr) {
-      return false;
-    }
-    waiter = context;
-    deliver_waiter = deliver;
-    return true;
-  }
-
-  bool release_waiter(void *context) noexcept {
-    if (waiter != context) {
-      return false;
-    }
-    waiter = nullptr;
-    deliver_waiter = nullptr;
-    return true;
-  }
-
-  void cancel_waiter() noexcept {
-    auto *context = std::exchange(waiter, nullptr);
-    auto deliver = std::exchange(deliver_waiter, nullptr);
-    if (deliver != nullptr) {
-      deliver(context, UV_ECANCELED, {});
-    }
-  }
+  void cancel_waiter() noexcept { waiter.deliver(UV_ECANCELED, {}); }
 
   bool request_close() noexcept {
     if (!exited || !close.begin()) {
@@ -765,11 +740,7 @@ struct process_state {
       (void)self.request_close();
     }
 
-    auto *context = std::exchange(self.waiter, nullptr);
-    auto deliver = std::exchange(self.deliver_waiter, nullptr);
-    if (deliver != nullptr) {
-      deliver(context, 0, self.exit);
-    }
+    self.waiter.deliver(0, self.exit);
   }
 
   static void on_close(uv_handle_t *raw) noexcept {
@@ -897,7 +868,7 @@ public:
         exit_ = state_->exit;
         return false;
       }
-      if (!state_->claim_waiter(this, &wait_awaiter::on_delivery)) {
+      if (!state_->waiter.claim(this, &wait_awaiter::on_delivery)) {
         status_ = UV_EBUSY;
         return false;
       }
@@ -905,7 +876,7 @@ public:
       cancellation_ = continuation.promise().cancellation();
       if (cancellation_ != nullptr && !cancellation_->register_callback(
           cancellation_registration_, &wait_awaiter::on_stop_requested, this)) {
-        (void)state_->release_waiter(this);
+        (void)state_->waiter.release(this);
         continuation_ = {};
         cancellation_ = nullptr;
         status_ = UV_ECANCELED;

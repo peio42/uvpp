@@ -17,6 +17,7 @@
 #include "uvpp/core/version.hpp"
 #include "uvpp/detail/async_close_state.hpp"
 #include "uvpp/detail/owner_close.hpp"
+#include "uvpp/detail/one_shot_callback_slot.hpp"
 #include "uvpp/handles/poll.hpp"
 
 namespace uv {
@@ -41,8 +42,7 @@ struct poll_source_state {
   uv_poll_t poll{};
   uv::loop *loop = nullptr;
   async_close_state close{};
-  void *waiter = nullptr;
-  void (*deliver_waiter)(void *, int, poll_events) noexcept = nullptr;
+  one_shot_callback_slot<int, poll_events> waiter{};
 
   static poll_source_state &from_handle(uv_handle_t *raw) noexcept {
     assert(raw->data != nullptr);
@@ -54,33 +54,11 @@ struct poll_source_state {
   // wait rather than rejecting it as competing I/O.
   bool has_active_operation() const noexcept { return false; }
 
-  bool claim_waiter(void *context, void (*deliver)(void *, int, poll_events) noexcept) noexcept {
-    if (waiter != nullptr) {
-      return false;
-    }
-    waiter = context;
-    deliver_waiter = deliver;
-    return true;
-  }
-
-  bool release_waiter(void *context) noexcept {
-    if (waiter != context) {
-      return false;
-    }
-    waiter = nullptr;
-    deliver_waiter = nullptr;
-    return true;
-  }
-
   void deliver_event(int status, poll_events events) noexcept {
     // Quiesce and release the slot before user code can rearm, move, or destroy
     // the owner. Do not access this state after delivering the continuation.
     (void)uv_poll_stop(&poll);
-    auto *context = std::exchange(waiter, nullptr);
-    auto deliver = std::exchange(deliver_waiter, nullptr);
-    if (deliver != nullptr) {
-      deliver(context, status, events);
-    }
+    waiter.deliver(status, events);
   }
 
   void cancel_waiter() noexcept { deliver_event(UV_ECANCELED, {}); }
@@ -190,7 +168,7 @@ public:
         status_ = UV_ECANCELED;
         return false;
       }
-      if (!state_->claim_waiter(this, &next_awaiter::on_delivery)) {
+      if (!state_->waiter.claim(this, &next_awaiter::on_delivery)) {
         status_ = UV_EBUSY;
         return false;
       }
@@ -203,7 +181,7 @@ public:
 #endif
           ;
       if (!requested_ || (requested_.raw() & ~allowed) != 0) {
-        (void)state_->release_waiter(this);
+        (void)state_->waiter.release(this);
         status_ = UV_EINVAL;
         return false;
       }
@@ -213,7 +191,7 @@ public:
           cancellation_registration_, &next_awaiter::on_stop_requested, this)) {
         // A pre-existing stop is normally detected above. Keep this fallback
         // synchronous: resuming from await_suspend would re-enter this frame.
-        (void)state_->release_waiter(this);
+        (void)state_->waiter.release(this);
         continuation_ = {};
         cancellation_ = nullptr;
         status_ = UV_ECANCELED;
@@ -225,7 +203,7 @@ public:
           cancellation_->unregister(cancellation_registration_);
           cancellation_ = nullptr;
         }
-        (void)state_->release_waiter(this);
+        (void)state_->waiter.release(this);
         continuation_ = {};
         return false;
       }

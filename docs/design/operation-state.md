@@ -15,19 +15,38 @@ Cancellation is not itself terminal delivery. If native work remains in flight,
 its state and borrowed inputs remain alive and its slot remains occupied until
 the actual terminal callback.
 
-## Observed recurring shape
+## Observed after poll
 
-- persistent native source;
-- one coroutine consumer slot;
-- terminal delivery releases the slot before resuming the consumer.
+The listener, signal, poll, and process families confirm a common
+exclusive-consumer delivery invariant, but not a common source lifecycle:
 
-Important semantic differences remain:
+| Family | Source lifecycle and result policy |
+| --- | --- |
+| listener | Persistent native source, no retained event, independently owned connection result |
+| signal | Persistent subscription, one coalesced pending event |
+| poll | Native source armed per wait, no pending event |
+| process | One terminal event retained permanently |
 
-- listener: one native opportunity produces an independently owned connection;
-- signal: a repeated source retains one coalesced pending notification;
-- process: one terminal event is retained permanently after exit.
+These observations do not justify a shared public event-source abstraction.
 
-Do not introduce a shared public event-source abstraction yet. Revisit the shape
-after `poll` or `fs_event` provides a second or third comparable high-level
-family. Small private helpers remain appropriate only when they preserve these
-family-specific semantics.
+The private [`one_shot_callback_slot<Args...>`](../../include/uvpp/detail/one_shot_callback_slot.hpp)
+used by signal, poll, and process states factors only exclusive claim, claim
+ownership tests, release, and detach-before-delivery. `claim()` requires a non-null
+context and callback and rejects an occupied slot. Ownership tests and `release()`
+require an active matching claim; a null context never owns an empty slot.
+Delivery clears both the consumer context and callback pointer before invoking
+the callback and does not access the slot afterward: the callback may destroy its
+containing state or claim the slot again. Payloads are forwarded to the callback;
+the slot stores only the context and function pointers.
+
+Native arming, cancellation, pending-event policy, payload retention, and close remain
+family-specific. In particular, `cancel_waiter()` stays outside the helper:
+signal cancellation leaves the subscription active, poll cancellation stops
+native polling, and process wait cancellation leaves the process running and
+preserves its eventual exit result. The existing listener `accept_slot` also
+detaches its separate cancellation pointer before family-specific child cleanup.
+
+The [slot tests](../../tests/test-one-shot-callback-slot.cpp) cover competing claims,
+release ownership, exactly-once delivery, reentrant replacement, destruction from
+delivery, and forwarding move-only payloads and references. Family lifecycle tests
+continue to cover native arming, cancellation/reuse, retained events, and close.
