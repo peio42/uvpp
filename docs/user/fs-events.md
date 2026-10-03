@@ -54,6 +54,20 @@ Without a waiter, the source retains one pending outcome:
   remains until consumption; subsequent notifications are discarded meanwhile.
 - The next wait consumes the pending outcome once, synchronously at suspension.
 
+`next()` is not a FIFO journal of native callbacks. It is a notification source
+with **bounded coalescing and failure precedence**. For example, without a waiter
+or intervening consumption:
+
+```text
+success A -> error -> success B
+pending outcome: error
+```
+
+The error replaces A, and B is ignored while that error remains unconsumed.
+Consuming the error clears the pending outcome; a later notification may then
+be delivered or retained normally. Captured filename-materialization failures
+follow the same precedence rule.
+
 This deliberately loses event counts, ordering, and individual names. There is no
 unbounded event queue and no promise of lossless filesystem observation.
 
