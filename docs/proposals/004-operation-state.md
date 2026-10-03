@@ -237,8 +237,9 @@ confirm exclusive-consumer detach-before-delivery, but do not justify a shared
 public event-source abstraction. The private
 [`one_shot_callback_slot<Args...>`](../../include/uvpp/detail/one_shot_callback_slot.hpp)
 now shares claim, ownership tests, release, and detach-before-delivery across
-signal, poll, and process states. It stores only a context and a noexcept function
-pointer; payloads are forwarded without retention. Native arming,
+signal, poll, and process states. Null contexts and callbacks are rejected without
+changing the slot, including in builds with assertions disabled. It stores only a
+context and a noexcept function pointer; payloads are forwarded without retention. Native arming,
 `cancel_waiter()`, pending-event policy, retained payloads, and close remain
 family-specific. The listener's existing `accept_slot` additionally
 detaches a separate cancellation callback and retains its own cleanup protocol.
