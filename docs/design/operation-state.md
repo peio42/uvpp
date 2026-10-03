@@ -17,20 +17,27 @@ the actual terminal callback.
 
 ## Observed after poll
 
-The listener, signal, poll, and process families confirm a common
+The listener, signal, fs-event, poll, and process families confirm a common
 exclusive-consumer delivery invariant, but not a common source lifecycle:
 
-| Family | Source lifecycle and result policy |
-| --- | --- |
-| listener | Persistent native source, no retained event, independently owned connection result |
-| signal | Persistent subscription, one coalesced pending event |
-| poll | Native source armed per wait, no pending event |
-| process | One terminal event retained permanently |
+| Family | Native source lifecycle | Pending outcome / result policy |
+| --- | --- | --- |
+| signal | Persistent subscription | One coalesced pending signal |
+| fs_event | Persistent subscription | One coalesced pending outcome; flags merge, filename becomes unknown on ambiguity, failures take precedence |
+| poll | Native source armed per wait | None |
+| process | Terminal event | Exit result retained for the source lifetime |
+| listener | Persistent native connection opportunity | None; a successful accept returns an independently owned connection |
+
+For `fs_event`, callbacks received without a waiter follow bounded coalescing
+with failure precedence: `success A -> error -> success B` retains only the
+error. B is ignored until that failure has been consumed; `next()` is not a FIFO
+journal of native callbacks. This applies to native errors and captured filename
+materialization failures. See [filesystem notifications](../user/fs-events.md#pending-notifications).
 
 These observations do not justify a shared public event-source abstraction.
 
 The private [`one_shot_callback_slot<Args...>`](../../include/uvpp/detail/one_shot_callback_slot.hpp)
-used by signal, poll, and process states factors only exclusive claim, claim
+used by signal, fs-event, poll, and process states factors only exclusive claim, claim
 ownership tests, release, and detach-before-delivery. `claim()` returns `false`
 for a null context, a null callback, or an occupied slot, leaving the slot unchanged.
 Ownership tests and `release()`
@@ -42,7 +49,7 @@ the slot stores only the context and function pointers.
 
 Native arming, cancellation, pending-event policy, payload retention, and close remain
 family-specific. In particular, `cancel_waiter()` stays outside the helper:
-signal cancellation leaves the subscription active, poll cancellation stops
+signal and fs-event cancellation leave their subscriptions active, poll cancellation stops
 native polling, and process wait cancellation leaves the process running and
 preserves its eventual exit result. The existing listener `accept_slot` also
 detaches its separate cancellation pointer before family-specific child cleanup.
