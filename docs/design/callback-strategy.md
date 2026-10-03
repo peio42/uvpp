@@ -100,3 +100,13 @@ The ordinary delivery path does not access owner or awaiter state after resumpti
 user code may immediately rearm or destroy the owner. Close marks the state
 terminal before cancelling a waiter, preventing reentrant waits during cleanup.
 Unlike `signal_source`, it retains no pending event or active watcher between waits.
+
+## Filesystem event delivery
+
+`fs_event_source` copies the native callback filename before storing or delivering
+an event. Copy exceptions are captured inside the C callback and transported to
+the waiter or retained pending outcome; both await surfaces rethrow C++ preparation
+failures. The shared one-shot slot is exchanged before continuation resumption.
+The ordinary callback does not access owner state after delivery. Close sets its
+terminal phase before stopping native notifications and cancelling the waiter;
+state survives reentrant destruction until native close.

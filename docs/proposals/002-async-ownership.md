@@ -289,3 +289,12 @@ before promising a safe default directory API.
 shared close-completion state supports repeated close joins, cancellation of an
 active waiter, and destruction fallback through native close. Scope adoption
 remains deferred. See the [owner contract](../user/poll.md).
+
+## Filesystem-event implementation progress
+
+`fs_event_source` transfers stable native storage on move. Its terminal close
+stops the watcher, cancels the waiter, clears pending state, and joins native
+close without cancellation. Destruction and failed-start rollback retain storage
+through native completion, including reentrant owner release.
+See the [implemented contract](../user/fs-events.md). Resource-scope adoption
+and broader platform/cost validation remain open.

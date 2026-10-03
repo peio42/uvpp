@@ -88,7 +88,7 @@ The current result API is not uniform across all families:
 | DNS and random results | `status()` returns `uv::status`; `raw_status()` returns `int` | Direct `error_code()` plus family payload |
 | Public and raw filesystem results | `status()` returns `uv::status`; `raw_status()` returns zero on success or a negative error | Direct `error_code()`; `raw()` retains native payload/status value |
 | Stream/UDP read results | `status()` returns `uv::status`; `count()` retains native byte count/status | `status().error()`; no direct `error_code()` or `raw_status()` |
-| `fs_event_result`, `fs_poll_result` | `status()` returns `uv::status` | `status().error()`; no direct `error_code()` or `raw_status()` |
+| `raw::fs_event_result`, `fs_poll_result` | `status()` returns `uv::status` | `status().error()`; no direct `error_code()` or `raw_status()` |
 | `poll_result` | `status()` returns `uv::status` | Direct `error_code()`, no `raw_status()`; `raw_events()` is the event mask |
 
 The specialized low-level families expose `ok()` and explicit boolean conversion;

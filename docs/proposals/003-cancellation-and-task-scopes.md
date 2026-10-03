@@ -189,3 +189,12 @@ Poll waits now stop native polling and release their exclusive waiter before
 delivering `UV_ECANCELED`. The owner stays reusable under a non-stopped task
 context. Terminal close cancels an active wait and remains non-cancellable once
 initiated. See [poll cancellation](../user/poll.md#errors-cancellation-and-close).
+
+## Filesystem-event implementation progress
+
+`fs_event_source::next()` cancellation detaches only its exclusive waiter;
+the native watcher remains active. A prior stop rejects the wait without consuming
+a pending outcome. Terminal close instead stops the watcher, cancels the waiter,
+and joins native close, even if the closing task is stopped.
+See the [implemented contract](../user/fs-events.md). Resource-scope adoption
+and broader platform/cost validation remain open.

@@ -160,3 +160,13 @@ Owning callback stream writes are not implemented.
 Explore a callback frontend owning its request state alongside the coroutine form.
 The same default borrowing and explicitly named copying/typed transfer policy
 applies to callback writes. Owning the request state does not retain borrowed bytes.
+
+## Filesystem-event implementation progress
+
+`fs_event_source` copies callback filenames into owned values. One pending
+outcome coalesces flags and retains a name only when all names agree. Missing or
+different names remain ambiguous until consumption. A failure replaces pending
+success and remains sticky until consumption; this is bounded notification
+retention, not a lossless history or general flow-control queue.
+See the [implemented contract](../user/fs-events.md). Resource-scope adoption
+and broader platform/cost validation remain open.

@@ -77,3 +77,9 @@ No exception may escape a libuv C callback. The underlying callback invocation
 boundary terminates on an escaping user exception; coroutine promises instead
 capture exceptions for task observation. Setup policies remain in
 [proposal 006](../proposals/006-errors-and-results.md).
+
+`fs_event_source` pairs throwing `next()` with
+`uv::ops::next(source) -> result<fs_event>`. Native callback errors, cancellation,
+busy, and closed-owner failures follow that pairing. C++ filename materialization
+failures are captured inside the native callback and rethrown at either await
+expression. See [Filesystem notifications](fs-events.md).
