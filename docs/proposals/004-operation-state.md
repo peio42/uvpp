@@ -231,3 +231,16 @@ slot. Success, native callback error, and cancellation stop polling and exchange
 the slot before user delivery. Native start failure unregisters cancellation and
 releases the slot synchronously. No pending-event queue is used; a new mask is
 selected at the next await. See [`poll_source.hpp`](../../include/uvpp/poll_source.hpp).
+
+The [cross-family observations after poll](../design/operation-state.md#observed-after-poll)
+confirm exclusive-consumer detach-before-delivery, but do not justify a shared
+public event-source abstraction. The private
+[`one_shot_callback_slot<Args...>`](../../include/uvpp/detail/one_shot_callback_slot.hpp)
+now shares claim, ownership tests, release, and detach-before-delivery across
+signal, poll, and process states. It stores only a context and a noexcept function
+pointer; payloads are forwarded without retention. Native arming,
+`cancel_waiter()`, pending-event policy, retained payloads, and close remain
+family-specific. The listener's existing `accept_slot` additionally
+detaches a separate cancellation callback and retains its own cleanup protocol.
+[Focused slot tests](../../tests/test-one-shot-callback-slot.cpp) exercise ownership,
+reentrant replacement, destruction during delivery, and payload forwarding.

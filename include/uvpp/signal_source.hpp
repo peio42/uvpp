@@ -16,6 +16,7 @@
 #include "uvpp/core/loop.hpp"
 #include "uvpp/detail/async_close_state.hpp"
 #include "uvpp/detail/owner_close.hpp"
+#include "uvpp/detail/one_shot_callback_slot.hpp"
 #include "uvpp/handles/signal.hpp"
 
 namespace uv {
@@ -41,8 +42,7 @@ struct signal_source_state {
   uv_signal_t signal{};
   uv::loop *loop = nullptr;
   async_close_state close{};
-  void *waiter = nullptr;
-  void (*deliver_waiter)(void *, signal_number) noexcept = nullptr;
+  one_shot_callback_slot<signal_number> waiter{};
   signal_number pending_signal = 0;
   bool pending = false;
 
@@ -56,40 +56,14 @@ struct signal_source_state {
   // wait rather than rejecting it as competing I/O.
   bool has_active_operation() const noexcept { return false; }
 
-  bool claim_waiter(void *context, void (*deliver)(void *, signal_number) noexcept) noexcept {
-    if (waiter != nullptr) {
-      return false;
-    }
-    waiter = context;
-    deliver_waiter = deliver;
-    return true;
-  }
-
-  bool release_waiter(void *context) noexcept {
-    if (waiter != context) {
-      return false;
-    }
-    waiter = nullptr;
-    deliver_waiter = nullptr;
-    return true;
-  }
-
-  void cancel_waiter() noexcept {
-    auto *context = std::exchange(waiter, nullptr);
-    auto deliver = std::exchange(deliver_waiter, nullptr);
-    if (deliver != nullptr) {
-      deliver(context, UV_ECANCELED);
-    }
-  }
+  void cancel_waiter() noexcept { waiter.deliver(UV_ECANCELED); }
 
   void deliver_signal(signal_number signum) noexcept {
     if (close.closing()) {
       return;
     }
-    auto *context = std::exchange(waiter, nullptr);
-    auto deliver = std::exchange(deliver_waiter, nullptr);
-    if (deliver != nullptr) {
-      deliver(context, signum);
+    if (waiter.claimed()) {
+      waiter.deliver(signum);
       return;
     }
     pending_signal = signum;
@@ -211,7 +185,7 @@ public:
         state_->pending = false;
         return false;
       }
-      if (!state_->claim_waiter(this, &next_awaiter::on_delivery)) {
+      if (!state_->waiter.claim(this, &next_awaiter::on_delivery)) {
         status_ = UV_EBUSY;
         return false;
       }
@@ -221,7 +195,7 @@ public:
           cancellation_registration_, &next_awaiter::on_stop_requested, this)) {
         // A pre-existing stop is normally detected above. Keep this fallback
         // synchronous: resuming from await_suspend would re-enter this frame.
-        (void)state_->release_waiter(this);
+        (void)state_->waiter.release(this);
         continuation_ = {};
         cancellation_ = nullptr;
         status_ = UV_ECANCELED;
