@@ -41,12 +41,15 @@ TYPED_TEST(NetworkOpsStream, ResultsPreserveSlotsCancellationEofAndClosedErrors)
   std::array<std::byte, 8> buffer{};
   int canceled = 0;
   auto reader = [&]() -> uv::co::task<void> {
-    canceled = (co_await uv::ops::read_some(*pair.client, buffer)).error().native();
+    const auto canceled_read = co_await uv::ops::read_some(*pair.client, buffer);
+    canceled = canceled_read.error().native();
   };
   auto first = uv::co::spawn(pair.loop, reader());
   auto contender = [&]() -> uv::co::task<void> {
-    EXPECT_EQ((co_await uv::ops::read_some(*pair.client, buffer)).error().native(), UV_EBUSY);
-    EXPECT_EQ((co_await uv::ops::close(*pair.client)).error().native(), UV_EBUSY);
+    const auto busy_read = co_await uv::ops::read_some(*pair.client, buffer);
+    EXPECT_EQ(busy_read.error().native(), UV_EBUSY);
+    const auto busy_close = co_await uv::ops::close(*pair.client);
+    EXPECT_EQ(busy_close.error().native(), UV_EBUSY);
   };
   auto second = uv::co::spawn(pair.loop, contender());
   EXPECT_TRUE(second.done());
@@ -64,7 +67,8 @@ TYPED_TEST(NetworkOpsStream, ResultsPreserveSlotsCancellationEofAndClosedErrors)
         pair.peer->close();
       });
   auto resumed = [&]() -> uv::co::task<void> {
-    EXPECT_EQ((co_await uv::ops::read_some(*pair.client, {})).error().native(), UV_EINVAL);
+    const auto invalid_read = co_await uv::ops::read_some(*pair.client, {});
+    EXPECT_EQ(invalid_read.error().native(), UV_EINVAL);
     auto read = co_await uv::ops::read_some(*pair.client, buffer);
     EXPECT_TRUE(read);
     EXPECT_EQ(read.value().count(), payload.size());
@@ -74,8 +78,10 @@ TYPED_TEST(NetworkOpsStream, ResultsPreserveSlotsCancellationEofAndClosedErrors)
     EXPECT_TRUE(eof);
     EXPECT_TRUE(eof.value().eof());
     co_await pair.client->close();
-    EXPECT_EQ((co_await uv::ops::read_some(*pair.client, buffer)).error().native(), UV_EBADF);
-    EXPECT_EQ((co_await uv::ops::write(*pair.client, "closed")).error().native(), UV_EBADF);
+    const auto closed_read = co_await uv::ops::read_some(*pair.client, buffer);
+    EXPECT_EQ(closed_read.error().native(), UV_EBADF);
+    const auto closed_write = co_await uv::ops::write(*pair.client, "closed");
+    EXPECT_EQ(closed_write.error().native(), UV_EBADF);
     pair.loop.stop();
   };
   auto execution = uv::co::spawn(pair.loop, resumed());
@@ -99,7 +105,8 @@ TYPED_TEST(NetworkOpsStream, WriteResultsExcludeConcurrentWritesAndRejectWrongLo
   };
   auto execution = uv::co::spawn(pair.loop, writer());
   auto contender = [&]() -> uv::co::task<void> {
-    EXPECT_EQ((co_await uv::ops::write(*pair.client, "busy")).error().native(), UV_EBUSY);
+    const auto busy_write = co_await uv::ops::write(*pair.client, "busy");
+    EXPECT_EQ(busy_write.error().native(), UV_EBUSY);
   };
   auto second = uv::co::spawn(pair.loop, contender());
   EXPECT_NO_THROW(second.rethrow_if_failed());
@@ -129,11 +136,13 @@ TEST(NetworkOps, UdpResultsPreserveDatagramsBusyCancellationAndNativeSubmissionF
   const auto sender_port = sender.local_address().port();
   std::array<std::byte, 2> buffer{};
   auto canceled = [&]() -> uv::co::task<void> {
-    EXPECT_EQ((co_await uv::ops::recv_from(receiver, buffer)).error().native(), UV_ECANCELED);
+    const auto canceled_receive = co_await uv::ops::recv_from(receiver, buffer);
+    EXPECT_EQ(canceled_receive.error().native(), UV_ECANCELED);
   };
   auto waiting = uv::co::spawn(loop, canceled());
   auto busy = [&]() -> uv::co::task<void> {
-    EXPECT_EQ((co_await uv::ops::recv_from(receiver, buffer)).error().native(), UV_EBUSY);
+    const auto busy_receive = co_await uv::ops::recv_from(receiver, buffer);
+    EXPECT_EQ(busy_receive.error().native(), UV_EBUSY);
   };
   auto competing = uv::co::spawn(loop, busy());
   EXPECT_NO_THROW(competing.rethrow_if_failed());
@@ -150,7 +159,8 @@ TEST(NetworkOps, UdpResultsPreserveDatagramsBusyCancellationAndNativeSubmissionF
     EXPECT_TRUE(empty);
     EXPECT_EQ(empty.value().size(), 0U);
     co_await receiver.close();
-    EXPECT_EQ((co_await uv::ops::recv_from(receiver, buffer)).error().native(), UV_EBADF);
+    const auto closed_receive = co_await uv::ops::recv_from(receiver, buffer);
+    EXPECT_EQ(closed_receive.error().native(), UV_EBADF);
   };
   auto send = [&]() -> uv::co::task<void> {
     // A zero destination port fails in uv_udp_send submission on this backend.
@@ -158,7 +168,8 @@ TEST(NetworkOps, UdpResultsPreserveDatagramsBusyCancellationAndNativeSubmissionF
     EXPECT_TRUE(co_await uv::ops::send_to(sender, "packet", address));
     EXPECT_TRUE(co_await uv::ops::send_to(sender, std::span<const std::byte>{}, address));
     co_await sender.close();
-    EXPECT_EQ((co_await uv::ops::send_to(sender, "closed", address)).error().native(), UV_EBADF);
+    const auto closed_send = co_await uv::ops::send_to(sender, "closed", address);
+    EXPECT_EQ(closed_send.error().native(), UV_EBADF);
   };
   auto receiving = uv::co::spawn(loop, receive());
   auto sending = uv::co::spawn(loop, send());
@@ -194,7 +205,8 @@ TYPED_TEST(NetworkOpsStream, AcceptResultsTransferOwnersAndWaitForProvisionalCle
   };
   auto waiting = uv::co::spawn(loop, canceled());
   auto busy = [&]() -> uv::co::task<void> {
-    EXPECT_EQ((co_await uv::ops::accept(*listener)).error().native(), UV_EBUSY);
+    const auto busy_accept = co_await uv::ops::accept(*listener);
+    EXPECT_EQ(busy_accept.error().native(), UV_EBUSY);
   };
   auto competing = uv::co::spawn(loop, busy());
   EXPECT_TRUE(competing.done());
@@ -207,7 +219,8 @@ TYPED_TEST(NetworkOpsStream, AcceptResultsTransferOwnersAndWaitForProvisionalCle
   using State = std::conditional_t<tcp, uv::detail::tcp_listener_state,
       uv::detail::pipe_listener_state>;
   auto native_failure = [&]() -> uv::co::task<void> {
-    EXPECT_EQ((co_await uv::ops::accept(*listener)).error().native(), UV_ECONNABORTED);
+    const auto failed_accept = co_await uv::ops::accept(*listener);
+    EXPECT_EQ(failed_accept.error().native(), UV_ECONNABORTED);
   };
   auto failed = uv::co::spawn(loop, native_failure());
   State::on_connection(reinterpret_cast<uv_stream_t *>(listener->native()), UV_ECONNABORTED);
@@ -243,7 +256,8 @@ TYPED_TEST(NetworkOpsStream, AcceptResultsTransferOwnersAndWaitForProvisionalCle
     EXPECT_EQ(read.value().count(), 5U);
     co_await resources.finish();
     co_await listener->close();
-    EXPECT_EQ((co_await uv::ops::accept(*listener)).error().native(), UV_EBADF);
+    const auto closed_accept = co_await uv::ops::accept(*listener);
+    EXPECT_EQ(closed_accept.error().native(), UV_EBADF);
   };
   auto client = [&]() -> uv::co::task<void> {
     auto connection = co_await [&]() {
@@ -285,7 +299,8 @@ TEST(NetworkOps, UdpBorrowedViewsShareSlotsWithMemberOperations) {
     EXPECT_TRUE(co_await uv::ops::send_to(sender.view(), "seven", address));
   };
   auto busy = [&]() -> uv::co::task<void> {
-    EXPECT_EQ((co_await uv::ops::send_to(sender.view(), "busy", address)).error().native(), UV_EBUSY);
+    const auto busy_send = co_await uv::ops::send_to(sender.view(), "busy", address);
+    EXPECT_EQ(busy_send.error().native(), UV_EBUSY);
   };
   auto parent = [&]() -> uv::co::task<void> {
     auto receiving = uv::co::spawn(loop, receive());
