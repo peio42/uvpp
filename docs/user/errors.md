@@ -1,7 +1,7 @@
 # Errors
 
 V3 distinguishes operational failures, C++ setup failures, and invalid API use.
-The high-level network awaits report native submission and completion failures as
+The throwing high-level network awaits report native submission and completion failures as
 `uv::error` at the await expression. Stream EOF remains a normal typed outcome.
 
 ```cpp
@@ -28,7 +28,7 @@ A task-scope join waits for all children before rethrowing the first child failu
 on success. Values can be move-only. `error_code::native()`, `name()`, and
 `message()` expose libuv diagnostics; conversion to `std::error_code` is explicit.
 
-The currently implemented paired owner operation is close:
+Network owners provide paired I/O and close operations:
 
 ```cpp
 // Inside a task, with a high-level socket owner.
@@ -44,8 +44,30 @@ if (!result) {
 introduce another ownership hierarchy. DNS also provides paired request surfaces:
 `co_await uv::resolve(...)` throws operational failure and
 `co_await uv::ops::resolve(...)` returns
-`uv::result<uv::resolved_addresses>`. Full connect/read/write/send counterparts
-are still proposed; do not assume `uv::ops::write` or similar names exist.
+`uv::result<uv::resolved_addresses>`. The network I/O counterparts are also available:
+
+| Throwing member await | Explicit-result await | Await result |
+| --- | --- | --- |
+| `connection.read_some(buffer)` | `uv::ops::read_some(connection, buffer)` | `result<Connection::read_some_result>` (count and EOF) |
+| `connection.write(bytes)` | `uv::ops::write(connection, bytes)` | `status` |
+| `listener.accept()` | `uv::ops::accept(listener)` | `result<tcp_connection>` or `result<pipe_connection>` |
+| `socket.recv_from(buffer)` | `uv::ops::recv_from(socket, buffer)` | `result<udp_socket::recv_from_result>` |
+| `socket.send_to(bytes, address)` | `uv::ops::send_to(socket, bytes, address)` | `status` |
+
+Stream operations cover TCP and pipes; read/write and UDP operations also accept
+borrowed resource-scope views. Explicit results cover submission and completion
+errors, including busy, closed, and completed cancellation outcomes. EOF is a
+successful stream-read outcome. Both policies use the same native operations,
+callback slots, borrowed buffers, cancellation, and cleanup. Accept failures are
+delivered only after provisional native storage has closed. No additional
+operation allocation is introduced by the result facade.
+
+`write` takes `std::string_view`; `send_to` mirrors the member overloads (byte
+spans for IPv4/IPv6 and a string view for IPv4). Buffer-length validation can
+still throw `std::length_error` during preparation. Wrong-loop use and expired
+views remain `std::logic_error`, and accept storage allocation can throw.
+Connect and IPC handle-passing counterparts remain proposed.
+
 Filesystem provides the first complete owner-I/O pair: `uv::fs::open/read/write/close`
 throw native operational failures at the await expression, while
 `uv::ops::fs::open/read/write/close` return `result<file>`,

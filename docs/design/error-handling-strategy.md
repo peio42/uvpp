@@ -12,7 +12,17 @@ await expression, including submission failures. `uv::ops::close` reports the sa
 owner-close failures as `uv::status`. DNS resolution is the first paired request
 operation: `uv::resolve(...)` throws at the await and
 `uv::ops::resolve(...)` returns `uv::result<uv::resolved_addresses>` for the same
-submission/completion path. Broader paired operations remain proposed.
+submission/completion path. TCP/pipe read/write/accept and UDP receive/send now
+also pair member awaits with `uv::ops::{read_some,write,accept,recv_from,send_to}`.
+Read/receive wrap the existing domain outcome in `result<T>`; accept returns a
+move-only connection result, and write/send return `status`. Borrowed views share
+the connection/socket forms. An internal result adapter constructs the original
+non-movable awaiter in place and delegates readiness and suspension; terminal
+result delivery is the only policy difference. Throwing members unwrap that same
+result. Native state, callbacks, slot release, cancellation, payload borrowing,
+and provisional-child close remain unchanged, with no extra operation allocation.
+Length validation remains throwing C++ preparation. Connect and IPC adaptation
+remain proposed.
 Raw explicit operational results are the target; the low-level submission helpers
 below have not yet completed that migration. C++ setup failures need separate
 contracts and result-oriented does not imply `noexcept`.

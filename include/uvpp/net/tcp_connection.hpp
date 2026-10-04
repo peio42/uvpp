@@ -383,6 +383,26 @@ namespace detail {
 
 namespace ops {
 
+[[nodiscard]] inline auto read_some(tcp_connection &connection, std::span<std::byte> buffer) {
+  return detail::network_result_awaiter<decltype(connection.read_some(buffer))>{
+      [&] { return connection.read_some(buffer); }};
+}
+
+[[nodiscard]] inline auto write(tcp_connection &connection, std::string_view buffer) {
+  return detail::network_result_awaiter<decltype(connection.write(buffer))>{
+      [&] { return connection.write(buffer); }};
+}
+
+[[nodiscard]] inline auto read_some(const tcp_connection_view &connection, std::span<std::byte> buffer) {
+  return detail::network_result_awaiter<decltype(connection.read_some(buffer))>{
+      [&] { return connection.read_some(buffer); }};
+}
+
+[[nodiscard]] inline auto write(const tcp_connection_view &connection, std::string_view buffer) {
+  return detail::network_result_awaiter<decltype(connection.write(buffer))>{
+      [&] { return connection.write(buffer); }};
+}
+
 [[nodiscard]] inline detail::tcp_close_result close(tcp_connection &connection) noexcept {
   return detail::close_result(connection);
 }

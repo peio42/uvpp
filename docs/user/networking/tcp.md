@@ -26,13 +26,31 @@ provisional connections before delivering an error.
 and `eof()`; operational failures throw at the await. One read and one write may
 overlap. A second operation in either direction fails with `UV_EBUSY`.
 Read completion releases the native read slots before resuming the task.
+The same operations have explicit-result forms:
+
+```cpp
+auto read = co_await uv::ops::read_some(connection, buffer);
+if (read) {
+  auto count = read.value().count();
+  auto eof = read.value().eof();
+}
+auto written = co_await uv::ops::write(connection, "hello");
+```
+
+They return `result<tcp_connection::read_some_result>` and `status` respectively,
+including submission failures. EOF remains success. Both also accept borrowed
+connection views and preserve the member operations' buffer and slot contracts.
+Length validation remains C++ setup and may throw before the await.
 See [buffers](../buffers.md) and [errors](../errors.md).
 
 ## Accepting
 
 Construct `uv::tcp_listener{loop, address}` to bind and start listening.
 `co_await listener.accept()` returns a distinct `tcp_connection` owner; only one
-accept may be pending. Constructor setup can throw before any await.
+accept may be pending. `co_await uv::ops::accept(listener)` instead returns
+`result<tcp_connection>`, transferring the same movable owner on success. Native
+failure or cancellation waits for provisional child close before result delivery.
+Constructor setup and provisional-storage allocation can still throw.
 
 This is a one-shot accept API. Keep an accept waiter armed in server code: the
 prototype ignores native notifications when no waiter is armed, and has no hidden

@@ -212,14 +212,19 @@ public:
     }
 
     tcp_connection await_resume() {
-      // Cancellation and accept failure own an initialized provisional child.
-      // Its uv_close callback sets this flag before it can resume this frame.
-      assert(!provisional_close_required_ || provisional_close_completed_);
-      throw_if_error(status_);
-      return tcp_connection{std::move(connection_)};
+      return std::move(await_resume_result()).value();
     }
 
   private:
+    template<class> friend class uv::detail::network_result_awaiter;
+    result<tcp_connection> await_resume_result() {
+      // Cancellation and accept failure own an initialized provisional child.
+      // Its uv_close callback sets this flag before it can resume this frame.
+      assert(!provisional_close_required_ || provisional_close_completed_);
+      if (status_ < 0) return result<tcp_connection>{make_error_code(status_)};
+      return result<tcp_connection>{tcp_connection{std::move(connection_)}};
+    }
+
     void close_untransferred_connection(std::coroutine_handle<> continuation) noexcept {
       auto *connection = connection_.release();
       assert(connection != nullptr);
@@ -342,6 +347,11 @@ namespace detail {
 } // namespace detail
 
 namespace ops {
+
+[[nodiscard]] inline auto accept(tcp_listener &listener) {
+  return detail::network_result_awaiter<decltype(listener.accept())>{
+      [&] { return listener.accept(); }};
+}
 
 [[nodiscard]] inline detail::tcp_listener_close_result close(tcp_listener &listener) noexcept {
   return detail::close_result(listener);

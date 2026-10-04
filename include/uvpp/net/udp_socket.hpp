@@ -16,6 +16,7 @@
 
 #include "uvpp/co/task.hpp"
 #include "uvpp/core/error.hpp"
+#include "uvpp/detail/network_result_awaiter.hpp"
 #include "uvpp/detail/async_close_state.hpp"
 #include "uvpp/detail/owner_close.hpp"
 #include "uvpp/net/address.hpp"
@@ -164,12 +165,15 @@ public:
       if (status_ < 0) { release_slots(); return false; }
       return true;
     }
-    recv_from_result await_resume() {
-      throw_if_error(static_cast<int>(status_));
-      return recv_from_result{static_cast<std::size_t>(status_),
-          reinterpret_cast<const sockaddr *>(&peer_storage_), flags_};
-    }
+    recv_from_result await_resume() { return await_resume_result().value(); }
   private:
+    template<class> friend class uv::detail::network_result_awaiter;
+    result<recv_from_result> await_resume_result() {
+      if (status_ < 0) return result<recv_from_result>{make_error_code(static_cast<int>(status_))};
+      return result<recv_from_result>{recv_from_result{static_cast<std::size_t>(status_),
+          reinterpret_cast<const sockaddr *>(&peer_storage_), flags_}};
+    }
+
     static void on_alloc(uv_handle_t *raw, std::size_t, uv_buf_t *out) noexcept {
       // libuv invokes alloc before receive for this exclusive one-shot operation.
       // The active awaiter owns the borrowed caller buffer.
@@ -248,8 +252,10 @@ public:
       if (status_ < 0) { state_->send_active = false; continuation_ = {}; }
       return status_ >= 0;
     }
-    void await_resume() { throw_if_error(status_); }
+    void await_resume() { await_resume_result().value(); }
   private:
+    template<class> friend class uv::detail::network_result_awaiter;
+    status await_resume_result() { return status::from_native(status_); }
     static send_to_awaiter &from_native(uv_udp_send_t *raw) noexcept {
       assert(raw->data != nullptr);
       return *static_cast<send_to_awaiter *>(raw->data);
@@ -336,6 +342,52 @@ inline udp_close_result close_result(udp_socket &socket) noexcept {
 } // namespace detail
 
 namespace ops {
+
+[[nodiscard]] inline auto recv_from(udp_socket &socket, std::span<std::byte> buffer) {
+  return detail::network_result_awaiter<decltype(socket.recv_from(buffer))>{
+      [&] { return socket.recv_from(buffer); }};
+}
+
+[[nodiscard]] inline auto send_to(udp_socket &socket, std::span<const std::byte> buffer,
+    const ipv4 &address) {
+  return detail::network_result_awaiter<decltype(socket.send_to(buffer, address))>{
+      [&] { return socket.send_to(buffer, address); }};
+}
+
+[[nodiscard]] inline auto send_to(udp_socket &socket, std::span<const std::byte> buffer,
+    const ipv6 &address) {
+  return detail::network_result_awaiter<decltype(socket.send_to(buffer, address))>{
+      [&] { return socket.send_to(buffer, address); }};
+}
+
+[[nodiscard]] inline auto send_to(udp_socket &socket, std::string_view buffer,
+    const ipv4 &address) {
+  return detail::network_result_awaiter<decltype(socket.send_to(buffer, address))>{
+      [&] { return socket.send_to(buffer, address); }};
+}
+
+[[nodiscard]] inline auto recv_from(const udp_socket_view &socket, std::span<std::byte> buffer) {
+  return detail::network_result_awaiter<decltype(socket.recv_from(buffer))>{
+      [&] { return socket.recv_from(buffer); }};
+}
+
+[[nodiscard]] inline auto send_to(const udp_socket_view &socket, std::span<const std::byte> buffer,
+    const ipv4 &address) {
+  return detail::network_result_awaiter<decltype(socket.send_to(buffer, address))>{
+      [&] { return socket.send_to(buffer, address); }};
+}
+
+[[nodiscard]] inline auto send_to(const udp_socket_view &socket, std::span<const std::byte> buffer,
+    const ipv6 &address) {
+  return detail::network_result_awaiter<decltype(socket.send_to(buffer, address))>{
+      [&] { return socket.send_to(buffer, address); }};
+}
+
+[[nodiscard]] inline auto send_to(const udp_socket_view &socket, std::string_view buffer,
+    const ipv4 &address) {
+  return detail::network_result_awaiter<decltype(socket.send_to(buffer, address))>{
+      [&] { return socket.send_to(buffer, address); }};
+}
 
 [[nodiscard]] inline detail::udp_close_result close(udp_socket &socket) noexcept {
   return detail::close_result(socket);
