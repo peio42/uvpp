@@ -136,8 +136,11 @@ producing that resource naturally belongs to its type, and a free function for
 an operation with no persistent receiver. Current `tcp_connection::connect`
 and `pipe_connection::connect` are factories. A future DNS operation need not
 introduce a persistent `resolver` without persistent state that justifies it.
-This does not choose its final spelling or require converting all constructors
-to factories.
+Synchronous fallible owner creation pairs a throwing constructor with a free
+`uv::ops::make_<owner>` factory returning `result<Owner>`. TCP/pipe listeners and
+UDP sockets implement this pairing. Async owner-producing operations retain
+semantic names such as connect/open/accept; pure value constructors do not require
+an `uv::ops` factory.
 
 Awaiter spellings are machinery, not the primary user vocabulary. Prefer
 examples with `auto` and `co_await`; do not promise that currently public nested
@@ -176,7 +179,7 @@ Do not rename domain classifications mechanically merely to remove `kind`.
 | TCP/pipe connections originally had only internal close completion, while listeners and UDP had synchronous `void close()`. | Implemented experimentally for the current high-level owners: `close()` is awaitable and completes only after native close; `request_close()` explicitly initiates close without awaiting. The contract, including active-operation rules, remains in [002](../proposals/002-async-ownership.md). |
 | Scope registrations differ: connection/socket registrations produce views, listener registrations expose `accept()`. | Settled: retain the capability difference and add no listener view without a concrete borrowing use case. |
 | `spawn_handle<T>` observes a root frame, exposes multi-observer same-loop `join()`, cooperative `request_stop()`, and a single-consumer non-void `take_result()`. | Keep the name provisionally. Active destruction requests stop while an internal baton retains and safely reclaims the root. Unobserved root failures route exactly once through the loop-level policy in [003](../proposals/003-cancellation-and-task-scopes.md). |
-| Fallible high-level resource creation currently uses throwing constructors for several owner families. | Open: “Should fallible high-level resource construction also have an explicit-result factory under `uv::ops`?” Current constructors do not settle the answer; see [006](../proposals/006-errors-and-results.md). |
+| Fallible high-level resource creation currently uses throwing constructors for several owner families. | Settled: paired synchronous `uv::ops::make_*` factories, implemented for TCP/pipe listeners and UDP sockets. Native errors become `result<Owner>`; C++ preparation failures still throw. Other owner families remain incremental work; see [006](../proposals/006-errors-and-results.md). |
 | Historical `try_close`, request `try_cancel`, low-level `uv::tcp`, and `uv::fs::raw` remain. | Settled: migrate with the relevant error, close, or namespace change, not in an isolated rename-only branch. |
 
 Future timer, signal, process, TTY, poll, DNS, and filesystem owners must be named

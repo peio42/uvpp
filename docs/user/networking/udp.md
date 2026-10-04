@@ -4,6 +4,12 @@ Include `<uvpp/net/udp_socket.hpp>`. The experimental `uv::udp_socket` is a
 move-only owner with stable native storage. Construct it with its loop and an
 IPv4 or IPv6 local address; construction binds the socket and may throw.
 
+`uv::ops::make_udp_socket(loop, address) -> result<udp_socket>` provides
+synchronous explicit-result construction for IPv4 and IPv6. Move the successful
+value into a socket owner. Native init/bind failures become results; C++ allocation
+failures still throw. Failure after native init schedules close before error
+delivery; keep driving the loop for cleanup as described in [errors](../errors.md).
+
 ```cpp
 #include <uvpp/net/udp_socket.hpp>
 

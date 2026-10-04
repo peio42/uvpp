@@ -27,6 +27,13 @@ child close on failure. Allocation, length validation, and wrong-loop/view misus
 keep their C++ exception contracts. `connect`, `write_with_handle`, and
 `receive_handle` currently retain only their throwing surfaces.
 
+Use `uv::ops::make_pipe_listener(loop, name, ipc, backlog)` for synchronous
+explicit-result creation: it returns `result<pipe_listener>` with the same owner
+as the throwing constructor. IPC defaults to false and backlog to 64. Native
+init/bind/listen failures become results; C++ preparation and allocation failures
+still throw. After a failure following native init, keep driving the loop for
+pending close callbacks; see [errors](../errors.md).
+
 ## IPC handle passing
 
 Pass `ipc = true` when creating the IPC connection/listener. This slice supports

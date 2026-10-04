@@ -46,6 +46,13 @@ See [buffers](../buffers.md) and [errors](../errors.md).
 ## Accepting
 
 Construct `uv::tcp_listener{loop, address}` to bind and start listening.
+For explicit construction errors, use
+`uv::ops::make_tcp_listener(loop, address, backlog) -> result<tcp_listener>`.
+Both construction forms accept IPv4/IPv6 and default backlog to 64. Move the
+successful result's value into an owner. Native init/bind/listen errors become
+results; C++ allocation failures still throw. After failure following native init,
+keep driving the loop for pending close callbacks; see [errors](../errors.md).
+
 `co_await listener.accept()` returns a distinct `tcp_connection` owner; only one
 accept may be pending. `co_await uv::ops::accept(listener)` instead returns
 `result<tcp_connection>`, transferring the same movable owner on success. Native

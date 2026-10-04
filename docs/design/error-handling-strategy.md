@@ -23,6 +23,14 @@ result. Native state, callbacks, slot release, cancellation, payload borrowing,
 and provisional-child close remain unchanged, with no extra operation allocation.
 Length validation remains throwing C++ preparation. Connect and IPC adaptation
 remain proposed.
+Synchronous TCP/pipe listener and UDP socket construction also has a paired
+`uv::ops::make_* -> result<Owner>` surface. Private result-oriented state creation
+is shared with the throwing constructors, which unwrap with `value()`. Private
+state adoption transfers successful stable storage without reinitialization.
+Native init failure destroys uninitialized state immediately; bind/listen failure
+releases initialized state into asynchronous close before error delivery. Neither
+surface drives a nested loop. C++ preparation precedes native init (including the
+legacy pipe-name copy), and allocation failures propagate in both policies.
 Raw explicit operational results are the target; the low-level submission helpers
 below have not yet completed that migration. C++ setup failures need separate
 contracts and result-oriented does not imply `noexcept`.

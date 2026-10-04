@@ -4,9 +4,12 @@
 
 #include "gtest/gtest.h"
 #include "uvpp/handles/udp.hpp"
+#include "uvpp/net/tcp_listener.hpp"
+#include "uvpp/net/pipe_listener.hpp"
+#include "uvpp/net/udp_socket.hpp"
 
 // This file has its own test executable so allocator replacement cannot affect
-// the regular suite. Injection is limited to the assignment on this thread.
+// the regular suite. Injection is limited to the tested operation on this thread.
 namespace {
 thread_local int allocations_before_failure = -1;
 
@@ -112,4 +115,40 @@ TEST(Uvpp2Udp, sendBatchCopyAssignmentPreservesStateOnAllocationFailure) {
 #else
   GTEST_SKIP() << "Requires UVPP_HAS_UDP_TRY_SEND2";
 #endif
+}
+
+namespace {
+template<class Create>
+void expect_creation_bad_alloc(uv::loop &loop, Create create, int fail_after = 0) {
+  bool caught = false;
+  {
+    allocation_failure injection{fail_after};
+    try { create(); }
+    catch (const std::bad_alloc &) { caught = true; }
+  }
+  EXPECT_TRUE(caught);
+  int handles = 0;
+  uv_walk(loop.native(), [](uv_handle_t *, void *data) {
+    ++*static_cast<int *>(data);
+  }, &handles);
+  EXPECT_EQ(handles, 0); // All C++ preparation precedes native initialization.
+}
+}
+
+TEST(NetworkFactoriesAllocation, CppFailuresThrowInBothCreationPolicies) {
+  uv::loop loop;
+  const uv::ipv4 address{"127.0.0.1", 0};
+  const std::string path(256, 'p'); // Force allocation in the legacy bind path.
+  expect_creation_bad_alloc(loop, [&] { uv::tcp_listener owner{loop, address}; });
+  expect_creation_bad_alloc(loop, [&] { (void)uv::ops::make_tcp_listener(loop, address); });
+  expect_creation_bad_alloc(loop, [&] { uv::udp_socket owner{loop, address}; });
+  expect_creation_bad_alloc(loop, [&] { (void)uv::ops::make_udp_socket(loop, address); });
+  expect_creation_bad_alloc(loop, [&] { uv::pipe_listener owner{loop, path}; });
+  expect_creation_bad_alloc(loop, [&] { (void)uv::ops::make_pipe_listener(loop, path); });
+#if !UVPP_HAS_PIPE_BIND2
+  // Cover both path-copy and state-storage failure, with no native handle left.
+  expect_creation_bad_alloc(loop, [&] { uv::pipe_listener owner{loop, path}; }, 1);
+  expect_creation_bad_alloc(loop, [&] { (void)uv::ops::make_pipe_listener(loop, path); }, 1);
+#endif
+  EXPECT_NO_THROW(loop.close());
 }

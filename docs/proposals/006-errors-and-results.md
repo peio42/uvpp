@@ -125,14 +125,17 @@ An internal result adapter may implement the ergonomic facade, but a public
 `as_result` spelling is not a second required error-selection API alongside
 `uv::ops`. Exact callback and awaitable entry signatures remain to be prototyped.
 
-One construction question remains explicitly open before API freeze:
-
-> Should fallible high-level resource construction also have an explicit-result
-> factory under `uv::ops`?
-
-Current throwing constructors do not settle this question. If such factories are
-adopted, they must report native construction/submission failures through the
-explicit result without changing the resource's ownership or lifetime protocol.
+Fallible synchronous high-level owner construction has a paired `uv::ops::make_*`
+factory. The first implemented slice is TCP/pipe listeners and UDP sockets:
+constructors throw native operational errors, while `make_tcp_listener`,
+`make_pipe_listener`, and `make_udp_socket` return `result<Owner>`. Both policies
+share result-oriented state creation and the same ownership/close protocol.
+Native failure after init schedules close before error delivery, retains storage
+through the callback, and requires the caller to keep driving the loop. C++
+allocation/preparation failures still throw; these factories are not `noexcept`.
+Async owner production retains operation names (connect/open/accept); factories
+for other synchronous owners remain incremental work rather than an implemented
+blanket surface.
 
 An operational error is an expected error defined by the operation contract: a
 native submission or completion failure, including a completed cancellation, is
@@ -268,3 +271,14 @@ fault-injected accept callback errors in both policies, borrowed views, and UDP 
 empty datagrams, and native send failure. Existing throwing lifecycle tests remain
 in place. Connect and IPC pairs, broader fault injection, allocation-failure
 routing, and cross-platform/performance gates remain open.
+
+## Network factory validation
+
+[Factory tests](../../tests/test-network-factories.cpp) cover IPv4/IPv6 success,
+move-only result extraction with stable native addresses, equivalent native
+bind/listen failures, and pending close storage through loop progress. Network
+I/O tests now exercise factory-produced TCP/pipe listeners and UDP sockets. The
+separate [allocation tests](../../tests/udp-allocation.cpp) inject C++ preparation
+failures in both policies, including the legacy pipe-name copy, and verify no
+native handle was initialized. Native init failure injection and broader
+platform validation remain open.

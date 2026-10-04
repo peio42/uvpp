@@ -28,6 +28,37 @@ A task-scope join waits for all children before rethrowing the first child failu
 on success. Values can be move-only. `error_code::native()`, `name()`, and
 `message()` expose libuv diagnostics; conversion to `std::error_code` is explicit.
 
+Network owners also provide synchronous creation pairs:
+
+| Throwing construction | Explicit-result factory | Result |
+| --- | --- | --- |
+| `uv::tcp_listener{loop, address, backlog}` | `uv::ops::make_tcp_listener(loop, address, backlog)` | `result<tcp_listener>` |
+| `uv::pipe_listener{loop, name, ipc, backlog}` | `uv::ops::make_pipe_listener(loop, name, ipc, backlog)` | `result<pipe_listener>` |
+| `uv::udp_socket{loop, address}` | `uv::ops::make_udp_socket(loop, address)` | `result<udp_socket>` |
+
+TCP and UDP accept IPv4 and IPv6. Listener backlog defaults to 64; pipe IPC
+mode defaults to false. These factories return the same move-only owners:
+
+```cpp
+auto created = uv::ops::make_tcp_listener(loop, uv::ipv4{"127.0.0.1", 8080});
+if (created) {
+  auto listener = std::move(created).value();
+  // Use listener on loop; close or transfer it into a resource scope.
+} else {
+  auto code = created.error();
+  // Continue driving loop for any pending native cleanup.
+}
+```
+
+Native init/bind/listen failures throw `uv::error` in constructors and become
+error results in factories. If initialization succeeded before failure, both
+schedule native close before delivering the error and retain storage through its
+callback. Error delivery does not await close or run the loop: keep the loop alive
+and drive it before closing it, even when no owner was returned. C++ storage and
+pipe-name preparation failures still throw, including `std::bad_alloc`; factories
+are not `noexcept`. Address-value construction happens before the factory call
+and retains its own error contract.
+
 Network owners provide paired I/O and close operations:
 
 ```cpp

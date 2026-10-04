@@ -95,6 +95,11 @@ struct pipe_listener_state {
 
 } // namespace detail
 
+namespace ops {
+[[nodiscard]] result<pipe_listener> make_pipe_listener(
+    uv::loop &, std::string_view name, bool ipc, int backlog);
+} // namespace ops
+
 // Experimental v3 local-pipe listener. It owns stable uv_pipe_t storage and
 // supports one accept waiter. Each accepted pipe_connection owns independent,
 // separately stable native storage.
@@ -113,9 +118,8 @@ public:
     return *this;
   }
 
-  pipe_listener(uv::loop &loop, std::string_view name, bool ipc = false, int backlog = 64) {
-    initialize(loop, name, ipc, backlog);
-  }
+  pipe_listener(uv::loop &loop, std::string_view name, bool ipc = false, int backlog = 64)
+      : state_{std::move(make_state(loop, name, ipc, backlog)).value()} {}
 
   ~pipe_listener() { reset(); }
 
@@ -269,7 +273,14 @@ public:
   [[nodiscard]] accept_awaiter accept() noexcept { return accept_awaiter{state_.get()}; }
 
 private:
-  void initialize(uv::loop &loop, std::string_view name, bool ipc, int backlog) {
+  explicit pipe_listener(std::unique_ptr<detail::pipe_listener_state> state) noexcept
+      : state_{std::move(state)} {}
+
+  static result<std::unique_ptr<detail::pipe_listener_state>> make_state(
+      uv::loop &loop, std::string_view name, bool ipc, int backlog) {
+#if !UVPP_HAS_PIPE_BIND2
+    const std::string storage{name};
+#endif
     auto state = std::make_unique<detail::pipe_listener_state>();
     state->loop = &loop;
     state->ipc = ipc;
@@ -277,13 +288,12 @@ private:
     // endpoint on which uv_accept() is called.
     int status = uv_pipe_init(loop.native(), &state->pipe, 0);
     if (status < 0) {
-      throw_if_error(status);
+      return result<std::unique_ptr<detail::pipe_listener_state>>{make_error_code(status)};
     }
     state->pipe.data = state.get();
 #if UVPP_HAS_PIPE_BIND2
     status = uv_pipe_bind2(&state->pipe, name.data(), name.size(), 0);
 #else
-    const std::string storage{name};
     status = uv_pipe_bind(&state->pipe, storage.c_str());
 #endif
     if (status >= 0) {
@@ -293,9 +303,9 @@ private:
     if (status < 0) {
       auto *failed = state.release();
       failed->release_owner();
-      throw_if_error(status);
+      return result<std::unique_ptr<detail::pipe_listener_state>>{make_error_code(status)};
     }
-    state_ = std::move(state);
+    return result<std::unique_ptr<detail::pipe_listener_state>>{std::move(state)};
   }
 
   void reset() noexcept {
@@ -312,6 +322,7 @@ private:
     state->release_owner();
   }
 
+  friend result<pipe_listener> ops::make_pipe_listener(uv::loop &, std::string_view name, bool ipc, int backlog);
   std::unique_ptr<detail::pipe_listener_state> state_{};
 
   friend detail::pipe_listener_close_completion detail::close_completion(
@@ -334,6 +345,13 @@ namespace detail {
 } // namespace detail
 
 namespace ops {
+
+[[nodiscard]] inline result<pipe_listener> make_pipe_listener(
+    uv::loop &loop, std::string_view name, bool ipc = false, int backlog = 64) {
+  auto state = pipe_listener::make_state(loop, name, ipc, backlog);
+  if (!state) return result<pipe_listener>{state.error()};
+  return result<pipe_listener>{pipe_listener{std::move(state).value()}};
+}
 
 [[nodiscard]] inline auto accept(pipe_listener &listener) {
   return detail::network_result_awaiter<decltype(listener.accept())>{

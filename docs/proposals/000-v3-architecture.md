@@ -217,7 +217,8 @@ aliases are not required and must not dictate the new model.
 
 The architectural direction is accepted. Experimental implementation now includes
 `task<T>`, `spawn_handle<T>`, child awaits, join and cooperative stop, timer sleep,
-task scopes, TCP/pipe connection and listener owners, UDP sockets, awaited close
+task scopes, TCP/pipe connection and listener owners, UDP sockets, paired synchronous
+listener/socket factories under `uv::ops`, awaited close
 with `uv::ops::close`, and resource scopes for these network families.
 
 The raw namespace/error-policy migration, complete paired operation surfaces,
