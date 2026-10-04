@@ -14,6 +14,7 @@
 
 #include "uvpp/co/task.hpp"
 #include "uvpp/core/error.hpp"
+#include "uvpp/detail/network_result_awaiter.hpp"
 #include "uvpp/net/buffer.hpp"
 
 namespace uv::detail {
@@ -108,17 +109,21 @@ public:
     return true;
   }
 
-  stream_read_some_result await_resume() {
-    if (status_ == UV_EOF) {
-      return {0, true};
-    }
-    if (status_ < 0) {
-      throw_if_error(static_cast<int>(status_));
-    }
-    return {static_cast<std::size_t>(status_), false};
-  }
+  stream_read_some_result await_resume() { return await_resume_result().value(); }
 
 private:
+  template<class> friend class uv::detail::network_result_awaiter;
+  result<stream_read_some_result> await_resume_result() {
+    if (status_ == UV_EOF) {
+      return result<stream_read_some_result>{stream_read_some_result{0, true}};
+    }
+    if (status_ < 0) {
+      return result<stream_read_some_result>{make_error_code(static_cast<int>(status_))};
+    }
+    return result<stream_read_some_result>{
+        stream_read_some_result{static_cast<std::size_t>(status_), false}};
+  }
+
   static stream_read_awaiter &active(uv_handle_t *raw) noexcept {
     auto &state = State::from_handle(raw);
     assert(state.io_state().active_read != nullptr);
@@ -250,9 +255,12 @@ public:
     return true;
   }
 
-  void await_resume() { throw_if_error(status_); }
+  void await_resume() { await_resume_result().value(); }
 
 private:
+  template<class> friend class uv::detail::network_result_awaiter;
+  status await_resume_result() { return status::from_native(status_); }
+
   static stream_write_awaiter &from_native(uv_write_t *raw) noexcept {
     assert(raw->data != nullptr);
     return *static_cast<stream_write_awaiter *>(raw->data);

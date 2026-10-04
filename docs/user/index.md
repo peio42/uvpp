@@ -38,7 +38,7 @@ as available below are experimental and may change before release.
 | Filesystem event owner | `fs_event_source`, persistent `next()`, one coalesced pending outcome, paired result waits and terminal close |
 | Poll owner | `poll_source`, per-wait `next(mask)`, `uv::ops::next`, and terminal close; descriptor ownership remains with the caller |
 | Process owner | `process`, synchronous spawn, `wait()`, `kill()`, and close after exit; stdio and resource-scope ownership remain deferred |
-| Explicit-result operations | `uv::ops::close(owner)`, `uv::ops::resolve(...)`, and `uv::ops::fs::{open,read,write,close}` |
+| Explicit-result operations | `uv::ops::{read_some,write,accept,recv_from,send_to,close}`, `uv::ops::resolve(...)`, and `uv::ops::fs::{open,read,write,close}` |
 | Raw layer | `uv::raw::process` and `uv::raw::fs_event` are available; the broader low-level namespace/error-policy migration is unfinished |
 | Filesystem | `uv::fs::{open,read,write,close}` with `uv::ops::fs` result counterparts; directories and broader filesystem operations remain proposed |
 | Other domains | fs-poll, threading and utility code exists, but their v3 surfaces have not been consolidated in these guides |

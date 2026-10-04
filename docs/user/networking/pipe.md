@@ -17,6 +17,16 @@ same direction fails with `UV_EBUSY`. Submitted writes retain their payload
 through completion even after a stop request. Reads and accepts support
 cooperative cancellation.
 
+`uv::ops::read_some(connection, buffer)`, `uv::ops::write(connection, bytes)`,
+and `uv::ops::accept(listener)` provide explicit operational results on these
+same owners: `result<pipe_connection::read_some_result>`, `status`, and
+`result<pipe_connection>`. Read/write also accept borrowed connection views.
+EOF is success; native submission/completion, busy, closed, and cancellation
+failures follow the selected policy. Both accept policies wait for provisional
+child close on failure. Allocation, length validation, and wrong-loop/view misuse
+keep their C++ exception contracts. `connect`, `write_with_handle`, and
+`receive_handle` currently retain only their throwing surfaces.
+
 ## IPC handle passing
 
 Pass `ipc = true` when creating the IPC connection/listener. This slice supports

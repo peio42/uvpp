@@ -192,15 +192,20 @@ public:
     }
 
     pipe_connection await_resume() {
+      return std::move(await_resume_result()).value();
+    }
+
+  private:
+    template<class> friend class uv::detail::network_result_awaiter;
+    result<pipe_connection> await_resume_result() {
       // Failed/cancelled accepts retain their initialized provisional pipe until
       // its close callback marks completion, before task delivery can destroy
       // this awaiter frame.
       assert(!provisional_close_required_ || provisional_close_completed_);
-      throw_if_error(status_);
-      return pipe_connection{std::move(connection_)};
+      if (status_ < 0) return result<pipe_connection>{make_error_code(status_)};
+      return result<pipe_connection>{pipe_connection{std::move(connection_)}};
     }
 
-  private:
     void close_untransferred_connection(std::coroutine_handle<> continuation) noexcept {
       auto *connection = connection_.release();
       assert(connection != nullptr);
@@ -329,6 +334,11 @@ namespace detail {
 } // namespace detail
 
 namespace ops {
+
+[[nodiscard]] inline auto accept(pipe_listener &listener) {
+  return detail::network_result_awaiter<decltype(listener.accept())>{
+      [&] { return listener.accept(); }};
+}
 
 [[nodiscard]] inline detail::pipe_listener_close_result close(pipe_listener &listener) noexcept {
   return detail::close_result(listener);

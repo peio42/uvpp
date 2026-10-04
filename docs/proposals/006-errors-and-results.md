@@ -207,8 +207,19 @@ first complete paired owner-I/O slice: `uv::fs::{open,read,write,close}` throws
 native submission/completion failures, while `uv::ops::fs::{open,read,write,close}`
 returns `result<file>`, `result<file_read_result>`, `result<size_t>`, and
 `status`. Its close completion is terminal even on error, so result delivery
-cannot trigger an unsafe descriptor retry. Connect/read/write/send adaptation
-remains unfinished. See the
+cannot trigger an unsafe descriptor retry. TCP/pipe `read_some`, `write`, and `accept`, and UDP `recv_from` and `send_to`
+now have paired `uv::ops` facades, including read/write and UDP borrowed-view
+forms. Reads return `result<Connection::read_some_result>` with successful EOF;
+accept returns `result<tcp_connection>` or `result<pipe_connection>`; UDP receive
+returns `result<udp_socket::recv_from_result>` with size, truncation, and copied
+peer; write/send return `status`. The adapter constructs the original awaiter
+in place and changes only result delivery. Native submission/completion,
+closed/busy states, and completed cancellation enter the result channel without
+altering callbacks, storage, slots, or cleanup. Failed/cancelled accepts still
+wait for provisional child close. Both facades retain the same C++ preparation
+exceptions (buffer length, allocation) and misuse diagnostics (loop/view).
+No extra operation allocation is introduced. Connect and IPC handle-passing
+adaptation remain unfinished. See the
 [v3 error guide](../user/errors.md) for current availability.
 
 Validate equivalent immediate/delayed native failures in both styles, allocation
@@ -246,3 +257,14 @@ and rethrown at either await expression. Constructor setup remains throwing,
 and wrong-loop awaits raise `std::logic_error`.
 See the [implemented contract](../user/fs-events.md). Resource-scope adoption
 and broader platform/cost validation remain open.
+
+## Network facade validation
+
+[Network result tests](../../tests/test-co-network-ops.cpp) cover both stream
+families, typed EOF, payload delivery, read/write exclusion, cancellation and
+reuse, closed-owner results, wrong-loop rejection, accepted-owner transfer,
+provisional-child close before cancelled/failed accept delivery, equivalent
+fault-injected accept callback errors in both policies, borrowed views, and UDP truncation,
+empty datagrams, and native send failure. Existing throwing lifecycle tests remain
+in place. Connect and IPC pairs, broader fault injection, allocation-failure
+routing, and cross-platform/performance gates remain open.

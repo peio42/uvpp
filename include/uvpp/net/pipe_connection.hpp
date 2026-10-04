@@ -702,6 +702,26 @@ namespace detail {
 
 namespace ops {
 
+[[nodiscard]] inline auto read_some(pipe_connection &connection, std::span<std::byte> buffer) {
+  return detail::network_result_awaiter<decltype(connection.read_some(buffer))>{
+      [&] { return connection.read_some(buffer); }};
+}
+
+[[nodiscard]] inline auto write(pipe_connection &connection, std::string_view buffer) {
+  return detail::network_result_awaiter<decltype(connection.write(buffer))>{
+      [&] { return connection.write(buffer); }};
+}
+
+[[nodiscard]] inline auto read_some(const pipe_connection_view &connection, std::span<std::byte> buffer) {
+  return detail::network_result_awaiter<decltype(connection.read_some(buffer))>{
+      [&] { return connection.read_some(buffer); }};
+}
+
+[[nodiscard]] inline auto write(const pipe_connection_view &connection, std::string_view buffer) {
+  return detail::network_result_awaiter<decltype(connection.write(buffer))>{
+      [&] { return connection.write(buffer); }};
+}
+
 [[nodiscard]] inline detail::pipe_close_result close(pipe_connection &connection) noexcept {
   return detail::close_result(connection);
 }
