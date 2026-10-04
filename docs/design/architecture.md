@@ -13,7 +13,7 @@ implemented or frozen.
 | `uv::raw` | Explicit low-level handles, requests, and operational results | Namespace and error-policy migration remains unfinished; existing wrappers still largely live in `uv` |
 | `uv` | Shared vocabulary and stable high-level resource owners | TCP/pipe connections and listeners, UDP sockets, filesystem files, `signal_source`, `fs_event_source`, `poll_source`, loop, addresses, buffers, common results |
 | `uv::co` | Cold tasks, spawning, cancellation, and structured composition | `task<T>`, `spawn_handle<T>`, join, cooperative stop, timer sleep, task and resource scopes |
-| `uv::ops` | Explicit-result operations on the same owners | Network read/write/accept/receive/send/close, signal/fs-event/poll-source next, DNS resolution, and filesystem open/read/write/close |
+| `uv::ops` | Explicit-result high-level operations and creation | Network listener/socket creation, read/write/accept/receive/send/close, signal/fs-event/poll-source next, DNS resolution, and filesystem open/read/write/close |
 
 Filesystem targets `uv::fs` and `uv::raw::fs`; existing `uv::fs::raw` code has
 not yet completed this migration. Existing filesystem, process, DNS, watcher,

@@ -130,8 +130,8 @@ TYPED_TEST(NetworkOpsStream, WriteResultsExcludeConcurrentWritesAndRejectWrongLo
 TEST(NetworkOps, UdpResultsPreserveDatagramsBusyCancellationAndNativeSubmissionFailure) {
   if (!loopback_tcp_is_permitted()) GTEST_SKIP();
   uv::loop loop;
-  uv::udp_socket receiver{loop, uv::ipv4{"127.0.0.1", 0}};
-  uv::udp_socket sender{loop, uv::ipv4{"127.0.0.1", 0}};
+  auto receiver = std::move(uv::ops::make_udp_socket(loop, uv::ipv4{"127.0.0.1", 0})).value();
+  auto sender = std::move(uv::ops::make_udp_socket(loop, uv::ipv4{"127.0.0.1", 0})).value();
   const auto address = receiver.local_address().to_v4();
   const auto sender_port = sender.local_address().port();
   std::array<std::byte, 2> buffer{};
@@ -194,10 +194,12 @@ TYPED_TEST(NetworkOpsStream, AcceptResultsTransferOwnersAndWaitForProvisionalCle
   const auto path = v3_pipe_path() + "-ops";
   std::unique_ptr<Listener> listener;
   if constexpr (tcp) {
-    listener = std::make_unique<Listener>(loop, uv::ipv4{"127.0.0.1", 0});
+    listener = std::make_unique<Listener>(std::move(
+        uv::ops::make_tcp_listener(loop, uv::ipv4{"127.0.0.1", 0})).value());
   } else {
     std::filesystem::remove(path);
-    listener = std::make_unique<Listener>(loop, path);
+    listener = std::make_unique<Listener>(std::move(
+        uv::ops::make_pipe_listener(loop, path, true, 8)).value());
   }
   auto canceled = [&]() -> uv::co::task<void> {
     auto result = co_await uv::ops::accept(*listener);

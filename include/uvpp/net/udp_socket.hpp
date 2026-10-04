@@ -79,6 +79,11 @@ using udp_close_result = owner_close_awaiter<udp_socket_state, true>;
 
 } // namespace detail
 
+namespace ops {
+[[nodiscard]] result<udp_socket> make_udp_socket(uv::loop &, const ipv4 &address);
+[[nodiscard]] result<udp_socket> make_udp_socket(uv::loop &, const ipv6 &address);
+} // namespace ops
+
 class udp_socket {
 public:
   udp_socket(const udp_socket &) = delete;
@@ -88,8 +93,10 @@ public:
     if (this != &other) { reset(); state_ = std::move(other.state_); }
     return *this;
   }
-  udp_socket(uv::loop &loop, const ipv4 &address) { initialize(loop, address.native_sockaddr()); }
-  udp_socket(uv::loop &loop, const ipv6 &address) { initialize(loop, address.native_sockaddr()); }
+  udp_socket(uv::loop &loop, const ipv4 &address)
+      : state_{std::move(make_state(loop, address.native_sockaddr())).value()} {}
+  udp_socket(uv::loop &loop, const ipv6 &address)
+      : state_{std::move(make_state(loop, address.native_sockaddr())).value()} {}
   ~udp_socket() { reset(); }
 
   uv_udp_t *native() noexcept { return state_ ? &state_->udp : nullptr; }
@@ -287,19 +294,25 @@ public:
   }
 
 private:
-  void initialize(uv::loop &loop, const sockaddr *address) {
+  explicit udp_socket(std::unique_ptr<detail::udp_socket_state> state) noexcept
+      : state_{std::move(state)} {}
+
+  static result<std::unique_ptr<detail::udp_socket_state>> make_state(
+      uv::loop &loop, const sockaddr *address) {
     auto state = std::make_unique<detail::udp_socket_state>();
     state->loop = &loop;
     int status = uv_udp_init(loop.native(), &state->udp);
-    if (status < 0) throw_if_error(status);
+    if (status < 0) {
+      return result<std::unique_ptr<detail::udp_socket_state>>{make_error_code(status)};
+    }
     state->udp.data = state.get();
     status = uv_udp_bind(&state->udp, address, 0);
     if (status < 0) {
       auto *failed = state.release();
       failed->release_owner();
-      throw_if_error(status);
+      return result<std::unique_ptr<detail::udp_socket_state>>{make_error_code(status)};
     }
-    state_ = std::move(state);
+    return result<std::unique_ptr<detail::udp_socket_state>>{std::move(state)};
   }
   void reset() noexcept {
     if (!state_) return;
@@ -308,6 +321,8 @@ private:
     if (state->send_active || state->active_receive != nullptr) std::terminate();
     state->release_owner();
   }
+  friend result<udp_socket> ops::make_udp_socket(uv::loop &, const ipv4 &address);
+  friend result<udp_socket> ops::make_udp_socket(uv::loop &, const ipv6 &address);
   std::unique_ptr<detail::udp_socket_state> state_{};
   friend class udp_socket_view;
   friend detail::udp_close_completion detail::close_completion(udp_socket &) noexcept;
@@ -342,6 +357,18 @@ inline udp_close_result close_result(udp_socket &socket) noexcept {
 } // namespace detail
 
 namespace ops {
+
+[[nodiscard]] inline result<udp_socket> make_udp_socket(uv::loop &loop, const ipv4 &address) {
+  auto state = udp_socket::make_state(loop, address.native_sockaddr());
+  if (!state) return result<udp_socket>{state.error()};
+  return result<udp_socket>{udp_socket{std::move(state).value()}};
+}
+
+[[nodiscard]] inline result<udp_socket> make_udp_socket(uv::loop &loop, const ipv6 &address) {
+  auto state = udp_socket::make_state(loop, address.native_sockaddr());
+  if (!state) return result<udp_socket>{state.error()};
+  return result<udp_socket>{udp_socket{std::move(state).value()}};
+}
 
 [[nodiscard]] inline auto recv_from(udp_socket &socket, std::span<std::byte> buffer) {
   return detail::network_result_awaiter<decltype(socket.recv_from(buffer))>{

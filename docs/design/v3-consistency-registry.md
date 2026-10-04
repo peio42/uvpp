@@ -29,9 +29,9 @@ blind rename.
 
 | Family | Throwing / `uv::ops` | Ownership and destructor | `resource_scope` | Cancellation | Public native access |
 | --- | --- | --- | --- | --- | --- |
-| TCP/pipe connection | Throwing I/O; only close currently has an `uv::ops` pair | Stable movable owner; destruction may start close only without incompatible active I/O | Implemented | Pre-submission stop; reads can quiesce; submitted connect/write completes normally | `native`, `native_handle`, `native_stream` |
-| TCP/pipe listener | Throwing `accept`; only close currently has an `uv::ops` pair | Stable movable owner; close quiesces accept; active-accept destruction is a contract violation | Implemented | Stop releases one accept; source remains usable | `native`, `native_handle`, `native_stream` |
-| UDP socket | Throwing send/receive; only close currently has an `uv::ops` pair | Stable movable owner; active borrowed I/O blocks close | Implemented | Receive can quiesce; submitted send retains state | `native`, `native_handle` |
+| TCP/pipe connection | Paired read/write/close; connect and IPC remain throwing | Stable movable owner; destruction may start close only without incompatible active I/O | Implemented | Pre-submission stop; reads can quiesce; submitted connect/write completes normally | `native`, `native_handle`, `native_stream` |
+| TCP/pipe listener | Paired construction (`make_*`), accept, and close | Stable movable owner; close quiesces accept; active-accept destruction is a contract violation | Implemented | Stop releases one accept; source remains usable | `native`, `native_handle`, `native_stream` |
+| UDP socket | Paired construction (`make_udp_socket`), send/receive, and close | Stable movable owner; active borrowed I/O blocks close | Implemented | Receive can quiesce; submitted send retains state | `native`, `native_handle` |
 | DNS | `uv::resolve` / `uv::ops::resolve` | One-shot request state; no persistent owner | Not applicable: no resource owner | Pre-submission cancellation; submitted stop attempts `uv_cancel`; callback remains required | No public persistent native handle |
 | Filesystem file | `uv::fs::*` / `uv::ops::fs::*` for open/read/write/close | Stable shared file state; unclosed destruction terminates; native close completion is terminal even on error | Implemented | Submitted request attempts `uv_cancel`; buffer/request live to callback | Descriptor access only as documented; no `uv_handle_t` |
 | Poll source | Throwing `next` / `uv::ops::next`; paired close | Stable movable poll owner; descriptor borrowed; destruction starts terminal close | Not implemented | Cancels active wait; source stays reusable; close is terminal | `native`, `native_handle` |
@@ -41,13 +41,12 @@ blind rename.
 | Root task | Throwing result observation; no `uv::ops` resource pair | `spawn_handle` observes root state; active destruction requests stop while a completion baton retains through terminal completion | Not applicable; `task_scope` owns child executions | Cooperative stop; native work still requires terminal completion | No native handle |
 | Loop posting | Throwing endpoint `post` / `uv::ops::post`; same-loop close await | Non-movable owner; endpoints share stable state; destruction before native close completion terminates | Not implemented | Close seals admission and drains; no cancellation of accepted work or close | No native accessor; internal `data` reserved |
 
-The open construction-policy question is:
-
-> Should fallible high-level resource construction also have an explicit-result
-> factory under `uv::ops`?
-
-Until this is decided, throwing constructors for listeners, sockets, signals, and
-processes do not imply that an explicit-result creation surface has been rejected.
+Synchronous fallible owner construction pairs throwing constructors with
+`uv::ops::make_*` result factories. TCP/pipe listeners and UDP sockets implement
+this policy, sharing native setup and asynchronous rollback. C++ allocation and
+preparation failures still throw. Other synchronous owner families retain throwing
+construction pending their own implementation slices; see
+[006](../proposals/006-errors-and-results.md).
 
 ## Slots, inputs, and documentation state
 

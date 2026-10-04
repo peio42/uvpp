@@ -102,6 +102,11 @@ struct tcp_listener_state {
 
 } // namespace detail
 
+namespace ops {
+[[nodiscard]] result<tcp_listener> make_tcp_listener(uv::loop &, const ipv4 &address, int backlog);
+[[nodiscard]] result<tcp_listener> make_tcp_listener(uv::loop &, const ipv6 &address, int backlog);
+} // namespace ops
+
 // Experimental v3 movable TCP listener. It owns stable native storage and one
 // exclusive accept waiter. An accepted tcp_connection is independently owned.
 class tcp_listener {
@@ -119,13 +124,11 @@ public:
     return *this;
   }
 
-  tcp_listener(uv::loop &loop, const ipv4 &address, int backlog = 64) {
-    initialize(loop, address.native_sockaddr(), backlog);
-  }
+  tcp_listener(uv::loop &loop, const ipv4 &address, int backlog = 64)
+      : state_{std::move(make_state(loop, address.native_sockaddr(), backlog)).value()} {}
 
-  tcp_listener(uv::loop &loop, const ipv6 &address, int backlog = 64) {
-    initialize(loop, address.native_sockaddr(), backlog);
-  }
+  tcp_listener(uv::loop &loop, const ipv6 &address, int backlog = 64)
+      : state_{std::move(make_state(loop, address.native_sockaddr(), backlog)).value()} {}
 
   ~tcp_listener() { reset(); }
 
@@ -291,12 +294,16 @@ public:
   [[nodiscard]] accept_awaiter accept() noexcept { return accept_awaiter{state_.get()}; }
 
 private:
-  void initialize(uv::loop &loop, const sockaddr *address, int backlog) {
+  explicit tcp_listener(std::unique_ptr<detail::tcp_listener_state> state) noexcept
+      : state_{std::move(state)} {}
+
+  static result<std::unique_ptr<detail::tcp_listener_state>> make_state(
+      uv::loop &loop, const sockaddr *address, int backlog) {
     auto state = std::make_unique<detail::tcp_listener_state>();
     state->loop = &loop;
     int status = uv_tcp_init(loop.native(), &state->tcp);
     if (status < 0) {
-      throw_if_error(status);
+      return result<std::unique_ptr<detail::tcp_listener_state>>{make_error_code(status)};
     }
     state->tcp.data = state.get();
     state->initialized = true;
@@ -308,9 +315,9 @@ private:
     if (status < 0) {
       auto *failed = state.release();
       failed->release_owner();
-      throw_if_error(status);
+      return result<std::unique_ptr<detail::tcp_listener_state>>{make_error_code(status)};
     }
-    state_ = std::move(state);
+    return result<std::unique_ptr<detail::tcp_listener_state>>{std::move(state)};
   }
 
   void reset() noexcept {
@@ -325,6 +332,8 @@ private:
     state->release_owner();
   }
 
+  friend result<tcp_listener> ops::make_tcp_listener(uv::loop &, const ipv4 &address, int backlog);
+  friend result<tcp_listener> ops::make_tcp_listener(uv::loop &, const ipv6 &address, int backlog);
   std::unique_ptr<detail::tcp_listener_state> state_{};
 
   friend detail::tcp_listener_close_completion detail::close_completion(
@@ -347,6 +356,20 @@ namespace detail {
 } // namespace detail
 
 namespace ops {
+
+[[nodiscard]] inline result<tcp_listener> make_tcp_listener(
+    uv::loop &loop, const ipv4 &address, int backlog = 64) {
+  auto state = tcp_listener::make_state(loop, address.native_sockaddr(), backlog);
+  if (!state) return result<tcp_listener>{state.error()};
+  return result<tcp_listener>{tcp_listener{std::move(state).value()}};
+}
+
+[[nodiscard]] inline result<tcp_listener> make_tcp_listener(
+    uv::loop &loop, const ipv6 &address, int backlog = 64) {
+  auto state = tcp_listener::make_state(loop, address.native_sockaddr(), backlog);
+  if (!state) return result<tcp_listener>{state.error()};
+  return result<tcp_listener>{tcp_listener{std::move(state).value()}};
+}
 
 [[nodiscard]] inline auto accept(tcp_listener &listener) {
   return detail::network_result_awaiter<decltype(listener.accept())>{
