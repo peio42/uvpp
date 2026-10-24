@@ -41,3 +41,6 @@ alignment; the tests provide examples of coverage, not a proof of every contract
 | Filesystem ownership | [operations](../../include/uvpp/fs/operations.hpp), [directories](../../include/uvpp/fs/dir.hpp) | [filesystem](../../tests/test-fs.cpp), [watchers](../../tests/test-fs-watch.cpp) |
 | Threading | [primitives](../../include/uvpp/threading/primitives.hpp), [work requests](../../include/uvpp/requests/work.hpp) | [threading](../../tests/test-threading.cpp), [work/random](../../tests/test-threadpool-random.cpp) |
 | Feature availability | [capability macros](../../include/uvpp/core/version.hpp) | [validation gaps and proposed matrix](../proposals/010-validation-and-performance.md) |
+
+[Repository validation](validation.md) records the CI matrix, build targets,
+platform fixtures, and the distinction between configured and validated coverage.

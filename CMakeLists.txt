@@ -75,3 +75,41 @@ install(
     cmake/FindLibUV.cmake
   DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/uvpp
 )
+
+# Repository validation is opt-in: consumers need neither Google Test nor examples.
+option(UVPP_BUILD_TESTS "Build the repository test suites" OFF)
+option(UVPP_BUILD_EXAMPLES "Build the repository examples" OFF)
+
+if(UVPP_BUILD_TESTS)
+  enable_testing()
+  find_package(GTest CONFIG REQUIRED)
+  file(GLOB UVPP_TEST_SOURCES CONFIGURE_DEPENDS tests/test-*.cpp)
+  add_executable(uvpp-tests tests/main.cpp ${UVPP_TEST_SOURCES})
+  add_executable(uvpp-udp-allocation tests/main.cpp tests/udp-allocation.cpp)
+  foreach(target uvpp-tests uvpp-udp-allocation)
+    target_link_libraries(${target} PRIVATE uvpp::uvpp GTest::gtest)
+    add_test(NAME ${target} COMMAND ${target} --gtest_brief=1)
+    set_tests_properties(${target} PROPERTIES TIMEOUT 180)
+  endforeach()
+endif()
+
+if(UVPP_BUILD_EXAMPLES)
+  file(GLOB UVPP_EXAMPLE_SOURCES CONFIGURE_DEPENDS examples/*.cpp)
+  foreach(source IN LISTS UVPP_EXAMPLE_SOURCES)
+    get_filename_component(name "${source}" NAME_WE)
+    add_executable(uvpp-example-${name} "${source}")
+    target_link_libraries(uvpp-example-${name} PRIVATE uvpp::uvpp)
+  endforeach()
+endif()
+
+if(MSVC)
+  # Apply conforming C++20 parsing to repository binaries, without imposing
+  # warning or conformance flags on downstream users of the interface target.
+  get_directory_property(uvpp_targets BUILDSYSTEM_TARGETS)
+  foreach(target IN LISTS uvpp_targets)
+    if(NOT target STREQUAL "uvpp")
+      target_compile_options(${target} PRIVATE /W4 /permissive- /Zc:__cplusplus /utf-8)
+      target_compile_definitions(${target} PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN _CRT_SECURE_NO_WARNINGS)
+    endif()
+  endforeach()
+endif()

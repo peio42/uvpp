@@ -67,7 +67,34 @@ identity, for example `3.0.0-alpha.0.dev.17+aefd0b8`.
 
 ## Repository checks
 
-Google Test is additionally required for the repository tests.
+Google Test is additionally required for the repository tests. CMake 3.20 or
+newer provides a common build for Linux, Windows/MSVC, and macOS/Apple Clang:
+
+```sh
+cmake -S . -B build/cmake -DUVPP_BUILD_TESTS=ON -DUVPP_BUILD_EXAMPLES=ON
+cmake --build build/cmake --config Debug --parallel 2
+ctest --test-dir build/cmake -C Debug --output-on-failure
+```
+
+Both options default to `OFF`, so library consumers do not need Google Test.
+CTest runs the main suite and the separate UDP allocation suite, each with a
+180-second timeout. Build examples are compiled but not run (some are servers).
+
+On Ubuntu, install `libuv1-dev libgtest-dev`; on macOS, use
+`brew install libuv googletest`. On Windows, install
+`vcpkg install libuv:x64-windows gtest:x64-windows`, then configure with the
+Visual Studio 2022 generator, `-A x64`, and
+`-DCMAKE_TOOLCHAIN_FILE=<vcpkg-root>/scripts/buildsystems/vcpkg.cmake`.
+The libuv config target preserves its platform link dependencies.
+
+The CI matrix selects Ubuntu 24.04 x64 with GCC and Clang, Windows Server 2022
+x64 with MSVC, and macOS 26 ARM64 with Apple Clang, plus Linux ASan/UBSan.
+POSIX signal-delivery and pipe-descriptor polling tests are excluded on Windows
+with explicit skip cases; coroutine polling uses sockets on every platform.
+TTY tests require a terminal, and symlink tests may skip when creation is denied.
+A configured job is not a portability guarantee until it passes on its runner.
+
+The Makefile remains available for GCC/Clang development on Unix:
 
 ```sh
 make test

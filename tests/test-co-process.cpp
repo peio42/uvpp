@@ -7,10 +7,10 @@
 
 namespace {
 
-uv::process_options shell(std::string command) {
+uv::process_options make_child_options(int exit_code = 0, int delay_ms = 0) {
   uv::process_options options;
-  options.file = "/bin/sh";
-  options.arguments = {"-c", std::move(command)};
+  options.file = uvpp::test::executable_path();
+  options.arguments = {"--uvpp-child", "exit", std::to_string(exit_code), std::to_string(delay_ms)};
   return options;
 }
 
@@ -18,7 +18,7 @@ uv::process_options shell(std::string command) {
 
 TEST(UvppV3Process, spawnsSynchronouslyWaitsAndCloses) {
   uv::loop loop;
-  uv::process child(loop, shell("exit 7"));
+  uv::process child(loop, make_child_options(7));
   std::optional<uv::process_exit> exit;
 
   auto wait = [&]() -> uv::co::task<void> {
@@ -40,7 +40,7 @@ TEST(UvppV3Process, spawnsSynchronouslyWaitsAndCloses) {
 
 TEST(UvppV3Process, moveWhileWaitingPreservesExitAndCloseDelivery) {
   uv::loop loop;
-  uv::process initial(loop, shell("exit 7"));
+  uv::process initial(loop, make_child_options(7));
   auto *native = initial.native();
   std::optional<uv::process> moved;
   std::optional<uv::process_exit> exit;
@@ -67,7 +67,7 @@ TEST(UvppV3Process, moveWhileWaitingPreservesExitAndCloseDelivery) {
 
 TEST(UvppV3Process, exitDeliveryReleasesTheWaitSlotBeforeResuming) {
   uv::loop loop;
-  uv::process child(loop, shell("exit 9"));
+  uv::process child(loop, make_child_options(9));
   std::optional<uv::process_exit> first;
   std::optional<uv::result<uv::process_exit>> second;
 
@@ -97,7 +97,7 @@ TEST(UvppV3Process, exitDeliveryReleasesTheWaitSlotBeforeResuming) {
 
 TEST(UvppV3Process, remembersExitBeforeWait) {
   uv::loop loop;
-  uv::process child(loop, shell("exit 5"));
+  uv::process child(loop, make_child_options(5));
   loop.run();
   ASSERT_TRUE(child.exited());
 
@@ -119,10 +119,10 @@ TEST(UvppV3Process, remembersExitBeforeWait) {
 
 TEST(UvppV3Process, passesArgumentsAndOptionalWorkingDirectory) {
   uv::loop loop;
-  auto options = shell("test \"$1\" = value && test \"$PWD\" = /tmp");
-  options.arguments.push_back("process-test");
-  options.arguments.push_back("value");
-  options.cwd = "/tmp";
+  auto options = make_child_options();
+  const auto cwd = std::filesystem::temp_directory_path().string();
+  options.arguments = {"--uvpp-child", "cwd", "value", cwd};
+  options.cwd = cwd;
   uv::process child(loop, options);
   std::optional<uv::process_exit> exit;
 
@@ -142,7 +142,7 @@ TEST(UvppV3Process, passesArgumentsAndOptionalWorkingDirectory) {
 
 TEST(UvppV3Process, rejectsASecondConcurrentWaiter) {
   uv::loop loop;
-  uv::process child(loop, shell("sleep 0.02; exit 0"));
+  uv::process child(loop, make_child_options(0, 20));
   std::optional<uv::process_exit> first;
   std::optional<uv::result<uv::process_exit>> second;
 
@@ -172,7 +172,7 @@ TEST(UvppV3Process, rejectsASecondConcurrentWaiter) {
 TEST(UvppV3Process, rejectsWaitFromADifferentLoop) {
   uv::loop loop;
   uv::loop other_loop;
-  uv::process child(loop, shell("exit 0"));
+  uv::process child(loop, make_child_options(0));
   bool rejected = false;
 
   auto wait = [&]() -> uv::co::task<void> {
@@ -198,7 +198,7 @@ TEST(UvppV3Process, rejectsWaitFromADifferentLoop) {
 
 TEST(UvppV3Process, closeJoinersShareOneNativeClose) {
   uv::loop loop;
-  uv::process child(loop, shell("exit 0"));
+  uv::process child(loop, make_child_options(0));
   loop.run();
   ASSERT_TRUE(child.exited());
 
@@ -236,7 +236,7 @@ TEST(UvppV3Process, closeJoinersShareOneNativeClose) {
 
 TEST(UvppV3Process, cancellingWaitLeavesTheProcessWaitable) {
   uv::loop loop;
-  uv::process child(loop, shell("sleep 0.02; exit 3"));
+  uv::process child(loop, make_child_options(3, 20));
   std::optional<uv::result<uv::process_exit>> cancelled;
 
   auto wait_then_cancel = [&]() -> uv::co::task<void> {
@@ -267,7 +267,7 @@ TEST(UvppV3Process, cancellingWaitLeavesTheProcessWaitable) {
 
 TEST(UvppV3Process, killReportsTerminationThroughWait) {
   uv::loop loop;
-  uv::process child(loop, shell("sleep 10"));
+  uv::process child(loop, make_child_options(0, 10000));
   std::optional<uv::process_exit> exit;
 
   auto wait = [&]() -> uv::co::task<void> {
@@ -287,7 +287,7 @@ TEST(UvppV3Process, killReportsTerminationThroughWait) {
 
 TEST(UvppV3Process, closeBeforeExitReportsBusy) {
   uv::loop loop;
-  uv::process child(loop, shell("sleep 10"));
+  uv::process child(loop, make_child_options(0, 10000));
   std::optional<uv::status> close_status;
 
   auto attempt_close = [&]() -> uv::co::task<void> {
@@ -318,7 +318,7 @@ TEST(UvppV3Process, failedSpawnRetainsTheNativeHandleThroughClose) {
 TEST(UvppV3Process, destructionBeforeExitDefersCloseUntilExit) {
   uv::loop loop;
   {
-    uv::process child(loop, shell("sleep 0.02"));
+    uv::process child(loop, make_child_options(0, 20));
   }
   loop.run();
   EXPECT_NO_THROW(loop.close());

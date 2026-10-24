@@ -3,7 +3,7 @@
 #include <filesystem>
 #include <memory>
 #include <string>
-#include <unistd.h>
+#include "platform-support.hpp"
 
 #include "gtest/gtest.h"
 #include "uvpp/uv.hpp"
@@ -16,7 +16,7 @@ uv::buffer_view pipe_alloc(uv::pipe &, std::size_t) {
 }
 
 std::string pipe_path() {
-  return "/tmp/uvpp2-pipe-test-" + std::to_string(getpid());
+  return uvpp::test::pipe_path("raw");
 }
 
 }
