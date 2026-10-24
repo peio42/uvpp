@@ -30,8 +30,13 @@ TEST(Uvpp2Buffer, ownedBufferCopiesByteRanges) {
   EXPECT_EQ(std::memcmp(buffer.view().data(), "pong", 4), 0);
 }
 
-TEST(Uvpp2Buffer, preservesNativeLengthsBeyondUnsignedInt) {
-  if constexpr (std::numeric_limits<uv::detail::native_buffer_length>::digits > std::numeric_limits<unsigned int>::digits) {
+namespace {
+
+// Keep the native type dependent: MSVC should not instantiate the wide-length
+// assignment when uv_buf_t::len is only 32 bits.
+template<class NativeBuffer>
+void expect_wide_native_buffer_lengths() {
+  if constexpr (std::numeric_limits<decltype(NativeBuffer::len)>::digits > std::numeric_limits<unsigned int>::digits) {
     char storage{};
     const auto length = static_cast<std::size_t>(std::numeric_limits<unsigned int>::max()) + 3;
 
@@ -39,11 +44,17 @@ TEST(Uvpp2Buffer, preservesNativeLengthsBeyondUnsignedInt) {
     EXPECT_EQ(view.size(), length);
     EXPECT_EQ(view.native()->len, length);
 
-    uv_buf_t raw{};
+    NativeBuffer raw{};
     raw.base = &storage;
     raw.len = length;
     EXPECT_EQ(uv::buffer_view::from_native(raw).size(), length);
   }
+}
+
+} // namespace
+
+TEST(Uvpp2Buffer, preservesNativeLengthsBeyondUnsignedInt) {
+  expect_wide_native_buffer_lengths<uv_buf_t>();
 }
 
 TEST(Uvpp2Buffer, rejectsLengthsAndCountsOutsideNativeLimits) {

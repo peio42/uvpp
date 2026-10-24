@@ -15,6 +15,14 @@
 using namespace std::chrono_literals;
 using namespace uvpp::test;
 
+namespace {
+
+int fail_task(const char *message) {
+  throw std::runtime_error{message};
+}
+
+} // namespace
+
 class synchronous_stop_awaiter {
 public:
   bool await_ready() const noexcept { return false; }
@@ -281,7 +289,7 @@ TEST(UvppV3Coroutine, takeResultObservesRootFailure) {
 
   auto worker = []() -> uv::co::task<int> {
     (void)co_await uv::co::stop_requested();
-    throw std::runtime_error{"take-result root failure"};
+    co_return fail_task("take-result root failure");
   };
   {
     auto execution = uv::co::spawn(loop, worker());
@@ -412,7 +420,7 @@ TEST(UvppV3Coroutine, spawnHandleRetainsFailureForJoinAndObservation) {
 
   auto worker = []() -> uv::co::task<int> {
     co_await uv::co::sleep_for(0ms);
-    throw std::runtime_error{"expected root failure"};
+    co_return fail_task("expected root failure");
   };
   auto execution = uv::co::spawn(loop, worker());
   auto joiner = [&]() -> uv::co::task<void> {
@@ -594,8 +602,8 @@ TEST(UvppV3Coroutine, activeSpawnHandleDestructionKeepsAllInstalledJoinersAlive)
 
   EXPECT_TRUE(canceled);
   EXPECT_EQ(joined, 8);
-  for (auto &joiner : joiner_executions) {
-    EXPECT_NO_THROW(joiner.rethrow_if_failed());
+  for (auto &joiner_execution : joiner_executions) {
+    EXPECT_NO_THROW(joiner_execution.rethrow_if_failed());
   }
   EXPECT_NO_THROW(loop.close());
 }
@@ -852,7 +860,7 @@ TEST(UvppV3Coroutine, childTaskFailurePropagatesToItsParent) {
 
   auto child = []() -> uv::co::task<int> {
     co_await uv::co::sleep_for(0ms);
-    throw std::runtime_error{"expected child failure"};
+    co_return fail_task("expected child failure");
   };
   auto parent = [&]() -> uv::co::task<void> {
     (void)co_await child();

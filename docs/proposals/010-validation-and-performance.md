@@ -311,3 +311,20 @@ Local GCC/Clang validation passes both complete 392-case main suites (390 pass,
 two TTY skips), both allocation suites, and example builds. CMake's generated
 CTest properties confirm 300-second limits for both binaries. Native CI reruns
 remain necessary for the Windows-specific assertion and macOS timeout margin.
+
+## MSVC test warning cleanup
+
+After the reported platform suites passed, Windows compilation still warned
+about a wide buffer assignment in an inactive non-template branch, value-returning
+coroutines ending in unconditional throws, a shadowed joiner name, and statements
+after the Windows backend-fd skip. Test fixtures now make the buffer type
+dependent, express the three intentional coroutine failures through `co_return`
+and a throwing helper, rename the joiner variable, and compile the Unix-only
+backend-fd body under `#else`. No library behavior or warning flags change.
+Native MSVC compilation must confirm disappearance of the reported diagnostics.
+
+Local `make test-all GTEST_ARGS=--gtest_brief=1` passes with GCC and Clang:
+390 main tests pass with two TTY skips, both allocation cases pass, and examples
+build. The buffer test also passes a Clang syntax-only check with 32-bit,
+Windows-order native buffer fields and constant/64-to-32 conversion diagnostics
+promoted to errors. This synthetic check does not replace an MSVC build.
