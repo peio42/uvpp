@@ -66,6 +66,10 @@ namespace uv::detail {
     }
 
   protected:
+    void replace_callback(callback cb) noexcept {
+      callback_.replace(std::move(cb));
+    }
+
     status commit_start(int native_status, callback cb = {}) noexcept {
       // A failed native reconfiguration can itself stop the previous source.
       // Keep its callable only while native delivery remains active.

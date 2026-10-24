@@ -147,3 +147,22 @@ committing runtime or static callbacks. Native start alone ignores callback
 replacement on active phase watchers on both Unix and Windows. The executing
 callable remains local until return, and generation tracking prevents restoration
 of a replaced/stopped callback. Peer ordering may change during this restart.
+
+
+## Raw async callback selection
+
+The async raw wrapper shares `raw_watcher_handle` slot replacement and close/query
+machinery. `replace_callback` only moves a prepared runtime callable and advances
+the persistent slot generation; unlike `commit_start`, it models no native start.
+A fixed native trampoline snapshots a static invoker pointer or invokes the
+runtime persistent slot. Static selection clears the stored runtime callable;
+runtime selection clears the static pointer. Reentrant replacements survive old
+callback unwinding, and an executing callable stays local through return.
+
+All selection/close operations are loop-thread only; cross-thread send touches
+neither selection nor `closing()`. Callback argument construction precedes native
+initialization or setter entry, so preparation failure leaves the native/current
+selection unchanged. Native init remains throwing setup. Close quiesces native
+delivery before clearing selection and captures, and raw storage survives native
+close completion. No public producer endpoint or concurrent-close guard is added.
+See [the user contract](../user/async.md).

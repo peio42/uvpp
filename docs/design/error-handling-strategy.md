@@ -218,3 +218,14 @@ changing native state or callbacks; finite negatives clamp to zero. Native repea
 and due-in getters carry unsigned chrono counts without an operational failure
 channel. Initialization and runtime callable preparation remain separate throwing
 setup; see [the user contract](../user/raw-watchers.md#timers).
+
+
+Raw async `send() noexcept`, `set_callback`, and `set_callback_static` return
+`uv::status`. Native init errors still throw at construction, and callable
+preparation can throw before constructor/setter entry. Only setters check closing
+and return `UV_EBADF` on the loop thread. Cross-thread `send` directly maps the
+native result; the caller must quiesce producers before close, so send during or
+after closing is a protocol violation rather than a promised recoverable state.
+Notifications coalesce and carry no completion error/result payload. Empty
+callback selection is supported and drops notifications while the handle remains
+active. See [raw async notifications](../user/async.md).

@@ -28,26 +28,38 @@ do not make external-thread owner access safe. See [coroutines](../user/coroutin
 
 ## Cross-Thread Communication
 
-The spellings below describe current low-level implementation machinery. Its raw
-namespace migration remains unfinished; it is not a second high-level v3 owner API.
+`uv::raw::async` is the caller-owned notification primitive. Its namespace and
+error-policy migration is implemented; it is distinct from high-level posting.
 
 
-Cross-thread work should use libuv mechanisms designed for it, primarily `uv::async`.
+Cross-thread work should use libuv mechanisms designed for it, primarily `uv::raw::async`.
 
 The supported shape is:
 
 ```cpp
-uv::async wakeup(loop, callback);
+uv::raw::async wakeup(loop, callback);
 
 // other thread
-wakeup.send();
+auto submitted = wakeup.send(); // uv::status; handle submitted.error() if needed.
 ```
 
 `async::send()` is the cross-thread entry point. The callback still runs on the loop thread.
 
 Only the specific cross-thread entry points documented by libuv and by this project should be called from other threads. Installing or replacing the async callback, closing the handle, changing `user_data`, and destroying the wrapper remain loop-thread operations.
 
-If another thread publishes data before calling `send()`, synchronization is still the application's responsibility. The wrapper does not add memory fences or queues around `uv_async_send`.
+Publish shared data using application-owned synchronization such as a queue mutex.
+The wrapper adds no memory fences or queue around `uv_async_send`. Native memory
+ordering is version-dependent: libuv documents stronger send/callback sequential
+consistency starting with 1.53.0; the raw wrapper does not backport that guarantee.
+See [native async memory ordering](https://docs.libuv.org/en/v1.x/async.html).
+
+Before close, prevent new sends and wait for every in-flight producer send to
+return. A concurrent send/close or send after close is outside this raw protocol.
+`send()` does not read `closing()` because that would race with loop-thread state
+without retaining native storage. Callback setters do check closing on the loop
+thread and return `UV_EBADF`; send has no corresponding admission guarantee.
+`set_callback({})` clears user delivery without stopping the native handle.
+See [raw async notifications](../user/async.md) for callback and close lifetimes.
 
 `uv::queue_work()` is a separate thread-pool mechanism: its work callback runs
 on a libuv worker thread, and its after-work callback runs on the loop thread.

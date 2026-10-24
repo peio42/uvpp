@@ -142,13 +142,13 @@ TEST(Uvpp2Check, runsStaticCallback) {
 
 TEST(Uvpp2Async, runsRuntimeCallback) {
   uv::loop loop;
-  uv::async async(loop);
+  uv::raw::async async(loop);
 
   int marker = 7;
   int called = 0;
 
   async.user_data(marker);
-  async.set_callback([&](uv::async &self) {
+  async.set_callback([&](uv::raw::async &self) {
     called++;
     EXPECT_EQ(self.user_data<int>(), &marker);
     self.close();
@@ -162,14 +162,14 @@ TEST(Uvpp2Async, runsRuntimeCallback) {
 
 static int static_async_called = 0;
 
-static void on_static_async(uv::async &async) {
+static void on_static_async(uv::raw::async &async) {
   static_async_called++;
   async.close();
 }
 
 TEST(Uvpp2Async, runsStaticCallback) {
   uv::loop loop;
-  uv::async async(loop, uv::async::static_callback<on_static_async>{});
+  uv::raw::async async(loop, uv::raw::async::static_callback<on_static_async>{});
   static_async_called = 0;
 
   async.send();

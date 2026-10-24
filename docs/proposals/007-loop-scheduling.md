@@ -11,7 +11,7 @@ outside the implementation-progress section remain provisional.
 
 ## Motivation and current behavior
 
-`uv::async` can wake the loop from another thread, but applications supply their
+`uv::raw::async` can wake the loop from another thread, but applications supply their
 own queue and synchronization. A reusable posting facility can support explicit cross-thread publication.
 Coroutine continuation rules also need definition on the existing loop.
 
@@ -159,3 +159,20 @@ Also validate context inheritance before first child execution, rejected cross-l
 joins and resource-affinity mismatches, and continued loop driving through cleanup
 after active spawn-handle destruction.
 Run thread sanitizer on the queue and endpoint lifetime tests where supported.
+
+
+## Raw async migration progress
+
+The caller-owned wrapper is now `uv::raw::async`, with explicit `send` and callback
+setter status/results. Its fixed native trampoline supports runtime/static
+replacement, including reentrant replacement, without native reinitialization.
+It shares raw callback/close/query machinery, adds one static function pointer,
+and preserves application-owned native `data` and stable storage. Initialization
+is active immediately and remains throwing setup; no start/stop API, queue, lock,
+or producer endpoint is added. Only send is cross-thread safe. The caller must
+prevent new sends and synchronize every in-flight send before close; send does not
+read loop-thread closing state or promise a recoverable after-close error.
+High-level `loop_posting` retains its independent synchronized native protocol.
+See [the implemented user contract](../user/async.md) and
+[raw async tests](../../tests/test-raw-async.cpp). Broader native platform,
+allocation-failure, and performance gates remain open.

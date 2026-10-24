@@ -10,6 +10,10 @@ that completion. Destructors do not close or run the loop. Native `data` is
 application-owned; native access does not permit independently replacing wrapper
 callbacks or bypassing its subscription/close protocol.
 
+For cross-thread notification, see [`uv::raw::async`](async.md), which is active
+from initialization and has no start/stop protocol. Its send/close synchronization
+is caller-controlled.
+
 Use the high-level [signal source](signals.md), [poll source](poll.md), or
 [filesystem event source](fs-events.md) when you want movable ownership and
 coroutine waits. Those owners retain their existing throwing and `uv::ops`

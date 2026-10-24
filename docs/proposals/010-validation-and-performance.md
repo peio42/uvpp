@@ -541,3 +541,41 @@ Windows confirmation.
 The typed-phase follow-up passes all 18 focused phase cases and both complete
 GCC/Clang suites locally (436 main cases passed, two existing TTY skips per
 compiler, both isolated allocation cases passed, examples built).
+
+## Raw async migration validation
+
+[Raw async tests](../../tests/test-raw-async.cpp) add 21 portable cases covering
+active/default construction, all loop/loop-view runtime/static constructors,
+fixed native identity and application-owned `data`, burst coalescing, mutable
+runtime callbacks, pending notification selection, runtime/static replacement in
+both directions, reentrant replacement and clearing, capture release, setter
+rejection while closing, native queries, ref/unref liveness, and owner release
+from static native close completion. Callable-copy exceptions exercise preparation
+before native initialization, preservation of a pending static target, and
+restoration of an executing runtime slot after rejected preparation. Runtime and
+static callback exceptions are tested at the terminating C boundary.
+
+A worker notification checks loop-thread delivery and joins the producer before
+close. Four concurrent producers publish 1,000 items through an application-owned
+mutex/queue while the loop drains notifications, then join before final drain and
+close. Tests do not equate send count with callback count, race send against close,
+read non-atomic closing flags from producers, or depend on a native memory-order
+guarantee newer than the linked libuv. All fixture primitives are standard C++20
+and libuv; static template targets are namespace-scope functions to avoid the
+reported MSVC local-target lookup failures. Multi-handle startup and close tests
+join actual delivery/completion without requiring a single backend poll to suffice.
+
+Local Linux/libuv 1.51.0 validation passes complete GCC/Clang suites: 457 passed,
+two existing TTY skips per compiler, both isolated allocation cases passed, and
+examples built. A focused Clang ASan/UBSan binary passes 32 tests with one existing
+TTY layout skip, including raw async, historical simple handles, and layout,
+with leak detection enabled. The async public header compiles independently under
+C++20 with both compilers and `-Wall -Wextra -Werror`. Complete suites and leak
+checking run outside the sandbox because of socket/ptrace restrictions.
+
+Native Windows/macOS CI, deterministic native init/send failure injection,
+allocator fault injection beyond throwing callable preparation, async-specific
+TSan coverage, and measured allocation/performance budgets remain gates. These
+local results do not establish native platform execution or race-safe send/close
+admission; the raw lifetime precondition is explicit in
+[the user contract](../user/async.md).

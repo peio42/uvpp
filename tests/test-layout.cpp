@@ -13,7 +13,7 @@ static_assert(uv::detail::native_handle_recoverable<uv::raw::timer>);
 static_assert(!uv::detail::native_handle_recoverable<int>);
 
 TEST(Uvpp2Layout, reconstructsHandlesFromNativePointers) {
-  static_assert(std::is_standard_layout_v<uv::async::native_storage>);
+  static_assert(std::is_standard_layout_v<uv::raw::async::native_storage>);
   static_assert(std::is_standard_layout_v<uv::raw::check::native_storage>);
   static_assert(std::is_standard_layout_v<uv::raw::fs_event::native_storage>);
   static_assert(std::is_standard_layout_v<uv::fs_poll::native_storage>);
@@ -28,7 +28,7 @@ TEST(Uvpp2Layout, reconstructsHandlesFromNativePointers) {
   static_assert(std::is_standard_layout_v<uv::udp::native_storage>);
 
   uv::loop loop;
-  uv::async async(loop);
+  uv::raw::async async(loop);
   uv::raw::check check(loop);
   uv::raw::fs_event fs_event(loop);
   uv::fs_poll fs_poll(loop);
@@ -49,8 +49,8 @@ TEST(Uvpp2Layout, reconstructsHandlesFromNativePointers) {
   uv::tcp tcp(loop);
   uv::udp udp(loop);
 
-  EXPECT_EQ(&async, &uv::async::from_native(async.native()));
-  EXPECT_EQ(&async, &uv::async::from_native(async.native_handle()));
+  EXPECT_EQ(&async, &uv::raw::async::from_native(async.native()));
+  EXPECT_EQ(&async, &uv::raw::async::from_native(async.native_handle()));
   EXPECT_EQ(&check, &uv::raw::check::from_native(check.native()));
   EXPECT_EQ(&check, &uv::raw::check::from_native(check.native_handle()));
   EXPECT_EQ(&fs_event, &uv::raw::fs_event::from_native(fs_event.native()));

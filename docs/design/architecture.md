@@ -135,3 +135,20 @@ actually installs the new callback. Duration validation precedes native mutation
 and timer getters preserve unsigned native milliseconds. Shared loop, native
 address stability, application-owned `data`, and explicit close completion are
 unchanged. See [raw callback watchers](../user/raw-watchers.md).
+
+
+## Raw async notifications
+
+`uv::raw::async` extends the shared raw watcher callback/close/query bookkeeping
+with a fixed native trampoline and one non-owning static dispatch pointer.
+Initialization activates the handle immediately; there is no start/stop facade.
+`send() noexcept -> status` directly adapts `uv_async_send` without reading wrapper
+callback or closing state. The caller prevents new sends and joins/synchronizes
+in-flight producers before close. Callback setters are loop-thread operations
+returning `status`, reject closing state with `UV_EBADF`, and preserve reentrant
+replacement through generation tracking. Empty runtime selection drops delivery
+without stopping the handle. Construction/preparation retain their separately
+documented exception policy. Native `data`, address stability, explicit close,
+and shared loop rules are unchanged. `loop_posting` keeps its independent native
+storage, mutex admission, queue, and producer endpoints. See
+[raw async notifications](../user/async.md).
