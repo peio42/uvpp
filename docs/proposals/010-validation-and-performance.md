@@ -340,3 +340,21 @@ skips per compiler, plus both allocation cases and example builds). Focused
 Clang syntax checks pass with `-Werror=tautological-compare` for the native Unix
 layout and a simulated Windows 32-bit length layout; the latter also promotes
 constant and 64-to-32 conversion warnings to errors.
+
+## UDP batch copy invariants
+
+The allocation sweep already copies 20 datagrams with two buffers each and
+checks rollback, source/destination metadata separation, and successful reuse.
+Ordinary copy-assignment coverage previously used two datagrams with 2/1 buffers.
+New ordinary tests explicitly cover copy construction and assignment of fresh
+and cleared empty lots, including replacement of a populated destination and
+reuse, plus three datagrams with 2/3/2 buffers. The latter asserts that the view
+count equals the three datagrams while the total buffer count is seven, checks
+each native base/length and IPv4/IPv6/default destination, and verifies that
+copies survive source metadata overwrite with distinct owned metadata arrays.
+Payloads and addresses remain borrowed. Production copy logic is unchanged.
+
+Local `make test-all GTEST_ARGS=--gtest_brief=1` passes with GCC and Clang:
+each main suite runs 394 cases (392 passed, two TTY skips), both isolated
+allocation cases pass, and examples build. The new pure-metadata cases remain
+under `UVPP_HAS_UDP_TRY_SEND2`, matching the batch API's availability gate.

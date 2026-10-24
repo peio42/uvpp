@@ -355,6 +355,127 @@ TEST(Uvpp2Udp, sendBatchCopyAssignmentRebuildsPointersForNewStorage) {
   EXPECT_EQ(destination_batch.view().buffers()[0], first_buffer);
 }
 
+TEST(Uvpp2Udp, sendBatchCopiesEmptyLotsAndCanBeReused) {
+  uv::ipv4 address{"127.0.0.1", 1234};
+  std::array payload{'d', 'a', 't', 'a'};
+  std::array buffers{
+      uv::buffer_view{payload.data(), 1},
+      uv::buffer_view{payload.data() + 1, 3}};
+
+  auto expect_empty = [](const uv::udp_send_batch &batch) {
+    EXPECT_TRUE(batch.empty());
+    EXPECT_EQ(batch.size(), 0u);
+    EXPECT_EQ(batch.buffer_count(), 0u);
+    EXPECT_EQ(batch.view().count(), 0u);
+    // Empty vectors may retain storage; their data() need not be null.
+  };
+
+  for (const bool previously_populated : std::array{false, true}) {
+    SCOPED_TRACE(previously_populated);
+    uv::udp_send_batch source;
+    if (previously_populated) {
+      source.add(buffers, address);
+      source.clear();
+    }
+    uv::udp_send_batch constructed{source};
+    uv::udp_send_batch assigned;
+    assigned.add(buffers, address).add(buffers, address);
+    assigned = source;
+
+    expect_empty(source);
+    expect_empty(constructed);
+    expect_empty(assigned);
+
+    for (auto *copy : std::array{&constructed, &assigned}) {
+      copy->add(buffers, address);
+      EXPECT_EQ(copy->size(), 1u);
+      EXPECT_EQ(copy->buffer_count(), buffers.size());
+      const auto view = copy->view();
+      ASSERT_EQ(view.count(), 1u);
+      ASSERT_NE(view.buffers(), nullptr);
+      ASSERT_NE(view.buffer_counts(), nullptr);
+      ASSERT_NE(view.addresses(), nullptr);
+      ASSERT_EQ(view.buffer_counts()[0], buffers.size());
+      ASSERT_NE(view.buffers()[0], nullptr);
+      EXPECT_EQ(view.addresses()[0], address.native_sockaddr());
+      for (std::size_t index = 0; index != buffers.size(); ++index) {
+        EXPECT_EQ(view.buffers()[0][index].base, buffers[index].data());
+        EXPECT_EQ(view.buffers()[0][index].len, buffers[index].size());
+      }
+    }
+    expect_empty(source);
+  }
+}
+
+TEST(Uvpp2Udp, sendBatchCopiesMultipleDatagramsWithMultipleBuffers) {
+  uv::ipv4 first_address{"127.0.0.1", 1234};
+  uv::ipv6 second_address{"::1", 5678};
+  std::array payload{'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l'};
+  std::array first_buffers{
+      uv::buffer_view{payload.data(), 2},
+      uv::buffer_view{payload.data() + 2, 1}};
+  std::array second_buffers{
+      uv::buffer_view{payload.data() + 3, 3},
+      uv::buffer_view{payload.data() + 6, 1},
+      uv::buffer_view{payload.data() + 7, 2}};
+  std::array third_buffers{
+      uv::buffer_view{payload.data() + 9, 1},
+      uv::buffer_view{payload.data() + 10, 2}};
+  const std::array<std::span<const uv::buffer_view>, 3> expected_buffers{
+      first_buffers, second_buffers, third_buffers};
+  const std::array<const sockaddr *, 3> expected_addresses{
+      first_address.native_sockaddr(), second_address.native_sockaddr(), nullptr};
+
+  uv::udp_send_batch source;
+  source.add(first_buffers, first_address)
+        .add(second_buffers, second_address)
+        .add(third_buffers);
+  uv::udp_send_batch constructed{source};
+  uv::udp_send_batch assigned;
+  assigned.add(first_buffers, first_address);
+  assigned = source;
+
+  const auto source_view = source.view();
+  ASSERT_EQ(source_view.count(), expected_buffers.size());
+  for (const auto *copy : std::array{&constructed, &assigned}) {
+    const auto view = copy->view();
+    ASSERT_EQ(view.count(), expected_buffers.size());
+    ASSERT_NE(view.buffers(), nullptr);
+    EXPECT_NE(view.buffers(), source_view.buffers());
+    EXPECT_NE(view.buffer_counts(), source_view.buffer_counts());
+    EXPECT_NE(view.addresses(), source_view.addresses());
+    for (unsigned int index = 0; index != view.count(); ++index) {
+      EXPECT_NE(view.buffers()[index], source_view.buffers()[index]);
+    }
+  }
+
+  // Overwrite the source metadata while the borrowed payload/addresses live on.
+  // Copies must retain their own three-entry table and all seven buffer records.
+  source.clear();
+  source.add(third_buffers, first_address);
+  for (const auto *copy : std::array{&constructed, &assigned}) {
+    EXPECT_FALSE(copy->empty());
+    EXPECT_EQ(copy->size(), expected_buffers.size());
+    EXPECT_EQ(copy->buffer_count(), 7u);
+    const auto view = copy->view();
+    ASSERT_EQ(view.count(), expected_buffers.size());
+    ASSERT_NE(view.buffers(), nullptr);
+    ASSERT_NE(view.buffer_counts(), nullptr);
+    ASSERT_NE(view.addresses(), nullptr);
+    for (unsigned int datagram = 0; datagram != view.count(); ++datagram) {
+      SCOPED_TRACE(datagram);
+      ASSERT_EQ(view.buffer_counts()[datagram], expected_buffers[datagram].size());
+      ASSERT_NE(view.buffers()[datagram], nullptr);
+      EXPECT_EQ(view.addresses()[datagram], expected_addresses[datagram]);
+      for (std::size_t buffer = 0; buffer != expected_buffers[datagram].size(); ++buffer) {
+        SCOPED_TRACE(buffer);
+        EXPECT_EQ(view.buffers()[datagram][buffer].base, expected_buffers[datagram][buffer].data());
+        EXPECT_EQ(view.buffers()[datagram][buffer].len, expected_buffers[datagram][buffer].size());
+      }
+    }
+  }
+}
+
 TEST(Uvpp2Udp, sendBatchClearAllowsReuse) {
   uv::ipv4 destination{"127.0.0.1", 1234};
   std::array payload{'d', 'a', 't', 'a'};
