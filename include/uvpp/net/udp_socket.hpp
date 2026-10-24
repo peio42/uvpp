@@ -20,7 +20,7 @@
 #include "uvpp/detail/async_close_state.hpp"
 #include "uvpp/detail/owner_close.hpp"
 #include "uvpp/net/address.hpp"
-#include "uvpp/net/buffer.hpp"
+#include "uvpp/core/buffer.hpp"
 #include "uvpp/net/socket_address.hpp"
 
 namespace uv {

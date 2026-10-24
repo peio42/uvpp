@@ -19,7 +19,7 @@
 #include "uvpp/detail/async_close_state.hpp"
 #include "uvpp/detail/owner_close.hpp"
 #include "uvpp/detail/stream_io.hpp"
-#include "uvpp/net/buffer.hpp"
+#include "uvpp/core/buffer.hpp"
 #include "uvpp/net/tcp_connection.hpp"
 
 namespace uv {

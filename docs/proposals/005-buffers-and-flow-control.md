@@ -170,3 +170,20 @@ success and remains sticky until consumption; this is bounded notification
 retention, not a lossless history or general flow-control queue.
 See the [implemented contract](../user/fs-events.md). Resource-scope adoption
 and broader platform/cost validation remain open.
+
+## Shared buffer header placement
+
+The implemented `uv::buffer_view`, `uv::owned_buffer`, native `uv_buf_t`
+construction, and length/count validation now live in
+[`core/buffer.hpp`](../../include/uvpp/core/buffer.hpp). Filesystem operations,
+streams, and network owners include this shared header directly. The former
+`net/buffer.hpp` include path is removed without a forwarding header on the v3
+branch. Namespaces, layouts, ownership, validation behavior, and allocation costs
+are unchanged. This relocation does not implement the remaining owning adapters,
+pools, or flow-control features proposed above.
+
+Standalone inclusion of the new header compiles with GCC and Clang. The buffer
+tests include it directly. Local `make test-all GTEST_ARGS=--gtest_brief=1`
+passes both complete compiler suites (390 main cases passed, two TTY skips per
+compiler), both isolated allocation cases, and example builds. The moved header
+is byte-identical to its former location.

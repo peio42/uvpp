@@ -16,7 +16,7 @@
 #include "uvpp/fs/file.hpp"
 #include "uvpp/fs/result.hpp"
 #include "uvpp/fs/status.hpp"
-#include "uvpp/net/buffer.hpp"
+#include "uvpp/core/buffer.hpp"
 #include "uvpp/requests/fs.hpp"
 
 namespace uv::fs::raw {

@@ -5,7 +5,7 @@
 #include <span>
 
 #include "gtest/gtest.h"
-#include "uvpp/uv.hpp"
+#include "uvpp/core/buffer.hpp"
 
 TEST(Uvpp2Buffer, ownedBufferOwnsBytesAndProducesExplicitView) {
   uv::owned_buffer buffer{4};

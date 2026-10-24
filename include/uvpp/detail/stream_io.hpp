@@ -15,7 +15,7 @@
 #include "uvpp/co/task.hpp"
 #include "uvpp/core/error.hpp"
 #include "uvpp/detail/network_result_awaiter.hpp"
-#include "uvpp/net/buffer.hpp"
+#include "uvpp/core/buffer.hpp"
 
 namespace uv::detail {
 

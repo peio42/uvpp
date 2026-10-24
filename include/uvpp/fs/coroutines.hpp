@@ -18,7 +18,7 @@
 #include "uvpp/co/task.hpp"
 #include "uvpp/core/error.hpp"
 #include "uvpp/core/native.hpp"
-#include "uvpp/net/buffer.hpp"
+#include "uvpp/core/buffer.hpp"
 
 namespace uv::co {
 class resource_scope;
