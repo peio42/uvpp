@@ -358,3 +358,31 @@ Local `make test-all GTEST_ARGS=--gtest_brief=1` passes with GCC and Clang:
 each main suite runs 394 cases (392 passed, two TTY skips), both isolated
 allocation cases pass, and examples build. The new pure-metadata cases remain
 under `UVPP_HAS_UDP_TRY_SEND2`, matching the batch API's availability gate.
+
+## Explicit MSVC validation options
+
+MSVC repository flags now live in the internal `uvpp-validation-options`
+interface target. The two test executables and each example explicitly link it
+privately, replacing the directory target scan. The target carries `/W4`,
+`/permissive-`, `/Zc:__cplusplus`, `/utf-8`, `NOMINMAX`, and
+`WIN32_LEAN_AND_MEAN`. The thread-pool fixture now uses `uv_os_getenv`, including
+buffer resizing on `UV_ENOBUFS`, so CRT deprecation suppression is removed.
+Missing or empty environment values retain the default, and the existing parsed
+range of 1–32 workers is unchanged. Other native environment errors surface as
+errors rather than being misreported as an out-of-range test skip.
+The internal target is not installed/exported or linked through the public
+library interface.
+Native MSVC CI remains responsible for compiler-specific build validation.
+
+Local validation passes CMake's Debug build and both CTest binaries, complete
+Make GCC/Clang suites (392 main cases passed, two TTY skips per compiler, both
+allocation cases passed), and example builds. A configuration-only MSVC-branch
+check on Linux confirms generated test/example flags; this is not an MSVC
+compilation. The installed public export contains
+none of these options/definitions, and its external consumer configures/builds.
+
+The native-environment follow-up passes complete GCC/Clang suites and both CTest
+binaries. Fresh-process cancellation checks pass with two workers and with a
+long zero-padded value representing two workers, exercising the `UV_ENOBUFS`
+resize path. Configuration-only MSVC-branch generation confirms the CRT
+suppression is absent from all test/example compilation commands.
