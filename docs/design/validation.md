@@ -53,3 +53,9 @@ those native semantics. The CMake test property and workflow CLI both allow
 300 seconds per binary; the workflow's 30-minute job limit remains separate.
 A successful macOS retry after a timeout does not establish whether runner load
 or an intermittent test caused the original delay.
+
+MSVC warning cleanup stays in the test fixtures: the wide-native-buffer case
+uses a dependent native type so the Windows length assignment is not
+instantiated; failing value-returning coroutines use `co_return` with a throwing
+helper; joiner variables have distinct names; and the Unix backend-fd body is
+excluded on Windows after the explicit skip. Compiler warnings remain enabled.

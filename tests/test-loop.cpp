@@ -39,10 +39,11 @@ static_assert(!std::invocable<invalid_walk_callback&, uv::handle_view>);
 TEST(Uvpp2Loop, backendFdIsValidFileDescriptor) {
 #ifdef _WIN32
   GTEST_SKIP() << "uv_backend_fd not available on Windows";
-#endif
+#else
   uv::loop loop;
   EXPECT_GE(loop.backend_fd(), 0);
   loop.close();
+#endif
 }
 
 TEST(Uvpp2Loop, backendTimeoutReflectsLoopState) {
