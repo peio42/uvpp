@@ -1,4 +1,6 @@
 #include <concepts>
+#include <cstdint>
+#include <limits>
 #include <system_error>
 #include <memory>
 
@@ -9,6 +11,22 @@
 #include "uvpp/uv.hpp"
 
 namespace {
+
+template<class T>
+concept checked_status = requires(T status) {
+  { uv::throw_if_error(status) } -> std::same_as<T>;
+};
+
+static_assert(checked_status<signed char>);
+static_assert(checked_status<short>);
+static_assert(checked_status<int>);
+static_assert(checked_status<long>);
+static_assert(checked_status<long long>);
+static_assert(checked_status<ssize_t>);
+static_assert(!checked_status<unsigned int>);
+static_assert(!checked_status<bool>);
+static_assert(!checked_status<double>);
+static_assert(!checked_status<uv_errno_t>);
 
 void leak_opendir_result_for_death_test() {
   uv::fs::raw::opendir_result result{0, reinterpret_cast<void *>(1)};
@@ -33,10 +51,28 @@ TEST(Uvpp2Core, checkThrowsUvppErrorOnLibuvFailure) {
   EXPECT_EQ(uv::throw_if_error(0), 0);
 
   try {
-    uv::throw_if_error(UV_EINVAL);
-    FAIL() << "uv::check should throw on negative libuv status";
+    uv::throw_if_error<int>(UV_EINVAL);
+    FAIL() << "uv::throw_if_error should throw on negative libuv status";
   } catch (const uv::error &err) {
     EXPECT_EQ(err.code(), static_cast<std::error_code>(uv::make_error_code(UV_EINVAL)));
+  }
+}
+
+TEST(Uvpp2Core, checkPreservesWideSuccessfulCountsAndThrowsWideErrors) {
+  // On Windows ssize_t is 64-bit while int and uv_buf_t::len are 32-bit.
+  // Success must be returned without first narrowing it into an error value.
+  const auto count = static_cast<std::int64_t>(std::numeric_limits<int>::max()) + 1;
+  EXPECT_EQ(uv::throw_if_error(count), count);
+  EXPECT_EQ(uv::throw_if_error(std::numeric_limits<std::int64_t>::max()),
+            std::numeric_limits<std::int64_t>::max());
+  EXPECT_EQ(uv::throw_if_error(std::int64_t{0}), 0);
+
+  try {
+    (void)uv::throw_if_error(static_cast<std::int64_t>(UV_EINVAL));
+    FAIL() << "wide negative libuv status must throw";
+  } catch (const uv::error &error) {
+    EXPECT_EQ(error.code().value(), static_cast<int>(UV_EINVAL));
+    EXPECT_EQ(&error.code().category(), &uv::category());
   }
 }
 

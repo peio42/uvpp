@@ -282,3 +282,14 @@ separate [allocation tests](../../tests/udp-allocation.cpp) inject C++ preparati
 failures in both policies, including the legacy pipe-name copy, and verify no
 native handle was initialized. Native init failure injection and broader
 platform validation remain open.
+
+The implemented `throw_if_error` helper now accepts `std::signed_integral` values
+and preserves the argument's type and nonnegative payload. Only negative native
+codes narrow to `int` for `uv::error`; explicit-result branches retain their
+status checks and result construction. Core tests cover wide successful counts,
+wide native errors, and compile-time rejection of unsigned/non-integral inputs.
+
+Local Linux validation passes `make test-all GTEST_ARGS=--gtest_brief=1` with
+GCC and Clang: each main suite passes 389 tests with two TTY skips, each isolated
+allocation suite passes both cases, and examples build. Native Windows/macOS
+validation of this helper change remains delegated to the platform CI jobs.

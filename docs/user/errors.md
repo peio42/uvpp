@@ -136,3 +136,14 @@ capture exceptions for task observation. Setup policies remain in
 busy, and closed-owner failures follow that pairing. C++ filename materialization
 failures are captured inside the native callback and rethrown at either await
 expression. See [Filesystem notifications](fs-events.md).
+
+## Checking native signed results
+
+`uv::throw_if_error(status)` accepts a signed integral value and returns that
+same type unchanged for zero or success. It preserves wide positive byte counts
+and throws `uv::error` for a negative libuv code. Negative codes must fit `int`.
+For a libuv enum constant, select the integral type explicitly:
+`uv::throw_if_error<int>(UV_EINVAL)`. Unsigned values, enums without an explicit
+conversion, and floating-point values do not satisfy the helper's constraint.
+The explicit-result operations in `uv::ops` continue to return errors rather
+than invoking this throwing helper for native operational failures.

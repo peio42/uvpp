@@ -232,10 +232,10 @@ public:
 
   void request_close() {
     if (!state_) {
-      throw_if_error(UV_EBADF);
+      throw_if_error<int>(UV_EBADF);
     }
     if (!state_->close.closed() && state_->has_active_operation()) {
-      throw_if_error(UV_EBUSY);
+      throw_if_error<int>(UV_EBUSY);
     }
     (void)state_->request_close();
   }
@@ -341,7 +341,7 @@ public:
     receive_handle_result await_resume() {
       assert(!provisional_close_required_ || provisional_close_completed_);
       assert(!received_.empty() || status_ < 0);
-      if (status_ < 0) throw_if_error(static_cast<int>(status_));
+      throw_if_error(status_);
       return receive_handle_result{std::move(received_), bytes_transferred_};
     }
 
