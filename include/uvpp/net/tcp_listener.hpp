@@ -149,7 +149,7 @@ public:
 
   socket_address local_address() const {
     if (!state_) {
-      throw_if_error(UV_EBADF);
+      throw_if_error<int>(UV_EBADF);
     }
     socket_address address;
     throw_if_error(uv_tcp_getsockname(&state_->tcp,
@@ -164,7 +164,7 @@ public:
 
   void request_close() {
     if (!state_) {
-      throw_if_error(UV_EBADF);
+      throw_if_error<int>(UV_EBADF);
     }
     (void)state_->request_close();
   }

@@ -352,7 +352,7 @@ public:
       return uv::result<file_read_result>{file_read_result{static_cast<std::size_t>(status_),
           !empty_ && status_ == 0}};
     } else {
-      if (status_ < 0) throw_if_error(static_cast<int>(status_));
+      throw_if_error(status_);
       return file_read_result{static_cast<std::size_t>(status_), !empty_ && status_ == 0};
     }
   }
@@ -466,7 +466,7 @@ public:
       }
       return uv::result<std::size_t>{static_cast<std::size_t>(status_)};
     } else {
-      if (status_ < 0) throw_if_error(static_cast<int>(status_));
+      throw_if_error(status_);
       return static_cast<std::size_t>(status_);
     }
   }

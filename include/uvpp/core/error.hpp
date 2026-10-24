@@ -76,9 +76,10 @@ namespace uv {
     explicit error(int status) : error(make_error_code(status)) {}
   };
 
-  inline int throw_if_error(int status) {
+  template<std::signed_integral T>
+  inline T throw_if_error(T status) {
     if (status < 0) {
-      throw error(status);
+      throw error{static_cast<int>(status)};
     }
     return status;
   }

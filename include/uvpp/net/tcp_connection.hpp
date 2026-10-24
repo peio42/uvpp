@@ -211,10 +211,10 @@ public:
 
   void request_close() {
     if (!state_) {
-      throw_if_error(UV_EBADF);
+      throw_if_error<int>(UV_EBADF);
     }
     if (!state_->close.closed() && state_->has_active_operation()) {
-      throw_if_error(UV_EBUSY);
+      throw_if_error<int>(UV_EBUSY);
     }
     (void)state_->request_close();
   }

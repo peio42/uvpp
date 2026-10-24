@@ -52,8 +52,12 @@ value: `native()` returns zero or a negative libuv status, and explicit conversi
 produces the equivalent `std::error_code`. Nonnegative values map to an empty
 `uv::error_code`.
 
-`throw_if_error(int)` returns the unchanged integer on success and throws on a
-negative value. Its return value is used, for example, to preserve `uv_run()`'s
+`throw_if_error(T)` accepts a `std::signed_integral` type, returns the same type
+and unchanged value on success, and throws on a negative value. Positive byte
+counts are never narrowed to `int`; only negative native error codes are converted
+for `uv::error`. Callers must supply libuv error codes for negative values, which
+fit `int`. Enumeration constants need an explicit integral type, for example
+`throw_if_error<int>(UV_EINVAL)`. Its return value is used, for example, to preserve `uv_run()`'s
 nonzero result. Submission setup can also throw standard exceptions from string,
 vector, or callback storage allocation and explicit argument validation.
 

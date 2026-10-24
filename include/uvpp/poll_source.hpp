@@ -262,7 +262,7 @@ public:
 
   void request_close() {
     if (!state_) {
-      throw_if_error(UV_EBADF);
+      throw_if_error<int>(UV_EBADF);
     }
     (void)state_->request_close();
   }

@@ -111,7 +111,7 @@ public:
     return state_ && state_->has_active_operation();
   }
   socket_address local_address() const {
-    if (!state_) throw_if_error(UV_EBADF);
+    if (!state_) throw_if_error<int>(UV_EBADF);
     socket_address address;
     throw_if_error(uv_udp_getsockname(&state_->udp, address.native(), address.native_len()));
     return address;
@@ -123,10 +123,10 @@ public:
 
   void request_close() {
     if (!state_) {
-      throw_if_error(UV_EBADF);
+      throw_if_error<int>(UV_EBADF);
     }
     if (!state_->close.closed() && state_->has_active_operation()) {
-      throw_if_error(UV_EBUSY);
+      throw_if_error<int>(UV_EBUSY);
     }
     (void)state_->request_close();
   }
