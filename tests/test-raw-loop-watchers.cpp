@@ -312,6 +312,11 @@ TEST_F(RawTimer, durationConversionPreservesWideNativeCountsAndTruncatesFraction
   EXPECT_EQ(timer.repeat(), 1ms);
   ASSERT_TRUE(timer.set_repeat(std::chrono::duration<double, std::milli>{1.75}));
   EXPECT_EQ(timer.repeat(), 1ms);
+  using fractional_seconds = std::chrono::duration<int, std::ratio<2, 3>>;
+  ASSERT_TRUE(timer.set_repeat(fractional_seconds{2}));
+  EXPECT_EQ(timer.repeat(), 1333ms);
+  ASSERT_TRUE(timer.set_repeat(fractional_seconds{-2}));
+  EXPECT_EQ(timer.repeat(), 0ms);
   ASSERT_TRUE(timer.set_repeat(-2ms));
   EXPECT_EQ(timer.repeat(), 0ms);
   int calls = 0;

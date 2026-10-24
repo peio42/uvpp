@@ -102,24 +102,25 @@ namespace uv::raw {
     template<class Rep, class Period>
     static result<std::uint64_t> millis(std::chrono::duration<Rep, Period> value) noexcept {
       using scale = std::ratio_divide<Period, std::milli>;
-      if constexpr (std::integral<Rep>) {
+      if constexpr (std::integral<Rep> && (scale::num == 1 || scale::den == 1)) {
         if (value.count() <= 0) return result<std::uint64_t>{std::uint64_t{0}};
         const auto count = static_cast<std::uint64_t>(value.count());
         if constexpr (scale::num == 1) {
           return result<std::uint64_t>{count / static_cast<std::uint64_t>(scale::den)};
-        } else if constexpr (scale::den == 1) {
+        } else {
           if (count > (std::numeric_limits<std::uint64_t>::max)() / scale::num)
             return result<std::uint64_t>{make_error_code(UV_EINVAL)};
           return result<std::uint64_t>{count * static_cast<std::uint64_t>(scale::num)};
         }
+      } else {
+        const auto ms = std::chrono::duration<long double, std::milli>{value}.count();
+        if (!std::isfinite(ms)) return result<std::uint64_t>{make_error_code(UV_EINVAL)};
+        if (ms <= 0) return result<std::uint64_t>{std::uint64_t{0}};
+        // 2^64 is an exact floating-point boundary even when long double is
+        // 64-bit (MSVC), unlike a rounded conversion of UINT64_MAX.
+        if (ms >= std::ldexp(1.0L, 64)) return result<std::uint64_t>{make_error_code(UV_EINVAL)};
+        return result<std::uint64_t>{static_cast<std::uint64_t>(ms)};
       }
-      const auto ms = std::chrono::duration<long double, std::milli>{value}.count();
-      if (!std::isfinite(ms)) return result<std::uint64_t>{make_error_code(UV_EINVAL)};
-      if (ms <= 0) return result<std::uint64_t>{std::uint64_t{0}};
-      // 2^64 is an exact floating-point boundary even when long double is
-      // 64-bit (MSVC), unlike a rounded conversion of UINT64_MAX.
-      if (ms >= std::ldexp(1.0L, 64)) return result<std::uint64_t>{make_error_code(UV_EINVAL)};
-      return result<std::uint64_t>{static_cast<std::uint64_t>(ms)};
     }
 
     static void timer_trampoline(uv_timer_t *raw) noexcept {

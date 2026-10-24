@@ -492,3 +492,28 @@ delivery. Two explicit invocations of the registered native dispatch verify that
 the original callable is restored with its mutable state intact, without relying
 on platform-specific OS signal delivery. Both cases check rejected-capture release,
 continued original-capture lifetime, native activity, and capture release at stop.
+
+## Reported MSVC raw-migration build failure
+
+The reported Windows build fails with MSVC 14.44.35207 `C1001` at the end of
+`test-fs.cpp`, before test execution. The failure fixtures have been simplified:
+namespace-scope function callbacks replace the closure-object template argument,
+and `EXPECT_THROW` receives a prebuilt submission callable. Both native rejection
+and high-level cleanup assertions remain. This addresses plausible compiler
+triggers without establishing which construct caused the internal compiler error;
+passing native CI remains required.
+
+The accompanying timer `C4702` warnings are addressed by making integral and
+floating/general-ratio conversion branches compile-time alternatives. The
+fractional-ratio integral branch has additional positive/negative expectations.
+The deprecated `_wopen` test fixture is replaced by `_wsopen_s`, preserving its
+binary/sharing/permission/error behavior without disabling warnings. See
+[repository validation](../design/validation.md#msvc-filesystem-compilation-follow-up).
+
+Local Linux validation passes both complete GCC/Clang suites (436 main cases
+passed and two existing TTY skips per compiler), both isolated allocation cases,
+and example builds. A focused Clang syntax check instantiates integral,
+floating-point, and fractional-ratio timer conversions with unreachable-code
+diagnostics promoted to errors. These checks do not reproduce MSVC's frontend
+or execute the Windows CRT branch; a native CI rerun must confirm both the
+internal-error workaround and the reported warning cleanup.

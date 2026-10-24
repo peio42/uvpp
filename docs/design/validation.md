@@ -95,3 +95,27 @@ the selected target's transitive usage requirements. Older vcpkg config targets
 and normal pkg-config/path/library discovery remain fallbacks; the latter does
 not impose static linkage. The module is installed next to `uvppConfig.cmake` so
 dependency discovery runs from the package, not a source-tree module path.
+
+## MSVC filesystem compilation follow-up
+
+A reported MSVC 14.44.35207 build stops with `C1001` at the end of
+`test-fs.cpp`. The filesystem failure tests now use a namespace-scope callback
+function instead of a local closure object as a non-type template argument, and
+prepare the submission lambda outside `EXPECT_THROW` rather than embedding
+nested lambdas inside that macro. Assertions still cover runtime/static native
+submission rejection, cleanup/reuse, and high-level cleanup before throwing.
+This is a targeted compiler-workaround candidate; the end-of-file diagnostic
+alone does not identify the precise construct that caused the internal error.
+A native MSVC rerun is required to confirm resolution.
+
+The same log reports `C4702` for the raw timer conversion's floating fallback
+following integral branches that always return. Compile-time integral and
+floating/general-ratio paths are now mutually exclusive, preserving conversion
+semantics without compiling an unreachable suffix. Existing conversion tests
+also exercise positive and negative integral durations with a fractional unit
+ratio. The Windows file fixture uses
+[`_wsopen_s`](https://learn.microsoft.com/en-us/cpp/c-runtime-library/reference/sopen-s-wsopen-s)
+with `_SH_DENYNO` in place of
+deprecated `_wopen`, retaining binary I/O, permission masking, and the descriptor
+or `-1`/`errno` outcome. Warning flags remain enabled; no CRT deprecation
+suppression is added.

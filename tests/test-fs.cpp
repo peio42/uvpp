@@ -84,6 +84,10 @@ void on_static_status(uv::raw::fs::request &request, uv::raw::fs::status_result 
   current_static_status->done = true;
 }
 
+void on_rejected_fs_read(uv::raw::fs::request &, uv::raw::fs::byte_count_result) {
+  ADD_FAILURE() << "Rejected submission delivered a callback";
+}
+
 std::string read_text_file(const std::filesystem::path &path) {
   std::ifstream file{path};
   return {std::istreambuf_iterator<char>{file}, std::istreambuf_iterator<char>{}};
@@ -1220,10 +1224,7 @@ TEST(Uvpp2Fs, rawSubmissionFailuresReleaseCallbackAndPermitReuse) {
   EXPECT_FALSE(rejected_callback);
   EXPECT_EQ(request.user_data<int>(), &application_data);
 
-  auto rejected_static = [] (uv::raw::fs::request &, uv::raw::fs::byte_count_result) {
-    ADD_FAILURE() << "Rejected static submission delivered a callback";
-  };
-  submitted = uv::raw::fs::read_static<rejected_static>(uv::loop_view{loop.native()}, request,
+  submitted = uv::raw::fs::read_static<on_rejected_fs_read>(uv::loop_view{loop.native()}, request,
     uv::file_descriptor{-1}, std::span<const uv::buffer_view>{}, 0);
   EXPECT_EQ(submitted.error(), uv::make_error_code(UV_EINVAL));
   request.cleanup();
@@ -1250,12 +1251,10 @@ TEST(Uvpp2Fs, highLevelSubmissionFailureStillThrowsAndReleasesState) {
   // Exercise the same ownership adapter as the callback facade with a
   // deterministic immediate native failure, including native request cleanup.
   auto *state = new uv::fs::detail::callback_state<uv::fs::byte_count_callback>{};
-  EXPECT_THROW(uv::fs::detail::submit_owned(state, [&] {
+  auto submit = [&] {
     return uv::raw::fs::read(loop, state->request, uv::file_descriptor{-1},
-      std::span<const uv::buffer_view>{}, 0,
-      [](uv::raw::fs::request &, uv::raw::fs::byte_count_result) {
-        ADD_FAILURE() << "Rejected submission delivered a callback";
-      });
-  }), uv::error);
+      std::span<const uv::buffer_view>{}, 0, on_rejected_fs_read);
+  };
+  EXPECT_THROW(uv::fs::detail::submit_owned(state, submit), uv::error);
   loop.close();
 }

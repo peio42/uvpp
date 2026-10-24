@@ -12,6 +12,7 @@
 
 #ifdef _WIN32
 #include <io.h>
+#include <share.h>
 #else
 #include <unistd.h>
 #endif
@@ -67,7 +68,9 @@ inline uv_gid_t test_gid() {
 
 inline int open_file(const std::filesystem::path &path, int flags, int mode = 0644) {
 #ifdef _WIN32
-  return ::_wopen(path.c_str(), flags | _O_BINARY, mode & 0600);
+  int fd = -1;
+  const auto error = ::_wsopen_s(&fd, path.c_str(), flags | _O_BINARY, _SH_DENYNO, mode & 0600);
+  return error == 0 ? fd : -1;
 #else
   return ::open(path.c_str(), flags, mode);
 #endif
