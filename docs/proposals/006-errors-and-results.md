@@ -233,8 +233,8 @@ that result adaptation cannot miss failures during operation construction.
 ## Remaining low-level adaptation
 
 Specialized completion types still differ in their direct convenience accessors:
-stream/UDP reads and filesystem watchers lack direct `raw_status()` and
-`error_code()` members; poll has direct error access but no `raw_status()`.
+stream/UDP reads and filesystem polling still lack direct `raw_status()` and
+`error_code()` members. Migrated raw poll/fs-event results now provide both.
 Filesystem success status is normalized to zero. Their common nested status is now
 `uv::result<void>`, but uniform domain adaptation remains future work.
 
@@ -313,3 +313,14 @@ error access. The high-level callback facade unwraps the status after cleaning
 rejected native requests. C++ preparation failures remain exceptions. Explicit
 cleanup, directory ownership rollback, and callback release/reuse are covered in
 [test-fs.cpp](../../tests/test-fs.cpp); other raw families still need adaptation.
+
+
+## Raw watcher migration progress
+
+`uv::raw::{signal,poll,fs_event}` operations now report native start/stop failures
+as `status`; common native getters use `result<T>` and setters use `status`.
+Fs-event `path()` returns `result<std::string>` with C++ allocation still throwing.
+Initialization remains separately documented throwing setup. Raw poll/fs-event
+completion results normalize successful `raw_status()` to zero and expose direct
+`error_code()`. High-level source waits and their `uv::ops` facades are unchanged.
+See [the implemented contract](../user/raw-watchers.md).

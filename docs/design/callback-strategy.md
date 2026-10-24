@@ -52,7 +52,8 @@ avoid touching request state after delivery: the user may destroy or reuse it.
 
 Existing submission helpers roll callback/input state back when native submission
 fails, but do not cover every earlier allocation or callable-construction failure.
-They currently throw on native failure and cannot be copied unchanged into the
+Outside migrated filesystem/watchers, they still throw on native failure and
+cannot be copied unchanged into the
 v3 raw explicit-result surface.
 
 ## Persistent slots and owner operations
@@ -110,3 +111,24 @@ failures. The shared one-shot slot is exchanged before continuation resumption.
 The ordinary callback does not access owner state after delivery. Close sets its
 terminal phase before stopping native notifications and cancelling the waiter;
 state survives reentrant destruction until native close.
+
+
+## Raw watcher subscriptions
+
+The private `detail::raw_watcher_handle` shares callback commitment, stop/close
+release, and explicit native-query results across `raw::signal`, `raw::poll`,
+and `raw::fs_event`. It uses existing persistent callable storage; `take()`
+extracts a terminal callable and advances its generation before delivery.
+No hidden per-operation allocation or coroutine state is introduced.
+
+Prepare paths and runtime callables before native start, commit them only on
+success, and retain an old callable after failure only if the source remains
+active. Successful static start clears the runtime callable. Stop and close
+quiesce before releasing captures; ordinary persistent delivery keeps the local
+callable alive and respects generation changes made by reentrant user code.
+Poll/fs-event errors stop and extract before delivery. Signal one-shot delivery
+uses a persistent native registration stopped before callback invocation, allowing
+immediate rearm without native one-shot post-callback stop interfering. This is
+single-delivery wrapper behavior, not native signal-handler one-shot semantics.
+Native `data` remains application-owned, storage survives close completion, and
+callback exceptions still terminate. See [the user contract](../user/raw-watchers.md).

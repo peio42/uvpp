@@ -31,7 +31,8 @@ Native init failure destroys uninitialized state immediately; bind/listen failur
 releases initialized state into asynchronous close before error delivery. Neither
 surface drives a nested loop. C++ preparation precedes native init (including the
 legacy pipe-name copy), and allocation failures propagate in both policies.
-Raw filesystem submissions implement explicit operational results; other low-level
+Raw filesystem and signal/poll/fs-event operations implement explicit operational
+results; other low-level
 submission helpers below have not yet completed that migration. C++ setup failures
 need separate contracts and result-oriented does not imply `noexcept`.
 
@@ -44,7 +45,8 @@ error/retention rules are implemented.
 
 ## Existing low-level failures and exceptions
 
-Historical low-level submission APIs outside `uv::raw::fs` throw `uv::error` on
+Historical low-level submission APIs outside migrated filesystem/watchers throw
+`uv::error` on
 a negative native submission result.
 `uv::error` derives from `std::system_error`; the libuv category formats messages
 with `uv_strerror`, while the exception constructor adds the `uv_err_name` context.
@@ -112,8 +114,8 @@ The current result API is not uniform across all families:
 | DNS and random results | `status()` returns `uv::status`; `raw_status()` returns `int` | Direct `error_code()` plus family payload |
 | Public and raw filesystem results | `status()` returns `uv::status`; `raw_status()` returns zero on success or a negative error | Direct `error_code()`; `raw()` retains native payload/status value |
 | Stream/UDP read results | `status()` returns `uv::status`; `count()` retains native byte count/status | `status().error()`; no direct `error_code()` or `raw_status()` |
-| `raw::fs_event_result`, `fs_poll_result` | `status()` returns `uv::status` | `status().error()`; no direct `error_code()` or `raw_status()` |
-| `poll_result` | `status()` returns `uv::status` | Direct `error_code()`, no `raw_status()`; `raw_events()` is the event mask |
+| `raw::fs_event_result`, `raw::poll_result` | `status()` returns `uv::status`; `raw_status()` normalizes success to zero | Direct `error_code()`; typed event payloads remain available |
+| `fs_poll_result` | `status()` returns `uv::status` | `status().error()`; no direct `error_code()` or `raw_status()` |
 
 The specialized low-level families expose `ok()` and explicit boolean conversion;
 the common result uses `has_value()` instead of `ok()`. Use the payload
@@ -165,8 +167,8 @@ the await; `uv::ops::next(source, mask)` returns `result<poll_events>`. Both ada
 native start and callback failures. Invalid masks report `UV_EINVAL`, competing
 waits `UV_EBUSY`, completed cancellation `UV_ECANCELED`, and waits on terminal or
 moved-from sources `UV_EBADF`. Construction remains throwing setup; execution-loop
-mismatch remains programmer misuse (`std::logic_error`). The historical raw
-`poll_result` is not the new owner's result shape.
+mismatch remains programmer misuse (`std::logic_error`). The raw
+`raw::poll_result` is not the owner's result shape.
 
 Filesystem coroutine read/write preparation uses the shared checked native-buffer
 builder. Its named field assignments support both Unix and Windows `uv_buf_t`
@@ -193,3 +195,15 @@ deliver their typed result later, releasing the one-shot callable before user
 code. The `uv::fs` callback facade unwraps submission status, cleaning the native
 request and releasing owned state before throwing. C++ preparation and callable
 allocation can still throw; raw filesystem submission is not generally `noexcept`.
+
+
+## Raw watcher errors
+
+`uv::raw::{signal,poll,fs_event}` start/stop methods return `status` for immediate
+operational errors. Poll/fs-event callback errors are typed terminal outcomes:
+stop the native source, release its callback slot, then deliver. Rejected starts
+never install the new callback; an old callback survives only while its source
+remains active. Constructors retain throwing initialization. Native descriptor
+and buffer-size queries return results; fs-event `path()` returns
+`result<std::string>` and may throw on C++ allocation. See
+[raw watchers](../user/raw-watchers.md) for the complete implemented contract.

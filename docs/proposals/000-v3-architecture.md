@@ -260,7 +260,18 @@ outcome, and terminal non-cancellable close. `uv::ops::next/close` share the sam
 state and lifetime protocol. Filename values are owned; missing or ambiguous
 coalesced names are absent. Native callback failures remain observable until
 consumed; C++ materialization exceptions rethrow at the await in both policies.
-The historical callback wrapper is now `uv::raw::fs_event`, with raw error-policy
-migration still open. See the [implemented contract](../user/fs-events.md).
+The callback wrapper is now `uv::raw::fs_event`, with explicit raw start/stop
+status and path query results. See the [implemented contract](../user/fs-events.md).
 Resource-scope adoption, lossless queues, and broader platform/cost validation
 remain outside this slice.
+
+
+## Raw watcher migration progress
+
+Signal and poll callback wrappers now join fs-event in `uv::raw`; common signal
+numbers, poll masks, and socket-poll tags remain in `uv`. Their start/stop and
+native-query errors use explicit status/results. Callback rollback, successful
+stop/close release, terminal poll/fs-event error delivery, and signal one-shot
+quiescence are implemented without changing high-level source contracts. See
+[raw watchers](../user/raw-watchers.md). Fs-poll and other raw families remain
+separate migration work; broader platform/performance gates remain open.

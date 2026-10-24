@@ -1,5 +1,6 @@
 #pragma once
 
+#include <concepts>
 #include <functional>
 #include <string>
 #include <string_view>
@@ -11,7 +12,7 @@
 #include "uvpp/core/callback.hpp"
 #include "uvpp/core/error.hpp"
 #include "uvpp/core/loop.hpp"
-#include "uvpp/handles/handle.hpp"
+#include "uvpp/detail/raw_watcher.hpp"
 
 namespace uv::raw {
 
@@ -56,6 +57,8 @@ namespace uv::raw {
     bool ok() const noexcept { return status_ >= 0; }
     explicit operator bool() const noexcept { return ok(); }
     uv::status status() const noexcept { return uv::status::from_native(status_); }
+    int raw_status() const noexcept { return status_ < 0 ? status_ : 0; }
+    uv::error_code error_code() const noexcept { return make_error_code(raw_status()); }
     std::string_view filename() const noexcept { return filename_; }
     int events() const noexcept { return events_; }
 
@@ -69,10 +72,8 @@ namespace uv::raw {
     int status_ = 0;
   };
 
-  class fs_event final : public basic_handle<fs_event, uv_fs_event_t> {
+  class fs_event final : public ::uv::detail::raw_watcher_handle<fs_event, uv_fs_event_t, fs_event_result> {
   public:
-    using callback = std::function<void(fs_event&, fs_event_result)>;
-
     explicit fs_event(loop &l) {
       throw_if_error(uv_fs_event_init(l.native(), native()));
     }
@@ -81,38 +82,48 @@ namespace uv::raw {
       throw_if_error(uv_fs_event_init(l.native(), native()));
     }
 
-    void start(std::string_view path, unsigned int flags, callback cb) {
-      callback_.replace(std::move(cb));
+    status start(std::string_view path, unsigned int flags, callback cb) {
+      if (closing()) return status::from_native(UV_EBADF);
+      if (path.find('\0') != std::string_view::npos) return status::from_native(UV_EINVAL);
       std::string storage{path};
-      throw_if_error(uv_fs_event_start(native(), &fs_event::event_trampoline, storage.c_str(), flags));
+      return commit_start(uv_fs_event_start(native(), &fs_event::event_trampoline, storage.c_str(), flags),
+                          std::move(cb));
     }
 
-    void start(std::string_view path, callback cb) {
-      start(path, 0, std::move(cb));
+    status start(std::string_view path, callback cb) {
+      return start(path, 0, std::move(cb));
     }
 
-    void start(std::string_view path, fs_event_flag flag, callback cb) {
-      start(path, static_cast<unsigned int>(flag), std::move(cb));
+    status start(std::string_view path, fs_event_flag flag, callback cb) {
+      return start(path, static_cast<unsigned int>(flag), std::move(cb));
     }
 
     template<auto Callback>
-    void start_static(std::string_view path, unsigned int flags = 0) {
+      requires std::invocable<decltype(Callback), fs_event&, fs_event_result>
+    status start_static(std::string_view path, unsigned int flags = 0) {
+      if (closing()) return status::from_native(UV_EBADF);
+      if (path.find('\0') != std::string_view::npos) return status::from_native(UV_EINVAL);
       std::string storage{path};
-      throw_if_error(uv_fs_event_start(native(), [](uv_fs_event_t *raw, const char *filename, int events, int status) noexcept {
-        detail::invoke_static_callback<Callback>(fs_event::from_native(raw), fs_event_result{filename, events, status});
+      return commit_start(uv_fs_event_start(native(), [](uv_fs_event_t *raw, const char *filename, int events, int status) noexcept {
+        auto &self = fs_event::from_native(raw);
+        if (status < 0 && !self.stop()) std::terminate();
+        ::uv::detail::invoke_static_callback<Callback>(self, fs_event_result{filename, events, status});
       }, storage.c_str(), flags));
     }
 
     template<auto Callback>
-    void start_static(std::string_view path, fs_event_flag flag) {
-      start_static<Callback>(path, static_cast<unsigned int>(flag));
+      requires std::invocable<decltype(Callback), fs_event&, fs_event_result>
+    status start_static(std::string_view path, fs_event_flag flag) {
+      return start_static<Callback>(path, static_cast<unsigned int>(flag));
     }
 
-    void stop() {
-      throw_if_error(uv_fs_event_stop(native()));
+    status stop() noexcept {
+      if (closing()) return status::from_native(UV_EBADF);
+      return commit_stop(uv_fs_event_stop(native()));
     }
 
-    std::string path() {
+    result<std::string> path() {
+      if (closing()) return result<std::string>{make_error_code(UV_EBADF)};
       return get_path([this](char *buffer, std::size_t *size) {
         return uv_fs_event_getpath(native(), buffer, size);
       });
@@ -120,7 +131,7 @@ namespace uv::raw {
 
   private:
     template<class Getter>
-    static std::string get_path(Getter getter) {
+    static result<std::string> get_path(Getter getter) {
       std::vector<char> buffer(256);
 
       for (;;) {
@@ -132,23 +143,25 @@ namespace uv::raw {
           continue;
         }
 
-        throw_if_error(status);
+        if (status < 0) return result<std::string>{make_error_code(status)};
         if (size > 0 && buffer[size - 1] == '\0') {
           --size;
         }
 
-        return std::string{buffer.data(), size};
+        return result<std::string>{std::string{buffer.data(), size}};
       }
     }
 
     static void event_trampoline(uv_fs_event_t *raw, const char *filename, int events, int status) noexcept {
       auto &self = fs_event::from_native(raw);
-      self.callback_.invoke([&](callback &callback) {
-        callback(self, fs_event_result{filename, events, status});
-      });
+      if (status < 0) {
+        if (uv_fs_event_stop(raw) < 0) std::terminate();
+        self.deliver_terminal(fs_event_result{filename, events, status});
+      } else {
+        self.deliver(fs_event_result{filename, events, status});
+      }
     }
 
-    detail::persistent_callback_slot<callback> callback_{};
   };
 
 }

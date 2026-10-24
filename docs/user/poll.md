@@ -102,3 +102,6 @@ use the TCP/UDP/pipe owners for their supported transports.
 
 These platform and readiness rules follow the
 [libuv poll documentation](https://docs.libuv.org/en/v1.x/poll.html).
+
+The caller-owned callback wrapper is `uv::raw::poll`; see
+[raw watchers](raw-watchers.md) for explicit statuses and subscription lifetimes.

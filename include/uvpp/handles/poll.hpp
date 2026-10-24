@@ -1,5 +1,6 @@
 #pragma once
 
+#include <concepts>
 #include <functional>
 #include <utility>
 
@@ -9,7 +10,7 @@
 #include "uvpp/core/error.hpp"
 #include "uvpp/core/loop.hpp"
 #include "uvpp/core/version.hpp"
-#include "uvpp/handles/handle.hpp"
+#include "uvpp/detail/raw_watcher.hpp"
 
 namespace uv {
 
@@ -86,6 +87,16 @@ namespace uv {
     return events.has(event);
   }
 
+  struct socket_poll_t {
+    explicit socket_poll_t() = default;
+  };
+
+  inline constexpr socket_poll_t socket_poll{};
+
+}
+
+namespace uv::raw {
+
   class poll_result {
   public:
     poll_result(int status, int events) noexcept
@@ -95,6 +106,7 @@ namespace uv {
     explicit operator bool() const noexcept { return ok(); }
     uv::status status() const noexcept { return status_; }
     uv::error_code error_code() const noexcept { return status_.error(); }
+    int raw_status() const noexcept { return status_.error().native(); }
     poll_events events() const noexcept { return events_; }
     bool has_event(poll_event event) const noexcept { return events_.has(event); }
     int raw_events() const noexcept { return events_.raw(); }
@@ -104,16 +116,8 @@ namespace uv {
     poll_events events_;
   };
 
-  struct socket_poll_t {
-    explicit socket_poll_t() = default;
-  };
-
-  inline constexpr socket_poll_t socket_poll{};
-
-  class poll final : public basic_handle<poll, uv_poll_t> {
+  class poll final : public ::uv::detail::raw_watcher_handle<poll, uv_poll_t, poll_result> {
   public:
-    using callback = std::function<void(poll&, poll_result)>;
-
     poll(loop &l, int fd) {
       throw_if_error(uv_poll_init(l.native(), native(), fd));
     }
@@ -130,49 +134,70 @@ namespace uv {
       throw_if_error(uv_poll_init_socket(l.native(), native(), socket));
     }
 
-    void start(poll_events events, callback cb) {
-      callback_.replace(std::move(cb));
-      throw_if_error(uv_poll_start(native(), events.raw(), &poll::poll_trampoline));
+    status start(poll_events events, callback cb) {
+      if (closing()) return status::from_native(UV_EBADF);
+      if (!valid_events(events)) return status::from_native(UV_EINVAL);
+      return commit_start(uv_poll_start(native(), events.raw(), &poll::poll_trampoline), std::move(cb));
     }
 
-    void start(poll_event event, callback cb) {
-      start(poll_events{event}, std::move(cb));
+    status start(poll_event event, callback cb) {
+      return start(poll_events{event}, std::move(cb));
     }
 
-    void start_raw(int events, callback cb) {
-      start(poll_events::from_raw(events), std::move(cb));
+    status start_raw(int events, callback cb) {
+      return start(poll_events::from_raw(events), std::move(cb));
     }
 
     template<auto Callback>
-    void start_static(poll_events events) {
-      throw_if_error(uv_poll_start(native(), events.raw(), [](uv_poll_t *raw, int status, int events) noexcept {
-        detail::invoke_static_callback<Callback>(poll::from_native(raw), poll_result{status, events});
+      requires std::invocable<decltype(Callback), poll&, poll_result>
+    status start_static(poll_events events) noexcept {
+      if (closing()) return status::from_native(UV_EBADF);
+      if (!valid_events(events)) return status::from_native(UV_EINVAL);
+      return commit_start(uv_poll_start(native(), events.raw(), [](uv_poll_t *raw, int status, int events) noexcept {
+        auto &self = poll::from_native(raw);
+        if (status < 0 && !self.stop()) std::terminate();
+        ::uv::detail::invoke_static_callback<Callback>(self, poll_result{status, events});
       }));
     }
 
     template<auto Callback>
-    void start_static(poll_event event) {
-      start_static<Callback>(poll_events{event});
+      requires std::invocable<decltype(Callback), poll&, poll_result>
+    status start_static(poll_event event) noexcept {
+      return start_static<Callback>(poll_events{event});
     }
 
     template<auto Callback>
-    void start_static_raw(int events) {
-      start_static<Callback>(poll_events::from_raw(events));
+      requires std::invocable<decltype(Callback), poll&, poll_result>
+    status start_static_raw(int events) noexcept {
+      return start_static<Callback>(poll_events::from_raw(events));
     }
 
-    void stop() {
-      throw_if_error(uv_poll_stop(native()));
+    status stop() noexcept {
+      if (closing()) return status::from_native(UV_EBADF);
+      return commit_stop(uv_poll_stop(native()));
     }
 
   private:
-    static void poll_trampoline(uv_poll_t *raw, int status, int events) noexcept {
-      auto &self = poll::from_native(raw);
-      self.callback_.invoke([&](callback &callback) {
-        callback(self, poll_result{status, events});
-      });
+    static bool valid_events(poll_events events) noexcept {
+      int allowed = UV_READABLE | UV_WRITABLE;
+#if UVPP_HAS_POLL_DISCONNECT
+      allowed |= UV_DISCONNECT;
+#endif
+#if UVPP_HAS_POLL_PRIORITIZED
+      allowed |= UV_PRIORITIZED;
+#endif
+      return (events.raw() & ~allowed) == 0;
     }
 
-    detail::persistent_callback_slot<callback> callback_{};
+    static void poll_trampoline(uv_poll_t *raw, int status, int events) noexcept {
+      auto &self = poll::from_native(raw);
+      if (status < 0) {
+        if (uv_poll_stop(raw) < 0) std::terminate();
+        self.deliver_terminal(poll_result{status, events});
+      } else {
+        self.deliver(poll_result{status, events});
+      }
+    }
   };
 
 }

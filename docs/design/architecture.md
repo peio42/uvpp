@@ -115,4 +115,8 @@ retain a filename only while all names agree; a failure replaces success and
 remains sticky until consumed. Callback filename materialization exceptions travel
 as `exception_ptr` and rethrow at the await in either policy. See the
 [user contract](../user/fs-events.md) for costs and native portability limits.
-The historical wrapper is `uv::raw::fs_event`; its error policy remains historical.
+The raw wrappers `uv::raw::{signal,poll,fs_event}` use explicit start/stop status
+and query results. Shared subscription bookkeeping commits callbacks after
+successful start, preserves an old callable only while its native source remains
+active, and releases terminal slots before user delivery. High-level source
+ownership and pending-event policies remain separate; see [raw watchers](../user/raw-watchers.md).

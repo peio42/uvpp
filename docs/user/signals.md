@@ -84,3 +84,6 @@ Signal delivery follows libuv's platform rules. In particular, Windows emulates
 only selected console signals, and `raise()` does not trigger a libuv signal
 watcher there. Do not use a source for signals that libuv documents as impossible
 or unsafe to catch on the target platform.
+
+The caller-owned callback wrapper is `uv::raw::signal`; see
+[raw watchers](raw-watchers.md) for explicit statuses and subscription lifetimes.

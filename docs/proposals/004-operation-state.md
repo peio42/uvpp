@@ -254,3 +254,16 @@ persistent subscription. Close marks state terminal and stops native delivery
 before cancelling the waiter; storage survives reentrant owner release.
 See the [implemented contract](../user/fs-events.md). Resource-scope adoption
 and broader platform/cost validation remain open.
+
+
+## Raw watcher migration progress
+
+Raw signal/poll/fs-event share private subscription bookkeeping for callback
+commitment after accepted native start, native stop/close before capture release,
+and terminal extraction before delivery. An old callable is retained after
+rejected reconfiguration only while native delivery remains active. Runtime/static
+switching and reentrant stop/restart preserve generation ownership. One-shot
+signal delivery quiesces a persistent native registration before invoking the
+user; poll/fs-event failures also quiesce and release before delivery. This does
+not change the distinct high-level source policies or create a common public
+watcher abstraction. See [callback strategy](../design/callback-strategy.md).

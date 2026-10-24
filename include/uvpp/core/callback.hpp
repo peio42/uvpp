@@ -31,6 +31,13 @@ namespace uv::detail {
       ++generation_;
     }
 
+    Callback take() noexcept {
+      auto callback = std::move(callback_);
+      callback_ = {};
+      ++generation_;
+      return callback;
+    }
+
     template<class Invocation>
     bool invoke(Invocation &&invocation) noexcept {
       const auto generation = generation_;

@@ -29,6 +29,7 @@ alignment; the tests provide examples of coverage, not a proof of every contract
 | Area | Implementation | Existing tests |
 | --- | --- | --- |
 | V3 owners and composition | [owners](../../include/uvpp/net/tcp_connection.hpp), [tasks](../../include/uvpp/co/task.hpp), [resource scopes](../../include/uvpp/co/resource_scope.hpp) | [coroutines](../../tests/test-co-core.cpp) |
+| Raw signal/poll/fs-event subscriptions | [subscription bookkeeping](../../include/uvpp/detail/raw_watcher.hpp), [raw signal](../../include/uvpp/handles/signal.hpp), [raw poll](../../include/uvpp/handles/poll.hpp), [raw fs-event](../../include/uvpp/handles/fs_event.hpp) | [raw watcher lifecycle and errors](../../tests/test-raw-watchers.cpp) |
 | Persistent signals | [signal source](../../include/uvpp/signal_source.hpp) | [signal coroutines](../../tests/test-co-signal.cpp) |
 | Filesystem events | [fs-event source](../../include/uvpp/fs_event_source.hpp) | [fs-event coroutines](../../tests/test-co-fs-event.cpp) |
 | Descriptor readiness | [poll source](../../include/uvpp/poll_source.hpp) | [poll coroutines](../../tests/test-co-poll.cpp) |

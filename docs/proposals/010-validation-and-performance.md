@@ -427,3 +427,24 @@ compile independently under C++20 with both compilers. Network tests and leak
 checking require execution outside the sandbox because of socket/ptrace limits.
 These results do not establish cross-platform behavior or allocation/performance
 budgets; the broader gates above remain open.
+
+## Raw signal/poll/fs-event migration validation
+
+[Raw watcher tests](../../tests/test-raw-watchers.cpp) cover normalized event
+statuses, fixed native identity and application `data`, rejected runtime/static
+starts, callback capture release, native poll start conflict and retry on Linux,
+zero/invalid poll masks, injected terminal callback errors, runtime/static
+rearming after terminal delivery, real signal one-shot and persistent rearming,
+fs-event path results and embedded NUL rejection, explicit common native queries,
+and capture release before native close completion. Existing native signal,
+readiness, fs-event, watcher-layout, and high-level source lifecycle tests remain.
+
+Local Linux validation passes both complete GCC and Clang suites: 403 passed and
+two existing TTY skips per compiler, plus both separate UDP allocation tests;
+examples build successfully. A focused Clang ASan/UBSan binary passes 67 tests
+covering raw watchers, historical callback/process coverage, fs-poll, and all
+three high-level watcher source families, with leak detection enabled. The three
+raw watcher public headers compile independently with both compilers under C++20.
+The complete suites and leak checking run outside the sandbox because of socket
+and ptrace restrictions. Cross-platform validation, allocation fault injection,
+and measured allocation/performance budgets remain open.

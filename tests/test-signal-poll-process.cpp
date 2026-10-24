@@ -9,13 +9,13 @@
 #ifndef _WIN32
 TEST(Uvpp2Signal, runsRuntimeCallback) {
   uv::loop loop;
-  uv::signal signal(loop);
+  uv::raw::signal signal(loop);
 
   int marker = 42;
   int called = 0;
 
   signal.user_data(marker);
-  signal.start_oneshot(SIGUSR1, [&](uv::signal &self, uv::signal_number signum) {
+  signal.start_oneshot(SIGUSR1, [&](uv::raw::signal &self, uv::signal_number signum) {
     called++;
     EXPECT_EQ(signum, SIGUSR1);
     EXPECT_EQ(self.user_data<int>(), &marker);
@@ -33,7 +33,7 @@ namespace {
 
 int static_signal_called = 0;
 
-void on_static_signal(uv::signal &signal, uv::signal_number signum) {
+void on_static_signal(uv::raw::signal &signal, uv::signal_number signum) {
   static_signal_called++;
   EXPECT_EQ(signum, SIGUSR1);
   signal.close();
@@ -43,7 +43,7 @@ void on_static_signal(uv::signal &signal, uv::signal_number signum) {
 
 TEST(Uvpp2Signal, runsStaticCallback) {
   uv::loop loop;
-  uv::signal signal(loop);
+  uv::raw::signal signal(loop);
   static_signal_called = 0;
 
   signal.start_oneshot_static<on_static_signal>(SIGUSR1);
@@ -60,7 +60,7 @@ TEST(Uvpp2Poll, reportsReadableFileDescriptor) {
   ASSERT_EQ(::pipe(fds), 0);
 
   uv::loop loop;
-  uv::poll poll(loop, fds[0]);
+  uv::raw::poll poll(loop, fds[0]);
 
   auto requested = uv::poll_event::readable | uv::poll_event::writable;
 #if UVPP_HAS_POLL_DISCONNECT
@@ -74,7 +74,7 @@ TEST(Uvpp2Poll, reportsReadableFileDescriptor) {
   EXPECT_TRUE(requested.has(uv::poll_event::readable));
 
   int called = 0;
-  poll.start(uv::poll_event::readable, [&](uv::poll &self, uv::poll_result event) {
+  poll.start(uv::poll_event::readable, [&](uv::raw::poll &self, uv::raw::poll_result event) {
     called++;
     EXPECT_TRUE(event);
     EXPECT_TRUE(event.status());
@@ -100,11 +100,11 @@ TEST(Uvpp2Poll, reportsReadableFileDescriptor) {
 
 namespace {
 
-uv::poll *static_poll_handle = nullptr;
+uv::raw::poll *static_poll_handle = nullptr;
 int static_poll_read_fd = -1;
 int static_poll_called = 0;
 
-void on_static_poll(uv::poll &, uv::poll_result event) {
+void on_static_poll(uv::raw::poll &, uv::raw::poll_result event) {
   static_poll_called++;
   EXPECT_TRUE(event);
   EXPECT_TRUE(event.status());
@@ -123,7 +123,7 @@ TEST(Uvpp2Poll, reportsReadableFileDescriptorWithStaticCallback) {
   ASSERT_EQ(::pipe(fds), 0);
 
   uv::loop loop;
-  uv::poll poll(loop, fds[0]);
+  uv::raw::poll poll(loop, fds[0]);
   static_poll_handle = &poll;
   static_poll_read_fd = fds[0];
   static_poll_called = 0;

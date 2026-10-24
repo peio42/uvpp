@@ -75,7 +75,7 @@ TEST(Uvpp2FsEvent, reportsDirectoryChanges) {
     timeout.close();
   });
 
-  EXPECT_EQ(watcher.path(), dir.string());
+  EXPECT_EQ(watcher.path().value(), dir.string());
 
   modifier.start(20ms, [&](uv::timer &timer) {
     write_text(file, "created");

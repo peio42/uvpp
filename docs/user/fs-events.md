@@ -124,8 +124,9 @@ duplicates, and coalescing. Applications needing a current model should rescan o
 query the filesystem and tolerate missing/merged notifications. Broader platform
 validation remains open.
 
-The historical callback wrapper is now `uv::raw::fs_event` in
-`<uvpp/handles/fs_event.hpp>`. It retains its existing callback and throwing
-submission API; its complete raw error-policy migration remains unfinished.
+The callback wrapper is `uv::raw::fs_event` in `<uvpp/handles/fs_event.hpp>`.
+Its start/stop operations return `uv::status`, its path query returns
+`result<std::string>`, and callback errors terminate the raw subscription before
+user delivery. See [raw watchers](raw-watchers.md) for callback and ownership rules.
 Its callback's `raw::fs_event_result::filename()` borrows native memory only for
 the callback duration. The high-level `uv::fs_event` is an owned result value.
