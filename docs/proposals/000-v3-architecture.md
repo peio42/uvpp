@@ -49,7 +49,9 @@ because several layers use it.
 The existing low-level TCP wrapper would become `uv::raw::tcp`. High-level roles
 should be explicit, for example `uv::tcp_listener` and `uv::tcp_connection`.
 These names are provisional; there should be no corresponding `uv::co::tcp`.
-Filesystem raw APIs move conceptually from `uv::fs::raw` to `uv::raw::fs`.
+Filesystem raw APIs now live in `uv::raw::fs`: requests, completion results,
+directories, flags, and callback/static operations migrate together. Submission
+returns `uv::status`; native request cleanup remains explicit.
 
 ## Common loop and execution
 

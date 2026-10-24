@@ -409,3 +409,21 @@ wrapper even with `BUILD_SHARED_LIBS=ON`. Complete Make GCC/Clang suites also
 pass (392 main cases passed, two TTY skips per compiler, both allocation cases
 passed, examples built). Native Windows/macOS execution of the new installed
 consumer steps remains a CI validation gate.
+
+## Raw filesystem migration validation
+
+The `uv::raw::fs` migration retains existing I/O, metadata, path, directory,
+static-callback, and request-layout coverage. Additional filesystem tests exercise
+immediate native rejection in runtime/static read submissions, callback rollback,
+explicit cleanup and reuse, stable native address and application-owned `data`,
+delayed completion errors, directory ownership on rejected close submission, and
+the high-level submission adapter's cleanup/throwing behavior.
+
+Local Linux validation passes both complete GCC and Clang suites: 390 passed,
+two existing TTY skips per compiler, plus both separate UDP allocation tests and
+example builds. A focused Clang ASan/UBSan run passes all 41 filesystem callback,
+path, and coroutine cases with leak detection. The four affected public headers
+compile independently under C++20 with both compilers. Network tests and leak
+checking require execution outside the sandbox because of socket/ptrace limits.
+These results do not establish cross-platform behavior or allocation/performance
+budgets; the broader gates above remain open.

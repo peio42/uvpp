@@ -13,7 +13,7 @@ results](006-errors-and-results.md).
 
 Provide a high-level filesystem owner and paired throwing/result coroutine
 operations without imposing caller-owned `uv_fs_t` storage. Existing callback
-filesystem APIs remain available during the raw namespace migration; their
+filesystem APIs remain available above the migrated `uv::raw::fs` protocol; their
 default `read` and `write` borrow caller storage, while `read_owned` and
 `write_copy` make ownership explicit.
 
@@ -70,5 +70,13 @@ validation remains required.
   and cancellation races.
 - Design owning reads, scatter/gather I/O, copying helpers, queueing, directory
   ownership, metadata operations, and close-error aggregation.
-- Complete the `uv::raw::fs` namespace migration and adapt the callback API to
-  the common operation protocol where useful.
+- Adapt the callback API to the common operation protocol where useful.
+
+The raw filesystem namespace migration is implemented: caller-owned requests,
+typed completion results, directories, flags, and callback/static operations live
+in `uv::raw::fs`. All submissions return `uv::status`; immediate native failure
+clears the runtime callback and leaves request cleanup to the caller. `closedir`
+transfers directory ownership only on accepted submission. The callback facade
+unwraps submission status and cleans rejected native requests before releasing
+its state. Tests cover rejection/reuse, application-owned `data`, and both callback
+dispatch forms alongside the existing directory and I/O lifecycle cases.

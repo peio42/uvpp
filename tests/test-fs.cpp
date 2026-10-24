@@ -25,7 +25,7 @@ std::filesystem::path temp_path(const char *name) {
 
 struct static_fs_state {
   uv::loop *loop = nullptr;
-  uv::fs::raw::request *request = nullptr;
+  uv::raw::fs::request *request = nullptr;
   std::string path;
   bool opened = false;
   bool closed = false;
@@ -53,13 +53,13 @@ concept fs_result_status_contract = requires(const Result &result) {
   { result.error_code() } -> std::same_as<uv::error_code>;
 };
 
-void on_static_fs_close(uv::fs::raw::request &request, uv::fs::raw::status_result result) {
+void on_static_fs_close(uv::raw::fs::request &request, uv::raw::fs::status_result result) {
   auto cleanup = request.scoped_cleanup();
   EXPECT_TRUE(result);
   current_static_fs->closed = true;
 }
 
-void on_static_fs_open(uv::fs::raw::request &request, uv::fs::raw::open_result result) {
+void on_static_fs_open(uv::raw::fs::request &request, uv::raw::fs::open_result result) {
   uv::file_descriptor file;
 
   {
@@ -69,16 +69,16 @@ void on_static_fs_open(uv::fs::raw::request &request, uv::fs::raw::open_result r
     file = result.file();
   }
 
-  uv::fs::raw::close_static<on_static_fs_close>(*current_static_fs->loop, *current_static_fs->request, file);
+  uv::raw::fs::close_static<on_static_fs_close>(*current_static_fs->loop, *current_static_fs->request, file);
 }
 
-void on_static_copyfile(uv::fs::raw::request &request, uv::fs::raw::status_result result) {
+void on_static_copyfile(uv::raw::fs::request &request, uv::raw::fs::status_result result) {
   auto cleanup = request.scoped_cleanup();
   EXPECT_TRUE(result);
   current_static_copyfile->copied = true;
 }
 
-void on_static_status(uv::fs::raw::request &request, uv::fs::raw::status_result result) {
+void on_static_status(uv::raw::fs::request &request, uv::raw::fs::status_result result) {
   auto cleanup = request.scoped_cleanup();
   EXPECT_TRUE(result);
   current_static_status->done = true;
@@ -108,15 +108,15 @@ TEST(Uvpp2Fs, opensWritesReadsClosesAndReusesRequest) {
   std::filesystem::remove(path);
 
   uv::loop loop;
-  uv::fs::raw::request request;
+  uv::raw::fs::request request;
   std::array payload{'h', 'e', 'l', 'l', 'o'};
   uv::owned_buffer input{std::as_bytes(std::span{payload})};
   uv::owned_buffer output{payload.size()};
   bool done = false;
   int callbacks = 0;
 
-  uv::fs::raw::open(loop, request, path.string(), O_CREAT | O_TRUNC | O_RDWR, 0644,
-    [&](uv::fs::raw::request &open_request, uv::fs::raw::open_result open_result) {
+  uv::raw::fs::open(loop, request, path.string(), O_CREAT | O_TRUNC | O_RDWR, 0644,
+    [&](uv::raw::fs::request &open_request, uv::raw::fs::open_result open_result) {
       ++callbacks;
       EXPECT_EQ(&open_request, &request);
       EXPECT_EQ(open_request.type(), uv::request_type::fs);
@@ -129,8 +129,8 @@ TEST(Uvpp2Fs, opensWritesReadsClosesAndReusesRequest) {
         file = open_result.file();
       }
 
-      uv::fs::raw::write(loop, request, file, input.bytes(), 0,
-        [&, file](uv::fs::raw::request &write_request, uv::fs::raw::byte_count_result write_result) {
+      uv::raw::fs::write(loop, request, file, input.bytes(), 0,
+        [&, file](uv::raw::fs::request &write_request, uv::raw::fs::byte_count_result write_result) {
           ++callbacks;
           EXPECT_EQ(&write_request, &request);
           EXPECT_EQ(write_request.type(), uv::request_type::fs);
@@ -141,8 +141,8 @@ TEST(Uvpp2Fs, opensWritesReadsClosesAndReusesRequest) {
             EXPECT_EQ(write_result.count(), payload.size());
           }
 
-          uv::fs::raw::read(loop, request, file, output.view(), 0,
-            [&, file](uv::fs::raw::request &read_request, uv::fs::raw::byte_count_result read_result) {
+          uv::raw::fs::read(loop, request, file, output.view(), 0,
+            [&, file](uv::raw::fs::request &read_request, uv::raw::fs::byte_count_result read_result) {
               ++callbacks;
               EXPECT_EQ(&read_request, &request);
               EXPECT_EQ(read_request.type(), uv::request_type::fs);
@@ -154,8 +154,8 @@ TEST(Uvpp2Fs, opensWritesReadsClosesAndReusesRequest) {
                 EXPECT_EQ(std::memcmp(output.view().data(), "hello", payload.size()), 0);
               }
 
-              uv::fs::raw::close(loop, request, file,
-                [&](uv::fs::raw::request &close_request, uv::fs::raw::status_result close_result) {
+              uv::raw::fs::close(loop, request, file,
+                [&](uv::raw::fs::request &close_request, uv::raw::fs::status_result close_result) {
                   ++callbacks;
                   auto cleanup = close_request.scoped_cleanup();
                   EXPECT_EQ(&close_request, &request);
@@ -185,10 +185,10 @@ TEST(Uvpp2Fs, statsFile) {
   }
 
   uv::loop loop;
-  uv::fs::raw::request request;
+  uv::raw::fs::request request;
   bool done = false;
 
-  uv::fs::raw::stat(loop, request, path.string(), [&](uv::fs::raw::request &request, uv::fs::raw::stat_result result) {
+  uv::raw::fs::stat(loop, request, path.string(), [&](uv::raw::fs::request &request, uv::raw::fs::stat_result result) {
     auto cleanup = request.scoped_cleanup();
     ASSERT_TRUE(result);
     EXPECT_EQ(result.native().st_size, 4);
@@ -279,11 +279,11 @@ TEST(Uvpp2Fs, reportsOpenMissingFile) {
   std::filesystem::remove(path);
 
   uv::loop loop;
-  uv::fs::raw::request request;
+  uv::raw::fs::request request;
   bool done = false;
 
-  uv::fs::raw::open(loop, request, path.string(), O_RDONLY, 0,
-    [&](uv::fs::raw::request &request, uv::fs::raw::open_result result) {
+  uv::raw::fs::open(loop, request, path.string(), O_RDONLY, 0,
+    [&](uv::raw::fs::request &request, uv::raw::fs::open_result result) {
       auto cleanup = request.scoped_cleanup();
       EXPECT_FALSE(result);
       EXPECT_EQ(result.error_code(), uv::make_error_code(UV_ENOENT));
@@ -296,16 +296,16 @@ TEST(Uvpp2Fs, reportsOpenMissingFile) {
 }
 
 TEST(Uvpp2Fs, resultTypesExposeCommonStatusInterface) {
-  static_assert(fs_result_status_contract<uv::fs::raw::status_result>);
-  static_assert(fs_result_status_contract<uv::fs::raw::open_result>);
-  static_assert(fs_result_status_contract<uv::fs::raw::byte_count_result>);
-  static_assert(fs_result_status_contract<uv::fs::raw::stat_result>);
-  static_assert(fs_result_status_contract<uv::fs::raw::path_result>);
-  static_assert(fs_result_status_contract<uv::fs::raw::temp_file_result>);
-  static_assert(fs_result_status_contract<uv::fs::raw::statfs_result>);
-  static_assert(fs_result_status_contract<uv::fs::raw::scandir_result>);
-  static_assert(fs_result_status_contract<uv::fs::raw::opendir_result>);
-  static_assert(fs_result_status_contract<uv::fs::raw::readdir_result>);
+  static_assert(fs_result_status_contract<uv::raw::fs::status_result>);
+  static_assert(fs_result_status_contract<uv::raw::fs::open_result>);
+  static_assert(fs_result_status_contract<uv::raw::fs::byte_count_result>);
+  static_assert(fs_result_status_contract<uv::raw::fs::stat_result>);
+  static_assert(fs_result_status_contract<uv::raw::fs::path_result>);
+  static_assert(fs_result_status_contract<uv::raw::fs::temp_file_result>);
+  static_assert(fs_result_status_contract<uv::raw::fs::statfs_result>);
+  static_assert(fs_result_status_contract<uv::raw::fs::scandir_result>);
+  static_assert(fs_result_status_contract<uv::raw::fs::opendir_result>);
+  static_assert(fs_result_status_contract<uv::raw::fs::readdir_result>);
 
   static_assert(fs_result_status_contract<uv::fs::status_result>);
   static_assert(fs_result_status_contract<uv::fs::open_result>);
@@ -317,7 +317,7 @@ TEST(Uvpp2Fs, resultTypesExposeCommonStatusInterface) {
   static_assert(fs_result_status_contract<uv::fs::statfs_result>);
   static_assert(fs_result_status_contract<uv::fs::scandir_result>);
 
-  uv::fs::raw::status_result failed{UV_ENOENT};
+  uv::raw::fs::status_result failed{UV_ENOENT};
   EXPECT_FALSE(failed.status());
   EXPECT_EQ(failed.status().error().native(), UV_ENOENT);
   EXPECT_EQ(failed.raw_status(), UV_ENOENT);
@@ -345,10 +345,10 @@ TEST(Uvpp2Fs, unlinksFile) {
   }
 
   uv::loop loop;
-  uv::fs::raw::request request;
+  uv::raw::fs::request request;
   bool done = false;
 
-  uv::fs::raw::unlink(loop, request, path.string(), [&](uv::fs::raw::request &request, uv::fs::raw::status_result result) {
+  uv::raw::fs::unlink(loop, request, path.string(), [&](uv::raw::fs::request &request, uv::raw::fs::status_result result) {
     auto cleanup = request.scoped_cleanup();
     EXPECT_TRUE(result);
     done = true;
@@ -365,11 +365,11 @@ TEST(Uvpp2Fs, runsStaticCallbacks) {
   std::filesystem::remove(path);
 
   uv::loop loop;
-  uv::fs::raw::request request;
+  uv::raw::fs::request request;
   static_fs_state state{&loop, &request, path.string()};
   current_static_fs = &state;
 
-  uv::fs::raw::open_static<on_static_fs_open>(loop, request, state.path, O_CREAT | O_TRUNC | O_RDWR, 0644);
+  uv::raw::fs::open_static<on_static_fs_open>(loop, request, state.path, O_CREAT | O_TRUNC | O_RDWR, 0644);
 
   loop.run();
   EXPECT_TRUE(state.opened);
@@ -398,12 +398,12 @@ TEST(Uvpp2Fs, resolvesRealpathAndReadlinkWithRequestScopedPaths) {
   }
 
   uv::loop loop;
-  uv::fs::raw::request request;
+  uv::raw::fs::request request;
   std::string readlink_path;
   std::string real_path;
 
-  uv::fs::raw::readlink(loop, request, link.string(),
-    [&](uv::fs::raw::request &request, uv::fs::raw::path_result result) {
+  uv::raw::fs::readlink(loop, request, link.string(),
+    [&](uv::raw::fs::request &request, uv::raw::fs::path_result result) {
     auto cleanup = request.scoped_cleanup();
     ASSERT_TRUE(result);
     readlink_path = result.path();
@@ -412,8 +412,8 @@ TEST(Uvpp2Fs, resolvesRealpathAndReadlinkWithRequestScopedPaths) {
   loop.run();
   EXPECT_EQ(readlink_path, target.string());
 
-  uv::fs::raw::realpath(loop, request, target.string(),
-    [&](uv::fs::raw::request &request, uv::fs::raw::path_result result) {
+  uv::raw::fs::realpath(loop, request, target.string(),
+    [&](uv::raw::fs::request &request, uv::raw::fs::path_result result) {
     auto cleanup = request.scoped_cleanup();
     ASSERT_TRUE(result);
     real_path = result.path();
@@ -440,12 +440,12 @@ TEST(Uvpp2Fs, copiesFilesAndSendsFileRanges) {
   }
 
   uv::loop loop;
-  uv::fs::raw::request request;
+  uv::raw::fs::request request;
   bool copied_done = false;
   bool sent_done = false;
 
-  uv::fs::raw::copyfile(loop, request, source.string(), copied.string(), 0,
-    [&](uv::fs::raw::request &request, uv::fs::raw::status_result result) {
+  uv::raw::fs::copyfile(loop, request, source.string(), copied.string(), 0,
+    [&](uv::raw::fs::request &request, uv::raw::fs::status_result result) {
       auto cleanup = request.scoped_cleanup();
       EXPECT_TRUE(result);
       copied_done = true;
@@ -460,8 +460,8 @@ TEST(Uvpp2Fs, copiesFilesAndSendsFileRanges) {
   int out_fd = uvpp::test::open_file(sent, O_CREAT | O_TRUNC | O_WRONLY, 0644);
   ASSERT_GE(out_fd, 0);
 
-  uv::fs::raw::sendfile(loop, request, uv::file_descriptor{out_fd}, uv::file_descriptor{in_fd}, 5, 4,
-    [&](uv::fs::raw::request &request, uv::fs::raw::byte_count_result result) {
+  uv::raw::fs::sendfile(loop, request, uv::file_descriptor{out_fd}, uv::file_descriptor{in_fd}, 5, 4,
+    [&](uv::raw::fs::request &request, uv::raw::fs::byte_count_result result) {
       auto cleanup = request.scoped_cleanup();
       ASSERT_TRUE(result);
       EXPECT_EQ(result.count(), 4u);
@@ -495,11 +495,11 @@ TEST(Uvpp2Fs, scansDirectoryEntriesWithoutCopyingInTheWrapper) {
   }
 
   uv::loop loop;
-  uv::fs::raw::request request;
+  uv::raw::fs::request request;
   std::vector<std::string> names;
 
-  uv::fs::raw::scandir(loop, request, dir.string(), 0,
-    [&](uv::fs::raw::request &request, uv::fs::raw::scandir_result result) {
+  uv::raw::fs::scandir(loop, request, dir.string(), 0,
+    [&](uv::raw::fs::request &request, uv::raw::fs::scandir_result result) {
       auto cleanup = request.scoped_cleanup();
       ASSERT_TRUE(result);
 
@@ -596,22 +596,22 @@ TEST(Uvpp2Fs, opensReadsAndClosesDirectory) {
   }
 
   uv::loop loop;
-  uv::fs::raw::request request;
-  uv::fs::raw::directory_read_buffer buffer{8};
-  uv::fs::raw::directory dir;
+  uv::raw::fs::request request;
+  uv::raw::fs::directory_read_buffer buffer{8};
+  uv::raw::fs::directory dir;
   std::vector<std::string> names;
   bool closed = false;
 
-  uv::fs::raw::opendir(loop, request, path.string(),
-    [&](uv::fs::raw::request &request, uv::fs::raw::opendir_result result) {
+  uv::raw::fs::opendir(loop, request, path.string(),
+    [&](uv::raw::fs::request &request, uv::raw::fs::opendir_result result) {
       {
         auto cleanup = request.scoped_cleanup();
         ASSERT_TRUE(result);
         dir = result.take_directory();
       }
 
-      uv::fs::raw::readdir(loop, request, dir, buffer,
-        [&](uv::fs::raw::request &request, uv::fs::raw::readdir_result result) {
+      uv::raw::fs::readdir(loop, request, dir, buffer,
+        [&](uv::raw::fs::request &request, uv::raw::fs::readdir_result result) {
           {
             auto cleanup = request.scoped_cleanup();
             ASSERT_TRUE(result);
@@ -621,8 +621,8 @@ TEST(Uvpp2Fs, opensReadsAndClosesDirectory) {
             }
           }
 
-          uv::fs::raw::closedir(loop, request, std::move(dir),
-            [&](uv::fs::raw::request &request, uv::fs::raw::status_result result) {
+          uv::raw::fs::closedir(loop, request, std::move(dir),
+            [&](uv::raw::fs::request &request, uv::raw::fs::status_result result) {
               auto cleanup = request.scoped_cleanup();
               EXPECT_TRUE(result);
               closed = true;
@@ -654,22 +654,22 @@ TEST(Uvpp2Fs, entriesViewIteratorPostIncrementReturnsOldState) {
   }
 
   uv::loop loop;
-  uv::fs::raw::request request;
-  uv::fs::raw::directory_read_buffer buffer{8};
-  uv::fs::raw::directory dir;
+  uv::raw::fs::request request;
+  uv::raw::fs::directory_read_buffer buffer{8};
+  uv::raw::fs::directory dir;
   bool checked = false;
   bool closed = false;
 
-  uv::fs::raw::opendir(loop, request, path.string(),
-    [&](uv::fs::raw::request &request, uv::fs::raw::opendir_result result) {
+  uv::raw::fs::opendir(loop, request, path.string(),
+    [&](uv::raw::fs::request &request, uv::raw::fs::opendir_result result) {
       {
         auto cleanup = request.scoped_cleanup();
         ASSERT_TRUE(result);
         dir = result.take_directory();
       }
 
-      uv::fs::raw::readdir(loop, request, dir, buffer,
-        [&](uv::fs::raw::request &request, uv::fs::raw::readdir_result result) {
+      uv::raw::fs::readdir(loop, request, dir, buffer,
+        [&](uv::raw::fs::request &request, uv::raw::fs::readdir_result result) {
           {
             auto cleanup = request.scoped_cleanup();
             ASSERT_TRUE(result);
@@ -685,8 +685,8 @@ TEST(Uvpp2Fs, entriesViewIteratorPostIncrementReturnsOldState) {
             checked = true;
           }
 
-          uv::fs::raw::closedir(loop, request, std::move(dir),
-            [&](uv::fs::raw::request &request, uv::fs::raw::status_result result) {
+          uv::raw::fs::closedir(loop, request, std::move(dir),
+            [&](uv::raw::fs::request &request, uv::raw::fs::status_result result) {
               auto cleanup = request.scoped_cleanup();
               EXPECT_TRUE(result);
               closed = true;
@@ -704,11 +704,12 @@ TEST(Uvpp2Fs, entriesViewIteratorPostIncrementReturnsOldState) {
 }
 
 TEST(Uvpp2Fs, failedClosedirSubmissionKeepsDirectoryOwnership) {
-  uv::fs::raw::directory dir{reinterpret_cast<uv_dir_t *>(0x1)};
+  uv::raw::fs::directory dir{reinterpret_cast<uv_dir_t *>(0x1)};
 
-  EXPECT_THROW(uv::fs::raw::detail::submit_closedir(dir, [](uv_dir_t *) {
-    throw uv::error{UV_EINVAL};
-  }), uv::error);
+  auto submitted = uv::raw::fs::detail::submit_closedir(dir, [](uv_dir_t *) {
+    return uv::status::from_native(UV_EINVAL);
+  });
+  EXPECT_EQ(submitted.error(), uv::make_error_code(UV_EINVAL));
 
   EXPECT_TRUE(dir);
   static_cast<void>(dir.release());
@@ -725,11 +726,11 @@ TEST(Uvpp2Fs, runsStaticCopyfileCallback) {
   }
 
   uv::loop loop;
-  uv::fs::raw::request request;
+  uv::raw::fs::request request;
   static_copyfile_state state;
   current_static_copyfile = &state;
 
-  uv::fs::raw::copyfile_static<on_static_copyfile>(loop, request, source.string(), copied.string());
+  uv::raw::fs::copyfile_static<on_static_copyfile>(loop, request, source.string(), copied.string());
 
   loop.run();
   EXPECT_TRUE(state.copied);
@@ -746,11 +747,11 @@ TEST(Uvpp2Fs, runsStaticMkdirCallback) {
   std::filesystem::remove_all(path);
 
   uv::loop loop;
-  uv::fs::raw::request request;
+  uv::raw::fs::request request;
   static_status_state state;
   current_static_status = &state;
 
-  uv::fs::raw::mkdir_static<on_static_status>(loop, request, path.string(), 0755);
+  uv::raw::fs::mkdir_static<on_static_status>(loop, request, path.string(), 0755);
 
   loop.run();
   EXPECT_TRUE(state.done);
@@ -1198,3 +1199,63 @@ TEST(Uvpp2FsSafe, reportsFilesystemStats) {
   EXPECT_TRUE(statfs_done);
 }
 #endif
+
+TEST(Uvpp2Fs, rawSubmissionFailuresReleaseCallbackAndPermitReuse) {
+  static_assert(!std::is_copy_constructible_v<uv::raw::fs::request>);
+  static_assert(!std::is_move_constructible_v<uv::raw::fs::request>);
+  uv::loop loop;
+  uv::raw::fs::request request;
+  int application_data = 42;
+  request.user_data(application_data);
+  auto *native = request.native();
+  bool rejected_callback = false;
+  auto submitted = uv::raw::fs::read(loop, request, uv::file_descriptor{-1},
+    std::span<const uv::buffer_view>{}, 0,
+    [&](uv::raw::fs::request &, uv::raw::fs::byte_count_result) {
+      rejected_callback = true;
+    });
+  EXPECT_EQ(submitted.error(), uv::make_error_code(UV_EINVAL));
+  request.cleanup();
+  request.invoke(); // A rejected submission must not retain the callable.
+  EXPECT_FALSE(rejected_callback);
+  EXPECT_EQ(request.user_data<int>(), &application_data);
+
+  auto rejected_static = [] (uv::raw::fs::request &, uv::raw::fs::byte_count_result) {
+    ADD_FAILURE() << "Rejected static submission delivered a callback";
+  };
+  submitted = uv::raw::fs::read_static<rejected_static>(uv::loop_view{loop.native()}, request,
+    uv::file_descriptor{-1}, std::span<const uv::buffer_view>{}, 0);
+  EXPECT_EQ(submitted.error(), uv::make_error_code(UV_EINVAL));
+  request.cleanup();
+
+  bool completed = false;
+  submitted = uv::raw::fs::fstat(loop, request, uv::file_descriptor{-1},
+    [&](uv::raw::fs::request &req, uv::raw::fs::stat_result result) {
+      EXPECT_EQ(&req, &request);
+      EXPECT_EQ(req.native(), native);
+      EXPECT_EQ(req.user_data<int>(), &application_data);
+      EXPECT_EQ(result.error_code(), uv::make_error_code(UV_EBADF));
+      req.cleanup();
+      completed = true;
+    });
+  ASSERT_TRUE(submitted);
+  EXPECT_FALSE(completed);
+  loop.run();
+  EXPECT_TRUE(completed);
+  loop.close();
+}
+
+TEST(Uvpp2Fs, highLevelSubmissionFailureStillThrowsAndReleasesState) {
+  uv::loop loop;
+  // Exercise the same ownership adapter as the callback facade with a
+  // deterministic immediate native failure, including native request cleanup.
+  auto *state = new uv::fs::detail::callback_state<uv::fs::byte_count_callback>{};
+  EXPECT_THROW(uv::fs::detail::submit_owned(state, [&] {
+    return uv::raw::fs::read(loop, state->request, uv::file_descriptor{-1},
+      std::span<const uv::buffer_view>{}, 0,
+      [](uv::raw::fs::request &, uv::raw::fs::byte_count_result) {
+        ADD_FAILURE() << "Rejected submission delivered a callback";
+      });
+  }), uv::error);
+  loop.close();
+}

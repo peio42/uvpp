@@ -116,3 +116,68 @@ uv::fs::read(loop, file, buffer, 0, [](uv::fs::byte_count_result result) {
 `read_owned` allocates and returns an `owned_buffer` in `read_result`. Use these
 forms when the callback caller cannot keep its own storage alive for the
 operation.
+
+## Raw filesystem protocol
+
+Include `<uvpp/fs/operations.hpp>` for `uv::raw::fs`. It contains the complete
+caller-controlled filesystem protocol: `request`, typed completion results,
+`directory`, `directory_read_buffer`, flags, and operations. There is no
+`uv::fs::raw` compatibility alias. The shared loop and descriptor/buffer vocabulary
+remain in `uv`.
+
+Every operation returns an immediate `uv::status`. Success means submission was
+accepted; its completion result arrives through the callback. Failure means no
+completion will arrive and the runtime callback has been cleared. Clean the
+request after either native completion or immediate native rejection, before reuse.
+A request is neither copyable nor movable, and its native `data` remains available
+to application code.
+
+```cpp
+uv::raw::fs::request request;
+auto submitted = uv::raw::fs::stat(loop, request, "input.txt",
+  [](uv::raw::fs::request& request, uv::raw::fs::stat_result result) {
+    auto cleanup = request.scoped_cleanup();
+    if (result) {
+      // Consume result.native() while request storage is still valid.
+    }
+  });
+if (!submitted) {
+  request.cleanup();
+  // Inspect submitted.error(). No callback is pending.
+}
+loop.run();
+```
+
+Supply a valid callback. The `operation_static<Callback>(...)` forms use a
+compile-time callback with the same arguments and submission status. Runtime
+one-shot callbacks are removed before delivery, allowing cleanup and resubmission
+from inside the callback. Exceptions escaping either callback form terminate.
+Neither form automatically cleans the native request.
+
+Results preserve descriptors, counts, and errors through typed accessors;
+`raw()` retains the native result, and `status()` normalizes successful payloads
+to zero. A raw read returning zero bytes follows libuv semantics; callers must
+account for an empty input buffer before interpreting it as EOF. Partial progress
+is not retried. Read/write buffers must survive actual completion, even after a
+native cancellation request. Path/stat/statfs/scandir results borrow native request
+storage and must be consumed or copied before cleanup. Scandir iteration is
+single-pass. Directory entry names from `readdir` also expire at request cleanup;
+consume them before cleaning that request or starting another read.
+
+Successful `opendir_result` must be consumed with `take_directory()`. Request
+cleanup does not close the directory. Keep the directory and its read buffer
+stable through each pending `readdir`, and clean that request before `closedir`.
+Pass the directory to `closedir` with `std::move`; ownership is released only if
+submission succeeds. On rejection the directory remains yours to retry; on
+accepted submission its storage belongs to libuv through completion. Directory
+and unconsumed open-directory result destructors diagnose abandoned ownership
+with assertions; they do not close implicitly. File descriptors returned by raw
+`open` likewise need an explicit close.
+
+Raw filesystem calls allocate no hidden uvpp operation state. Runtime callbacks
+use `std::function` and may allocate; path arguments are temporarily copied for
+NUL termination, directory read buffers allocate their entry array, and libuv may
+allocate native request storage. These setup costs may throw C++ exceptions;
+submission is not generally `noexcept`. The high-level callback facade allocates
+owned operation state, cleans rejected native requests, and throws on immediate
+native failure. Its typed completion and buffer policies are unchanged.

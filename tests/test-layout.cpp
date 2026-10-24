@@ -118,7 +118,7 @@ TEST(Uvpp2Layout, reconstructsRequestsFromNativePointers) {
   static_assert(std::is_standard_layout_v<uv::connect_request::native_storage>);
   static_assert(std::is_standard_layout_v<uv::getaddrinfo_request::native_storage>);
   static_assert(std::is_standard_layout_v<uv::getnameinfo_request::native_storage>);
-  static_assert(std::is_standard_layout_v<uv::fs::raw::request::native_storage>);
+  static_assert(std::is_standard_layout_v<uv::raw::fs::request::native_storage>);
 #if UVPP_HAS_RANDOM
   static_assert(std::is_standard_layout_v<uv::random_request::native_storage>);
 #endif
@@ -130,7 +130,7 @@ TEST(Uvpp2Layout, reconstructsRequestsFromNativePointers) {
   uv::connect_request connect;
   uv::getaddrinfo_request getaddrinfo;
   uv::getnameinfo_request getnameinfo;
-  uv::fs::raw::request fs;
+  uv::raw::fs::request fs;
 #if UVPP_HAS_RANDOM
   uv::random_request random;
 #endif
@@ -146,8 +146,8 @@ TEST(Uvpp2Layout, reconstructsRequestsFromNativePointers) {
   EXPECT_EQ(&getaddrinfo, &uv::getaddrinfo_request::from_native(getaddrinfo.native_request()));
   EXPECT_EQ(&getnameinfo, &uv::getnameinfo_request::from_native(getnameinfo.native()));
   EXPECT_EQ(&getnameinfo, &uv::getnameinfo_request::from_native(getnameinfo.native_request()));
-  EXPECT_EQ(&fs, &uv::fs::raw::request::from_native(fs.native()));
-  EXPECT_EQ(&fs, &uv::fs::raw::request::from_native(fs.native_request()));
+  EXPECT_EQ(&fs, &uv::raw::fs::request::from_native(fs.native()));
+  EXPECT_EQ(&fs, &uv::raw::fs::request::from_native(fs.native_request()));
 #if UVPP_HAS_RANDOM
   EXPECT_EQ(&random, &uv::random_request::from_native(random.native()));
   EXPECT_EQ(&random, &uv::random_request::from_native(random.native_request()));

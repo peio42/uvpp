@@ -15,8 +15,9 @@ implemented or frozen.
 | `uv::co` | Cold tasks, spawning, cancellation, and structured composition | `task<T>`, `spawn_handle<T>`, join, cooperative stop, timer sleep, task and resource scopes |
 | `uv::ops` | Explicit-result high-level operations and creation | Network listener/socket creation, read/write/accept/receive/send/close, signal/fs-event/poll-source next, DNS resolution, and filesystem open/read/write/close |
 
-Filesystem targets `uv::fs` and `uv::raw::fs`; existing `uv::fs::raw` code has
-not yet completed this migration. Existing filesystem, process, DNS, watcher,
+Filesystem uses `uv::fs` and `uv::raw::fs`. Raw filesystem submissions return
+`uv::status`, with caller-owned requests and explicit cleanup; the callback facade
+unwraps submission failures and owns its operation state. Existing process, DNS, watcher,
 and utility implementations do not establish their final v3 API merely by
 remaining in the source tree.
 

@@ -12,7 +12,7 @@ not the final v3 contract.
 | --- | --- | --- | --- | --- |
 | Loop and common values | `uv::loop`, common `uv` values | shared `uv::loop`; values remain in `uv` | Implemented target exception | Do not create a second `uv::raw::loop`; classify historical helpers individually. |
 | Process | `uv::raw::process` plus `uv::process` owner | `uv::raw::process` / `uv::process` | Implemented namespace split | Complete raw error-policy review and avoid confusing the two native layouts. |
-| Filesystem | `uv::fs::raw` requests, results, directory and operations | `uv::raw::fs` | Not migrated | Move the complete protocol together; preserve explicit request cleanup and directory ownership. |
+| Filesystem | `uv::raw::fs` requests, results, directory and operations | `uv::raw::fs` | Implemented namespace and submission-error migration | Submission returns `uv::status`; completion retains typed results. Explicit request cleanup and directory close remain caller-controlled. |
 | TCP, pipe, UDP | historical wrappers in `uv`; high-level owners also in `uv` | low-level wrappers in `uv::raw`; owners in `uv` | Not migrated | Resolve name collisions and migrate callback/request helpers with their error contracts. |
 | Signal, timer, idle, prepare, check, async, poll, TTY | historical handle wrappers in `uv` | Historical handle wrappers target `uv::raw`; distinct high-level owners, where justified, remain in `uv` | Not migrated | Do not treat the historical wrapper API as the future owner contract. |
 | DNS | callback request wrapper in `uv`; high-level `uv::resolve` | request machinery in `uv::raw`; owned result operation in `uv` | Not migrated | Keep native hints/request ownership out of the high-level surface. |

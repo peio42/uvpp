@@ -31,9 +31,9 @@ Native init failure destroys uninitialized state immediately; bind/listen failur
 releases initialized state into asynchronous close before error delivery. Neither
 surface drives a nested loop. C++ preparation precedes native init (including the
 legacy pipe-name copy), and allocation failures propagate in both policies.
-Raw explicit operational results are the target; the low-level submission helpers
-below have not yet completed that migration. C++ setup failures need separate
-contracts and result-oriented does not imply `noexcept`.
+Raw filesystem submissions implement explicit operational results; other low-level
+submission helpers below have not yet completed that migration. C++ setup failures
+need separate contracts and result-oriented does not imply `noexcept`.
 
 Task promises capture exceptions; child awaits and completed spawn-handle result
 observation rethrow them. Current wrong-loop owner awaits raise `std::logic_error`.
@@ -44,7 +44,8 @@ error/retention rules are implemented.
 
 ## Existing low-level failures and exceptions
 
-Existing low-level submission APIs throw `uv::error` on a negative native submission result.
+Historical low-level submission APIs outside `uv::raw::fs` throw `uv::error` on
+a negative native submission result.
 `uv::error` derives from `std::system_error`; the libuv category formats messages
 with `uv_strerror`, while the exception constructor adds the `uv_err_name` context.
 The category's name is `libuv`. `uv::error_code` is the public operational-error
@@ -182,3 +183,13 @@ transfer and returns `UV_EAGAIN`, even for an unconnected pipe. Its
 and an empty `error_code()`. Unix unconnected pipes report a terminal native
 error instead. The platform test asserts each outcome separately rather than
 accepting either status on every platform.
+
+## Raw filesystem submission
+
+`uv::raw::fs` operations return immediate `uv::status` for both runtime and static
+callbacks. A failed submission clears the runtime callable and delivers no
+completion; the caller must still clean the native request. Accepted operations
+deliver their typed result later, releasing the one-shot callable before user
+code. The `uv::fs` callback facade unwraps submission status, cleaning the native
+request and releasing owned state before throwing. C++ preparation and callable
+allocation can still throw; raw filesystem submission is not generally `noexcept`.

@@ -8,7 +8,7 @@
 #include "uvpp/core/callback.hpp"
 #include "uvpp/requests/request.hpp"
 
-namespace uv::fs::raw {
+namespace uv::raw::fs {
 
   class request final : public basic_request<request, uv_fs_t> {
   public:

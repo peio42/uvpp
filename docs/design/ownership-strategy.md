@@ -90,9 +90,9 @@ ordinary completion callback.
 
 ## Low-level implementation boundaries
 
-Caller-owned requests must survive native completion and cleanup. Existing
-`uv::fs::raw::request` requires explicit request cleanup; the v3 namespace target
-is `uv::raw::fs`. Filesystem convenience operation state may own a request and
+Caller-owned requests must survive native completion and cleanup.
+`uv::raw::fs::request` requires explicit cleanup after completion or immediate
+native submission failure, before reuse. Filesystem convenience operation state may own a request and
 result without owning the opened file. `file_descriptor` remains a copyable
 integer wrapper, not an asynchronous file owner. Raw directory handles require
 explicit close. Do not extend network scope behavior to those resources without

@@ -8,7 +8,7 @@
 
 #include <uv.h>
 
-namespace uv::fs::raw {
+namespace uv::raw::fs {
 
   enum class directory_entry_type {
     unknown = UV_DIRENT_UNKNOWN,

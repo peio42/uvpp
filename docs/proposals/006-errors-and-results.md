@@ -304,3 +304,12 @@ native error delivery alongside integer and wide-count behavior.
 The enum-overload follow-up passes local `make test-all GTEST_ARGS=--gtest_brief=1`
 with GCC and Clang: 390 main cases pass with two TTY skips per compiler,
 both isolated allocation cases pass, and examples build.
+
+## Raw filesystem migration progress
+
+`uv::raw::fs` callback and static submissions now return `uv::status` for immediate
+native errors. Typed completion results preserve native payloads and normalized
+error access. The high-level callback facade unwraps the status after cleaning
+rejected native requests. C++ preparation failures remain exceptions. Explicit
+cleanup, directory ownership rollback, and callback release/reuse are covered in
+[test-fs.cpp](../../tests/test-fs.cpp); other raw families still need adaptation.

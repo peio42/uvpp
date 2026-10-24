@@ -37,7 +37,7 @@ static_assert(std::same_as<decltype(uv::throw_if_error(UV_EBADF)), int>);
 static_assert(std::same_as<decltype(uv::throw_if_error(uv_errno_t{})), int>);
 
 void leak_opendir_result_for_death_test() {
-  uv::fs::raw::opendir_result result{0, reinterpret_cast<void *>(1)};
+  uv::raw::fs::opendir_result result{0, reinterpret_cast<void *>(1)};
 }
 
 }
