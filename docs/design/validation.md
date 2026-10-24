@@ -32,7 +32,7 @@ cases. Environment-dependent TTY and symlink skips remain visible.
 
 Configured jobs do not by themselves establish platform support. Native runner
 results are required for Windows/macOS validation; local Linux results establish
-only that platform's baseline. Minimum-libuv coverage, installed-package CI,
+only that platform's baseline. Minimum-libuv coverage,
 broader fault injection, and performance gates remain tracked in
 [proposal 010](../proposals/010-validation-and-performance.md).
 
@@ -79,3 +79,19 @@ view, seven buffer records, IPv4/IPv6/default destinations, and each borrowed
 base/length after overwriting source metadata. Copies own distinct metadata
 arrays and preserve borrowed addresses and payload pointers. The isolated
 allocation sweep remains separate and covers rollback/reusability under failure.
+
+Installed-package validation runs in every ordinary platform/compiler CI job.
+It installs to the runner's temporary directory, moves that prefix, copies only
+`examples/cmake-consumer` outside the checkout, and configures/builds it with the
+same compiler (and vcpkg toolchain on Windows). The optional expected-prefix guard
+requires an imported public target and verifies the package directory and
+exported uvpp include paths are within the relocated installation. The consumer
+sets its own Windows header macros; it never links repository validation targets.
+The release-package workflow's external consumer build is retained.
+
+`FindLibUV.cmake` prefers upstream `libuv::uv_a` over `libuv::uv` when both exist,
+independent of `BUILD_SHARED_LIBS`. Its `LibUV::LibUV` interface wrapper retains
+the selected target's transitive usage requirements. Older vcpkg config targets
+and normal pkg-config/path/library discovery remain fallbacks; the latter does
+not impose static linkage. The module is installed next to `uvppConfig.cmake` so
+dependency discovery runs from the package, not a source-tree module path.
