@@ -55,6 +55,13 @@ explicit open/write failures, scope cleanup, same-direction exclusion,
 read/write overlap, active-I/O close rejection, and cancellation retaining a
 borrowed write through terminal completion.
 
+Buffer preparation now uses the shared checked builder, assigning `uv_buf_t`
+fields by name rather than assuming Unix field order. Windows native lengths
+are validated before submission, with `std::length_error` in either policy;
+read/write preparation is therefore not `noexcept`. Successful completion byte
+counts are not narrowed to `int` while checking errors. Native Windows runner
+validation remains required.
+
 ## Remaining work
 
 - Decide the supported fallback when an unclosed standalone owner is destroyed;

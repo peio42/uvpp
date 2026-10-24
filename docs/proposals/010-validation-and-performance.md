@@ -224,3 +224,27 @@ sandbox to avoid its network/ptrace restrictions.
 Cross-platform/backend validation, allocation fault injection for filename
 materialization, allocation measurements, and broader performance gates remain
 open; local coverage does not freeze the API or establish portable event semantics.
+
+## Platform-CI failure follow-up
+
+The first native macOS run exposed an OS-dependent UDP failure fixture: sending
+to port zero may succeed. The result-surface test now uses an `AF_UNSPEC` address
+to exercise deterministic libuv submission validation. The Windows build exposed
+positional `uv_buf_t` initialization in filesystem coroutine awaiters; both now
+use named-field construction and length validation. Filesystem test paths use
+`uv_os_getpid()` instead of the POSIX CRT alias.
+
+Mutex and read/write lock contention probes now run on a different thread from
+the lock owner, avoiding Windows recursive-mutex assumptions and BSD self-lock
+errors. CTest preserves Google Test's per-case progress so a native abort reports
+the last running case. This addresses a plausible macOS abort path; the original
+brief log does not identify which test aborted. Passing native reruns are still
+required before claiming either platform is validated.
+
+Local follow-up validation passes `make test-all GTEST_ARGS=--gtest_brief=1`
+under GCC and Clang: each main suite passes 388 of 390 cases with two TTY skips,
+and each isolated allocation suite passes both cases. Filesystem test sources
+also pass syntax-only GCC/Clang compilation with a temporary libuv header overlay
+that puts a 32-bit `len` before `base`, matching the Windows buffer layout; this
+is a focused structural check, not an MSVC build or Windows runtime validation.
+CMake configuration confirms both CTest commands retain per-case progress.

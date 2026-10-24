@@ -63,3 +63,8 @@ are cast conveniences rather than runtime type checking.
 `once` uses the native static initializer and exposes a `noexcept` function-pointer
 form and `run_static<Callback>()`. It does not store arbitrary captured callables.
 The static trampoline retains the callback exception boundary.
+
+Contention tests use a separate contender thread while the owning thread keeps
+the lock held, then join before releasing it. Tests do not infer busy behavior
+from same-thread reacquisition: Windows mutexes are recursive, while BSD
+read/write lock reacquisition may produce `EDEADLK`, which libuv aborts on.

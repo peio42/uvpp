@@ -14,7 +14,7 @@ using namespace uvpp::test;
 
 TEST(UvppV3Filesystem, openWriteReadCloseUsesOneStableOwner) {
   const auto path = std::filesystem::temp_directory_path() /
-      ("uvpp-v3-filesystem-" + std::to_string(::getpid()) + "-roundtrip");
+      ("uvpp-v3-filesystem-" + std::to_string(uv_os_getpid()) + "-roundtrip");
   std::filesystem::remove(path);
   uv::loop loop;
   std::array<std::byte, 5> input{
@@ -71,7 +71,7 @@ TEST(UvppV3Filesystem, releasesReadSlotBeforeResumingContinuation) {
 
 TEST(UvppV3Filesystem, opsReturnsOpenAndWriteFailuresWithoutThrowing) {
   const auto path = std::filesystem::temp_directory_path() /
-      ("uvpp-v3-filesystem-" + std::to_string(::getpid()) + "-read-only");
+      ("uvpp-v3-filesystem-" + std::to_string(uv_os_getpid()) + "-read-only");
   std::filesystem::remove(path);
   {
     std::ofstream created{path};
@@ -111,7 +111,7 @@ TEST(UvppV3Filesystem, opsReturnsOpenAndWriteFailuresWithoutThrowing) {
 
 TEST(UvppV3Filesystem, resourceScopeClosesAnAdoptedFile) {
   const auto path = std::filesystem::temp_directory_path() /
-      ("uvpp-v3-filesystem-" + std::to_string(::getpid()) + "-scope");
+      ("uvpp-v3-filesystem-" + std::to_string(uv_os_getpid()) + "-scope");
   std::filesystem::remove(path);
   uv::loop loop;
   const std::array<std::byte, 1> data{std::byte{'s'}};
@@ -134,7 +134,7 @@ TEST(UvppV3Filesystem, resourceScopeClosesAnAdoptedFile) {
 
 TEST(UvppV3Filesystem, concurrentCloseAwaitersJoinOneTerminalRequest) {
   const auto path = std::filesystem::temp_directory_path() /
-      ("uvpp-v3-filesystem-" + std::to_string(::getpid()) + "-close-join");
+      ("uvpp-v3-filesystem-" + std::to_string(uv_os_getpid()) + "-close-join");
   std::filesystem::remove(path);
   uv::loop loop;
   bool first_closed = false;

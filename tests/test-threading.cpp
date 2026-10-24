@@ -62,7 +62,13 @@ TEST(Uvpp2Threading, mutexTryLockReportsBusy) {
   uv::mutex mutex;
 
   mutex.lock();
-  EXPECT_FALSE(mutex.try_lock());
+  bool acquired = false;
+  uv::thread contender{[&] {
+    acquired = mutex.try_lock();
+    if (acquired) mutex.unlock();
+  }};
+  contender.join();
+  EXPECT_FALSE(acquired);
   mutex.unlock();
 
   EXPECT_TRUE(mutex.try_lock());
@@ -81,14 +87,33 @@ TEST(Uvpp2Threading, recursiveMutexAllowsRepeatedLocking) {
 TEST(Uvpp2Threading, rwlockExposesReadAndWriteModes) {
   uv::rwlock lock;
 
+  // Probe contention from another thread. Trying a read/write lock already
+  // held by this thread can report EDEADLK on BSD (which libuv aborts on).
+  // Native Windows mutexes also permit recursive acquisition.
+  bool reader_acquired = false;
+  bool writer_acquired = false;
   lock.lock_read();
-  EXPECT_TRUE(lock.try_lock_read());
-  lock.unlock_read();
+  uv::thread shared_contender{[&] {
+    reader_acquired = lock.try_lock_read();
+    if (reader_acquired) lock.unlock_read();
+    writer_acquired = lock.try_lock_write();
+    if (writer_acquired) lock.unlock_write();
+  }};
+  shared_contender.join();
+  EXPECT_TRUE(reader_acquired);
+  EXPECT_FALSE(writer_acquired);
   lock.unlock_read();
 
   lock.lock_write();
-  EXPECT_FALSE(lock.try_lock_read());
-  EXPECT_FALSE(lock.try_lock_write());
+  uv::thread exclusive_contender{[&] {
+    reader_acquired = lock.try_lock_read();
+    if (reader_acquired) lock.unlock_read();
+    writer_acquired = lock.try_lock_write();
+    if (writer_acquired) lock.unlock_write();
+  }};
+  exclusive_contender.join();
+  EXPECT_FALSE(reader_acquired);
+  EXPECT_FALSE(writer_acquired);
   lock.unlock_write();
 
   EXPECT_TRUE(lock.try_lock_write());

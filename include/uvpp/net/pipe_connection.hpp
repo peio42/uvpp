@@ -341,7 +341,7 @@ public:
     receive_handle_result await_resume() {
       assert(!provisional_close_required_ || provisional_close_completed_);
       assert(!received_.empty() || status_ < 0);
-      throw_if_error(status_);
+      if (status_ < 0) throw_if_error(static_cast<int>(status_));
       return receive_handle_result{std::move(received_), bytes_transferred_};
     }
 
