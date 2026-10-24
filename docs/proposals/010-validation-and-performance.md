@@ -328,3 +328,15 @@ Local `make test-all GTEST_ARGS=--gtest_brief=1` passes with GCC and Clang:
 build. The buffer test also passes a Clang syntax-only check with 32-bit,
 Windows-order native buffer fields and constant/64-to-32 conversion diagnostics
 promoted to errors. This synthetic check does not replace an MSVC build.
+
+The remaining Clang self-comparison warning in buffer-limit rejection tests is
+addressed by making both native length and count types template parameters.
+On Unix, native lengths can alias `size_t`; on Windows the narrower native
+length still exercises rejection. Test expectations and warning flags are
+unchanged.
+
+Both complete GCC/Clang suites pass locally (390 main tests passed, two TTY
+skips per compiler, plus both allocation cases and example builds). Focused
+Clang syntax checks pass with `-Werror=tautological-compare` for the native Unix
+layout and a simulated Windows 32-bit length layout; the latter also promotes
+constant and 64-to-32 conversion warnings to errors.
