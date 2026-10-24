@@ -119,3 +119,11 @@ with `_SH_DENYNO` in place of
 deprecated `_wopen`, retaining binary I/O, permission masking, and the descriptor
 or `-1`/`errno` outcome. Warning flags remain enabled; no CRT deprecation
 suppression is added.
+
+A subsequent reported MSVC run compiles the filesystem tests and timer example,
+then rejects a local `next` constexpr callback referenced as a template argument
+inside a generic timer lambda (`C2065` and cascading callability/GTest errors).
+The one-shot rearming fixture now uses a namespace-scope static callback and
+explicitly typed runtime callbacks. Its runtime-to-static-to-runtime sequence,
+three deliveries, inactive one-shot observation, capture lifetime, and close
+checks remain intact. Native Windows CI must confirm the lookup workaround.

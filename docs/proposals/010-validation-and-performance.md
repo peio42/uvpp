@@ -517,3 +517,15 @@ floating-point, and fractional-ratio timer conversions with unreachable-code
 diagnostics promoted to errors. These checks do not reproduce MSVC's frontend
 or execute the Windows CRT branch; a native CI rerun must confirm both the
 internal-error workaround and the reported warning cleanup.
+
+The next reported MSVC run advances past the filesystem compilation, then fails
+in the one-shot timer rearming fixture: a generic lambda cannot resolve the
+local constexpr `next` used as a template argument (`C2065`, followed by cascading
+callability/GTest diagnostics). The fixture now uses a namespace-scope function
+and concrete timer-reference callback parameters, retaining all rearming and
+capture-lifetime assertions. This changes test expression shape only; a native
+CI rerun remains required to validate the MSVC workaround.
+
+The rearming-fixture follow-up passes complete GCC/Clang suites locally: 436 main
+cases pass with two existing TTY skips per compiler, both isolated allocation
+cases pass, and examples build. No library API, test skip, or warning policy changes.

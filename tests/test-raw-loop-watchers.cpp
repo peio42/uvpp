@@ -175,22 +175,23 @@ TEST_F(RawTimer, oneShotCompletionReleasesCaptureWithoutExplicitStop) {
   EXPECT_TRUE(retained.expired());
 }
 
+void on_rearmed_static_timer(uv::raw::timer &self) {
+  ++*self.user_data<int>();
+  EXPECT_FALSE(self.active());
+  EXPECT_TRUE(self.start(0ms, [](uv::raw::timer &last) {
+    ++*last.user_data<int>();
+    last.close();
+  }));
+}
+
 TEST_F(RawTimer, oneShotCanRearmStaticThenRuntimeFromDelivery) {
   int calls = 0;
   timer.user_data(calls);
   auto token = std::make_shared<int>(1);
   std::weak_ptr<int> old = token;
-  constexpr auto next = +[](uv::raw::timer &self) {
-    ++*self.user_data<int>();
-    EXPECT_FALSE(self.active());
-    EXPECT_TRUE(self.start(0ms, [](auto &last) {
-      ++*last.template user_data<int>();
-      last.close();
-    }));
-  };
-  ASSERT_TRUE(timer.start(0ms, [&, token](auto &self) {
+  ASSERT_TRUE(timer.start(0ms, [&, token](uv::raw::timer &self) {
     ++calls;
-    EXPECT_TRUE(self.template start_static<next>(0ms));
+    EXPECT_TRUE(self.start_static<on_rearmed_static_timer>(0ms));
     EXPECT_EQ(*token, 1);
   }));
   token.reset();
