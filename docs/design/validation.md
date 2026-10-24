@@ -5,7 +5,8 @@ x64 (MSVC), and macOS 26 ARM64 (Apple Clang). These jobs build the opt-in
 `UVPP_BUILD_TESTS` and `UVPP_BUILD_EXAMPLES` CMake targets in Debug mode. CTest
 runs the main suite and the separate UDP allocation-injection binary, each with
 a 180-second timeout. Failed jobs retain CTest diagnostics as artifacts.
-Linux ASan/UBSan remains a separate Makefile job with leak detection.
+Google Test's per-case progress remains in CTest logs so an abort identifies the
+last running case. Linux ASan/UBSan remains a separate Makefile job with leak detection.
 
 The library interface target has no Google Test dependency. CMake prefers
 libuv's config targets (including the older vcpkg unofficial target), retaining

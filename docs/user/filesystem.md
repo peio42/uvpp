@@ -45,6 +45,11 @@ count. Neither operation loops to fill or drain the buffer, so partial writes
 remain visible. An offset of `-1` uses and updates the file position; other
 offsets are explicit positions.
 
+Buffer lengths must fit the platform's `uv_buf_t::len` field. Preparing either
+`read` or `write` throws `std::length_error` for an unrepresentable length,
+including through `uv::ops::fs`; no native request is submitted. Successful byte
+counts retain their full native width.
+
 One read and one write may overlap on a file. A competing read or write returns
 `UV_EBUSY`; `close` also returns `UV_EBUSY` until both directions have settled.
 The bytes supplied to a read or write must remain valid, address-stable, and

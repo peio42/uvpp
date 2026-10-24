@@ -163,8 +163,10 @@ TEST(NetworkOps, UdpResultsPreserveDatagramsBusyCancellationAndNativeSubmissionF
     EXPECT_EQ(closed_receive.error().native(), UV_EBADF);
   };
   auto send = [&]() -> uv::co::task<void> {
-    // A zero destination port fails in uv_udp_send submission on this backend.
-    EXPECT_FALSE(co_await uv::ops::send_to(sender, "invalid", uv::ipv4{"127.0.0.1", 0}));
+    // AF_UNSPEC is rejected by libuv before native submission on every
+    // backend; a destination port of zero is accepted by some operating systems.
+    const auto failed_send = co_await uv::ops::send_to(sender, "invalid", uv::ipv4{sockaddr_in{}});
+    EXPECT_EQ(failed_send.error().native(), UV_EINVAL);
     EXPECT_TRUE(co_await uv::ops::send_to(sender, "packet", address));
     EXPECT_TRUE(co_await uv::ops::send_to(sender, std::span<const std::byte>{}, address));
     co_await sender.close();

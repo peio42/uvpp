@@ -18,6 +18,7 @@
 #include "uvpp/co/task.hpp"
 #include "uvpp/core/error.hpp"
 #include "uvpp/core/native.hpp"
+#include "uvpp/net/buffer.hpp"
 
 namespace uv::co {
 class resource_scope;
@@ -289,8 +290,9 @@ class detail_read_awaiter final
 
 public:
   detail_read_awaiter(std::shared_ptr<file_state> state, std::span<std::byte> buffer,
-                      std::int64_t offset) noexcept
-    : state_{std::move(state)}, buffer_{reinterpret_cast<char *>(buffer.data()), buffer.size()},
+                      std::int64_t offset)
+    : state_{std::move(state)}, buffer_{uv::detail::make_native_buffer(
+          reinterpret_cast<char *>(buffer.data()), buffer.size())},
       offset_{offset}, empty_{buffer.empty()} {}
 
   detail_read_awaiter(const detail_read_awaiter &) = delete;
@@ -350,7 +352,7 @@ public:
       return uv::result<file_read_result>{file_read_result{static_cast<std::size_t>(status_),
           !empty_ && status_ == 0}};
     } else {
-      throw_if_error(status_);
+      if (status_ < 0) throw_if_error(static_cast<int>(status_));
       return file_read_result{static_cast<std::size_t>(status_), !empty_ && status_ == 0};
     }
   }
@@ -403,9 +405,10 @@ class detail_write_awaiter final
 
 public:
   detail_write_awaiter(std::shared_ptr<file_state> state, std::span<const std::byte> buffer,
-                       std::int64_t offset) noexcept
-    : state_{std::move(state)}, buffer_{const_cast<char *>(reinterpret_cast<const char *>(buffer.data())),
-          buffer.size()}, offset_{offset}, empty_{buffer.empty()} {}
+                       std::int64_t offset)
+    : state_{std::move(state)}, buffer_{uv::detail::make_native_buffer(
+          const_cast<char *>(reinterpret_cast<const char *>(buffer.data())), buffer.size())},
+      offset_{offset}, empty_{buffer.empty()} {}
 
   detail_write_awaiter(const detail_write_awaiter &) = delete;
   detail_write_awaiter &operator=(const detail_write_awaiter &) = delete;
@@ -463,7 +466,7 @@ public:
       }
       return uv::result<std::size_t>{static_cast<std::size_t>(status_)};
     } else {
-      throw_if_error(status_);
+      if (status_ < 0) throw_if_error(static_cast<int>(status_));
       return static_cast<std::size_t>(status_);
     }
   }
@@ -627,7 +630,7 @@ private:
 }
 
 [[nodiscard]] inline detail::detail_read_awaiter<false> read(
-    file &owner, std::span<std::byte> buffer, std::int64_t offset = -1) noexcept {
+    file &owner, std::span<std::byte> buffer, std::int64_t offset = -1) {
   return detail::detail_read_awaiter<false>{detail::file_state_for(owner), buffer, offset};
 }
 
@@ -637,7 +640,7 @@ private:
 }
 
 [[nodiscard]] inline detail::detail_write_awaiter<false> write(
-    file &owner, std::span<const std::byte> buffer, std::int64_t offset = -1) noexcept {
+    file &owner, std::span<const std::byte> buffer, std::int64_t offset = -1) {
   return detail::detail_write_awaiter<false>{detail::file_state_for(owner), buffer, offset};
 }
 
@@ -664,7 +667,7 @@ namespace detail = uv::fs::detail;
 }
 
 [[nodiscard]] inline detail::detail_read_awaiter<true> read(
-    file &owner, std::span<std::byte> buffer, std::int64_t offset = -1) noexcept {
+    file &owner, std::span<std::byte> buffer, std::int64_t offset = -1) {
   return detail::detail_read_awaiter<true>{detail::file_state_for(owner), buffer, offset};
 }
 
@@ -674,7 +677,7 @@ namespace detail = uv::fs::detail;
 }
 
 [[nodiscard]] inline detail::detail_write_awaiter<true> write(
-    file &owner, std::span<const std::byte> buffer, std::int64_t offset = -1) noexcept {
+    file &owner, std::span<const std::byte> buffer, std::int64_t offset = -1) {
   return detail::detail_write_awaiter<true>{detail::file_state_for(owner), buffer, offset};
 }
 

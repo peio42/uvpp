@@ -161,3 +161,11 @@ waits `UV_EBUSY`, completed cancellation `UV_ECANCELED`, and waits on terminal o
 moved-from sources `UV_EBADF`. Construction remains throwing setup; execution-loop
 mismatch remains programmer misuse (`std::logic_error`). The historical raw
 `poll_result` is not the new owner's result shape.
+
+Filesystem coroutine read/write preparation uses the shared checked native-buffer
+builder. Its named field assignments support both Unix and Windows `uv_buf_t`
+layouts. Unrepresentable buffer lengths throw `std::length_error` in both policies
+before submission; these preparation functions are not `noexcept`. Completion
+counts stay `ssize_t` until converted to the public byte count; only negative
+native errors narrow to `int`. IPC handle receive follows that same error-only
+narrowing rule.
