@@ -11,7 +11,10 @@ This proposal is not an implemented API or a release commitment. Names are provi
 ## Motivation and current behavior
 
 The repository runs GCC and Clang tests on Ubuntu and includes native-layout tests.
-There is no current cross-platform CI matrix or broad benchmark suite; the first
+The CI workflow now configures Windows/MSVC x64 and macOS/Apple Clang ARM64
+alongside Linux GCC/Clang, using opt-in CMake test and example targets. Passing
+native runner results remain the validation gate; local Linux results alone do
+not establish Windows or macOS support. There is no broad benchmark suite; the first
 focused resource-scope cleanup measurement is described below. The [Makefile](../../Makefile) now generates and includes transitive header
 dependencies for test objects and examples, including regeneration of missing
 dependency files. This repair is an implemented baseline.
@@ -144,7 +147,23 @@ runs under ASan/UBSan. Sandboxed network restrictions and LeakSanitizer's ptrace
 limitation require running the complete suites outside that sandbox; these are
 host constraints, not skipped posting coverage.
 
-Platform jobs, broader TSan CI work, fault injection beyond the existing UDP case,
+The platform workflow and CMake/CTest targets are implemented, including the
+isolated UDP allocation binary, compiled examples, bounded test timeouts, and
+failure-log artifacts. Test fixtures use native named-pipe paths on Windows,
+sockets for coroutine polling, and the test executable as a child process for
+portable argument/environment/cwd/exit validation. POSIX-only signal delivery
+and raw pipe-descriptor polling remain explicit Windows skips. Platform runner
+validation is still required; no minimum-libuv baseline is established here.
+
+Local Linux/libuv 1.51.0 validation of this platform-CI slice passes
+`make test-all GTEST_ARGS=--gtest_brief=1` under GCC and Clang: each main suite
+runs 390 tests (388 pass, two TTY skips), and both isolated allocation cases pass.
+CMake's Debug build compiles all examples and both test binaries; CTest passes
+both executables. An installed-package consumer also configures and builds on
+Linux. Integration tests run outside the network-restricted sandbox. Windows
+and macOS jobs have not been executed locally; their native results remain pending.
+
+Broader TSan CI work, fault injection beyond the existing UDP case,
 installed-package validation, and recorded cross-platform benchmark baselines remain
 proposed. Acceptance requires those additions plus verified incremental rebuilding,
 a working platform matrix, and stable regression budgets.

@@ -28,6 +28,7 @@ TEST(UvppV3SignalSource, failedConstructionRetainsInitializedHandleThroughNative
   EXPECT_NO_THROW(loop.close());
 }
 
+#ifndef _WIN32
 TEST(UvppV3SignalSource, remainsSubscribedBetweenSuccessiveNextCalls) {
   uv::loop loop;
   uv::signal_source source(loop, SIGUSR1);
@@ -226,3 +227,9 @@ TEST(UvppV3SignalSource, movePreservesTheNativeSubscriptionAddress) {
   EXPECT_EQ(received, SIGUSR1);
   EXPECT_NO_THROW(loop.close());
 }
+
+#else
+TEST(UvppV3SignalSource, posixSignalDelivery) {
+  GTEST_SKIP() << "SIGUSR1 and raise delivery require POSIX signals";
+}
+#endif

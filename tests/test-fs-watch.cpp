@@ -2,7 +2,7 @@
 #include <filesystem>
 #include <fstream>
 #include <string>
-#include <unistd.h>
+#include "platform-support.hpp"
 
 #include "gtest/gtest.h"
 #include "uvpp/uv.hpp"
@@ -13,7 +13,7 @@ namespace {
 
 std::filesystem::path watch_path(const char *name) {
   return std::filesystem::temp_directory_path() /
-         ("uvpp-watch-" + std::to_string(::getpid()) + "-" + name);
+         ("uvpp-watch-" + std::to_string(uv_os_getpid()) + "-" + name);
 }
 
 void write_text(const std::filesystem::path &path, const char *text) {

@@ -9,7 +9,7 @@
 #include <string>
 #include <system_error>
 #include <vector>
-#include <unistd.h>
+#include "platform-support.hpp"
 #include <fcntl.h>
 #include <sys/stat.h>
 
@@ -20,7 +20,7 @@ namespace {
 
 std::filesystem::path temp_path(const char *name) {
   return std::filesystem::temp_directory_path() /
-         ("uvpp-fs-" + std::to_string(::getpid()) + "-" + name);
+         ("uvpp-fs-" + std::to_string(uv_os_getpid()) + "-" + name);
 }
 
 struct static_fs_state {
@@ -209,7 +209,9 @@ TEST(Uvpp2FsSafe, statResultExposesPortableFileStatus) {
     std::ofstream file{path};
     file << "stat";
   }
+#ifndef _WIN32
   ASSERT_EQ(::chmod(path.c_str(), 0640), 0);
+#endif
 
   uv::loop loop;
   bool done = false;
@@ -223,11 +225,13 @@ TEST(Uvpp2FsSafe, statResultExposesPortableFileStatus) {
     EXPECT_FALSE(status.is_directory());
     EXPECT_FALSE(status.is_symlink());
     EXPECT_EQ(status.size(), 4u);
+#ifndef _WIN32
     EXPECT_EQ(status.raw_permissions() & 0777u, 0640u);
     EXPECT_TRUE(status.has_permission(uv::fs::file_permission::owner_read));
     EXPECT_TRUE(status.has_permission(uv::fs::file_permission::owner_write));
     EXPECT_TRUE(status.has_permission(uv::fs::file_permission::group_read));
     EXPECT_FALSE(status.has_permission(uv::fs::file_permission::others_read));
+#endif
     EXPECT_GT(status.modification_time().time_since_epoch().count(), 0);
 
     EXPECT_EQ(result.native().st_size, 4);
@@ -451,9 +455,9 @@ TEST(Uvpp2Fs, copiesFilesAndSendsFileRanges) {
   ASSERT_TRUE(copied_done);
   EXPECT_EQ(read_text_file(copied), "copy-send");
 
-  int in_fd = ::open(source.c_str(), O_RDONLY);
+  int in_fd = uvpp::test::open_file(source, O_RDONLY);
   ASSERT_GE(in_fd, 0);
-  int out_fd = ::open(sent.c_str(), O_CREAT | O_TRUNC | O_WRONLY, 0644);
+  int out_fd = uvpp::test::open_file(sent, O_CREAT | O_TRUNC | O_WRONLY, 0644);
   ASSERT_GE(out_fd, 0);
 
   uv::fs::raw::sendfile(loop, request, uv::file_descriptor{out_fd}, uv::file_descriptor{in_fd}, 5, 4,
@@ -467,8 +471,8 @@ TEST(Uvpp2Fs, copiesFilesAndSendsFileRanges) {
   loop.run();
   EXPECT_TRUE(sent_done);
   loop.close();
-  ::close(in_fd);
-  ::close(out_fd);
+  uvpp::test::close_file(in_fd);
+  uvpp::test::close_file(out_fd);
 
   EXPECT_EQ(read_text_file(sent), "send");
 
@@ -955,7 +959,7 @@ TEST(Uvpp2FsSafe, createsTemporaryDirectoryAndFile) {
     created_file = std::filesystem::path{std::string{result.path()}};
     EXPECT_TRUE(std::filesystem::is_regular_file(created_file));
     EXPECT_GE(result.file().native(), 0);
-    ::close(result.file().native());
+    uvpp::test::close_file(result.file().native());
     mkstemp_done = true;
   });
   loop.run();
@@ -984,7 +988,7 @@ TEST(Uvpp2FsSafe, handlesDescriptorOperations) {
     file << "abcdef";
   }
 
-  int fd = ::open(path.c_str(), O_RDWR);
+  int fd = uvpp::test::open_file(path, O_RDWR);
   ASSERT_GE(fd, 0);
   uv::file_descriptor file{fd};
 
@@ -1023,7 +1027,7 @@ TEST(Uvpp2FsSafe, handlesDescriptorOperations) {
   });
   loop.run();
 
-  uv::fs::fchown(loop, file, static_cast<uv_uid_t>(::getuid()), static_cast<uv_gid_t>(::getgid()),
+  uv::fs::fchown(loop, file, static_cast<uv_uid_t>(uvpp::test::test_uid()), static_cast<uv_gid_t>(uvpp::test::test_gid()),
     [&](uv::fs::status_result result) {
       EXPECT_TRUE(result);
       fchown_done = true;
@@ -1059,7 +1063,7 @@ TEST(Uvpp2FsSafe, handlesDescriptorOperations) {
   EXPECT_TRUE(fdatasync_done);
   EXPECT_TRUE(second_fstat_done);
 
-  ::close(fd);
+  uvpp::test::close_file(fd);
   EXPECT_EQ(read_text_file(path), "abc");
   std::filesystem::remove(path);
 }
@@ -1093,7 +1097,7 @@ TEST(Uvpp2FsSafe, handlesLinksMetadataAndTimes) {
   });
   loop.run();
 
-  uv::fs::chown(loop, target.string(), static_cast<uv_uid_t>(::getuid()), static_cast<uv_gid_t>(::getgid()),
+  uv::fs::chown(loop, target.string(), static_cast<uv_uid_t>(uvpp::test::test_uid()), static_cast<uv_gid_t>(uvpp::test::test_gid()),
     [&](uv::fs::status_result result) {
       EXPECT_TRUE(result);
       chown_done = true;
@@ -1132,7 +1136,7 @@ TEST(Uvpp2FsSafe, handlesLinksMetadataAndTimes) {
 
   uv::fs::lstat(loop, symlink.string(), [&](uv::fs::stat_result result) {
     ASSERT_TRUE(result);
-    EXPECT_TRUE(S_ISLNK(result.native().st_mode));
+    EXPECT_TRUE(result.file_status().is_symlink());
     lstat_done = true;
   });
   loop.run();
@@ -1148,7 +1152,7 @@ TEST(Uvpp2FsSafe, handlesLinksMetadataAndTimes) {
   });
   loop.run();
 
-  uv::fs::lchown(loop, symlink.string(), static_cast<uv_uid_t>(::getuid()), static_cast<uv_gid_t>(::getgid()),
+  uv::fs::lchown(loop, symlink.string(), static_cast<uv_uid_t>(uvpp::test::test_uid()), static_cast<uv_gid_t>(uvpp::test::test_gid()),
     [&](uv::fs::status_result result) {
       if (!result && (result.error_code() == uv::make_error_code(UV_ENOSYS) ||
                       result.error_code() == uv::make_error_code(UV_EPERM))) {

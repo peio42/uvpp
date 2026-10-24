@@ -54,6 +54,9 @@ headers make their dependencies explicit.
 ## Build and validation
 
 Install a C++20 compiler, libuv, and Google Test for repository tests.
+CMake 3.20+ builds the tests and examples on Linux, Windows, and macOS; see
+[repository checks](docs/user/getting-started.md#repository-checks) for commands
+and platform dependencies. The Unix Makefile provides these shortcuts:
 
 ```sh
 make test          # default compiler suite and examples

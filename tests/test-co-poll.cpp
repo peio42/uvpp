@@ -10,18 +10,54 @@
 #include <fcntl.h>
 #include <sys/socket.h>
 #include <unistd.h>
+#endif
 
 namespace {
 struct socket_pair {
+#ifdef _WIN32
+  uv_os_sock_t fd[2]{INVALID_SOCKET, INVALID_SOCKET};
+#else
   int fd[2]{-1, -1};
+#endif
   socket_pair() {
+#ifdef _WIN32
+    if (uv_socketpair(SOCK_STREAM, 0, fd, 0, 0) != 0) {
+#else
     if (::socketpair(AF_UNIX, SOCK_STREAM, 0, fd) != 0) {
+#endif
       throw std::runtime_error{"socketpair failed"};
     }
   }
+  int write(const char *data, int size) const {
+#ifdef _WIN32
+    return ::send(fd[1], data, size, 0);
+#else
+    return static_cast<int>(::write(fd[1], data, size));
+#endif
+  }
+  int read(char *data, int size) const {
+#ifdef _WIN32
+    return ::recv(fd[0], data, size, 0);
+#else
+    return static_cast<int>(::read(fd[0], data, size));
+#endif
+  }
+  void expect_open() const {
+#ifdef _WIN32
+    int type = 0;
+    int length = sizeof(type);
+    EXPECT_EQ(getsockopt(fd[0], SOL_SOCKET, SO_TYPE, reinterpret_cast<char *>(&type), &length), 0);
+#else
+    EXPECT_NE(::fcntl(fd[0], F_GETFD), -1);
+#endif
+  }
   ~socket_pair() {
     for (auto descriptor : fd) {
+#ifdef _WIN32
+      if (descriptor != INVALID_SOCKET) { ::closesocket(descriptor); }
+#else
       if (descriptor >= 0) { ::close(descriptor); }
+#endif
     }
   }
 };
@@ -38,15 +74,17 @@ static_assert(std::is_nothrow_move_constructible_v<uv::poll_source>);
 TEST(UvppV3PollSource, inactiveConstructionAndCloseBorrowDescriptor) {
   uv::loop loop;
   socket_pair sockets;
-  uv::poll_source source{loop, sockets.fd[0]};
+  uv::poll_source source{loop, sockets.fd[0], uv::socket_poll};
   EXPECT_EQ(uv_is_active(source.native_handle()), 0);
+#ifndef _WIN32
   EXPECT_NE(::fcntl(sockets.fd[0], F_GETFL) & O_NONBLOCK, 0);
+#endif
   EXPECT_FALSE(loop.alive());
   auto close = [&]() -> uv::co::task<void> { co_await uv::ops::close(source); };
   auto execution = uv::co::spawn(loop, close());
   loop.run();
   expect_done(execution);
-  EXPECT_NE(::fcntl(sockets.fd[0], F_GETFD), -1);
+  sockets.expect_open();
   EXPECT_NO_THROW(loop.close());
 }
 
@@ -54,7 +92,7 @@ TEST(UvppV3PollSource, successiveWaitsRearmReadinessAndChangeMask) {
   uv::loop loop;
   socket_pair sockets;
   uv::poll_source source{loop, sockets.fd[0], uv::socket_poll};
-  ASSERT_EQ(::write(sockets.fd[1], "xy", 2), 2);
+  ASSERT_EQ(sockets.write("xy", 2), 2);
   int deliveries = 0;
   auto receive = [&]() -> uv::co::task<void> {
     auto first = co_await source.next(uv::poll_event::readable);
@@ -68,7 +106,7 @@ TEST(UvppV3PollSource, successiveWaitsRearmReadinessAndChangeMask) {
     EXPECT_TRUE(second.value().has(uv::poll_event::readable));
     ++deliveries;
     char bytes[2]{};
-    EXPECT_EQ(::read(sockets.fd[0], bytes, 2), 2);
+    EXPECT_EQ(sockets.read(bytes, 2), 2);
     auto writable = co_await source.next(uv::poll_event::writable);
     EXPECT_TRUE(writable.has(uv::poll_event::writable));
     ++deliveries;
@@ -85,9 +123,9 @@ TEST(UvppV3PollSource, successiveWaitsRearmReadinessAndChangeMask) {
 TEST(UvppV3PollSource, idleIntervalRetainsNoStaleReadiness) {
   uv::loop loop;
   socket_pair sockets;
-  uv::poll_source source{loop, sockets.fd[0]};
+  uv::poll_source source{loop, sockets.fd[0], uv::socket_poll};
   uv::timer sender{loop};
-  ASSERT_EQ(::write(sockets.fd[1], "x", 1), 1);
+  ASSERT_EQ(sockets.write("x", 1), 1);
   bool fresh_write = false;
   auto wait = [&]() -> uv::co::task<void> {
     (void)co_await source.next(uv::poll_event::readable);
@@ -95,15 +133,15 @@ TEST(UvppV3PollSource, idleIntervalRetainsNoStaleReadiness) {
     // Drive the loop while readiness remains present and no waiter is active.
     co_await uv::co::sleep_for(std::chrono::milliseconds{1});
     char byte{};
-    EXPECT_EQ(::read(sockets.fd[0], &byte, 1), 1);
+    EXPECT_EQ(sockets.read(&byte, 1), 1);
     sender.start(std::chrono::milliseconds{1}, [&](uv::timer &timer) {
       fresh_write = true;
-      EXPECT_EQ(::write(sockets.fd[1], "y", 1), 1);
+      EXPECT_EQ(sockets.write("y", 1), 1);
       timer.close();
     });
     (void)co_await source.next(uv::poll_event::readable);
     EXPECT_TRUE(fresh_write); // No cached notification from the idle interval.
-    EXPECT_EQ(::read(sockets.fd[0], &byte, 1), 1);
+    EXPECT_EQ(sockets.read(&byte, 1), 1);
     EXPECT_EQ(byte, 'y');
     co_await source.close();
   };
@@ -116,7 +154,7 @@ TEST(UvppV3PollSource, idleIntervalRetainsNoStaleReadiness) {
 TEST(UvppV3PollSource, concurrentWaitDoesNotReplaceOriginalMask) {
   uv::loop loop;
   socket_pair sockets;
-  uv::poll_source source{loop, sockets.fd[0]};
+  uv::poll_source source{loop, sockets.fd[0], uv::socket_poll};
   bool readable = false;
   auto first = [&]() -> uv::co::task<void> {
     readable = (co_await source.next(uv::poll_event::readable)).has(uv::poll_event::readable);
@@ -131,7 +169,7 @@ TEST(UvppV3PollSource, concurrentWaitDoesNotReplaceOriginalMask) {
     } catch (const uv::error &error) {
       EXPECT_EQ(error.code().value(), UV_EBUSY);
     }
-    EXPECT_EQ(::write(sockets.fd[1], "x", 1), 1);
+    EXPECT_EQ(sockets.write("x", 1), 1);
   };
   auto a = uv::co::spawn(loop, first());
   auto b = uv::co::spawn(loop, second());
@@ -145,7 +183,7 @@ TEST(UvppV3PollSource, concurrentWaitDoesNotReplaceOriginalMask) {
 TEST(UvppV3PollSource, cancellationStopsWatcherAndAnotherTaskCanReuseSource) {
   uv::loop loop;
   socket_pair sockets;
-  uv::poll_source source{loop, sockets.fd[0]};
+  uv::poll_source source{loop, sockets.fd[0], uv::socket_poll};
   int cancelled = 0;
   auto wait = [&]() -> uv::co::task<void> {
     auto result = co_await uv::ops::next(source, uv::poll_event::readable);
@@ -180,7 +218,7 @@ TEST(UvppV3PollSource, cancellationStopsWatcherAndAnotherTaskCanReuseSource) {
 TEST(UvppV3PollSource, closeCancelsWaiterBeforeNativeCloseAndJoinsRepeatedClose) {
   uv::loop loop;
   socket_pair sockets;
-  uv::poll_source source{loop, sockets.fd[0]};
+  uv::poll_source source{loop, sockets.fd[0], uv::socket_poll};
   int cancelled = 0;
   int closed = 0;
   auto wait = [&]() -> uv::co::task<void> {
@@ -208,14 +246,14 @@ TEST(UvppV3PollSource, closeCancelsWaiterBeforeNativeCloseAndJoinsRepeatedClose)
   expect_done(a);
   expect_done(b);
   EXPECT_EQ(closed, 2);
-  EXPECT_NE(::fcntl(sockets.fd[0], F_GETFD), -1);
+  sockets.expect_open();
   EXPECT_NO_THROW(loop.close());
 }
 
 TEST(UvppV3PollSource, movingActiveOwnerPreservesWaitAndNativeAddress) {
   uv::loop loop;
   socket_pair sockets;
-  uv::poll_source original{loop, sockets.fd[0]};
+  uv::poll_source original{loop, sockets.fd[0], uv::socket_poll};
   auto *native = original.native();
   auto wait = [&]() -> uv::co::task<void> {
     EXPECT_TRUE((co_await original.next(uv::poll_event::readable)).has(uv::poll_event::readable));
@@ -233,7 +271,7 @@ TEST(UvppV3PollSource, movingActiveOwnerPreservesWaitAndNativeAddress) {
   };
   auto rejected = uv::co::spawn(loop, moved_from());
   expect_done(rejected);
-  ASSERT_EQ(::write(sockets.fd[1], "x", 1), 1);
+  ASSERT_EQ(sockets.write("x", 1), 1);
   loop.run();
   expect_done(execution);
   EXPECT_EQ(uv_is_active(moved.native_handle()), 0);
@@ -245,24 +283,24 @@ TEST(UvppV3PollSource, movingActiveOwnerPreservesWaitAndNativeAddress) {
 TEST(UvppV3PollSource, deliveryCanDestroyOwnerAndStorageSurvivesClose) {
   uv::loop loop;
   socket_pair sockets;
-  std::optional<uv::poll_source> source{std::in_place, loop, sockets.fd[0]};
+  std::optional<uv::poll_source> source{std::in_place, loop, sockets.fd[0], uv::socket_poll};
   auto wait = [&]() -> uv::co::task<void> {
     EXPECT_TRUE((co_await source->next(uv::poll_event::readable)).has(uv::poll_event::readable));
     source.reset();
   };
   auto execution = uv::co::spawn(loop, wait());
-  ASSERT_EQ(::write(sockets.fd[1], "x", 1), 1);
+  ASSERT_EQ(sockets.write("x", 1), 1);
   loop.run();
   expect_done(execution);
   EXPECT_FALSE(source);
-  EXPECT_NE(::fcntl(sockets.fd[0], F_GETFD), -1);
+  sockets.expect_open();
   EXPECT_NO_THROW(loop.close());
 }
 
 TEST(UvppV3PollSource, destructionCancelsActiveWaitAndRetainsNativeStorage) {
   uv::loop loop;
   socket_pair sockets;
-  std::optional<uv::poll_source> source{std::in_place, loop, sockets.fd[0]};
+  std::optional<uv::poll_source> source{std::in_place, loop, sockets.fd[0], uv::socket_poll};
   int deliveries = 0;
   auto wait = [&]() -> uv::co::task<void> {
     auto cancelled = co_await uv::ops::next(*source, uv::poll_event::readable);
@@ -283,7 +321,7 @@ TEST(UvppV3PollSource, destructionCancelsActiveWaitAndRetainsNativeStorage) {
 TEST(UvppV3PollSource, closeCancellationCanReleaseOwnerBeforeNativeClose) {
   uv::loop loop;
   socket_pair sockets;
-  std::optional<uv::poll_source> source{std::in_place, loop, sockets.fd[0]};
+  std::optional<uv::poll_source> source{std::in_place, loop, sockets.fd[0], uv::socket_poll};
   auto wait = [&]() -> uv::co::task<void> {
     auto result = co_await uv::ops::next(*source, uv::poll_event::readable);
     EXPECT_EQ(result.error(), uv::make_error_code(UV_ECANCELED));
@@ -303,7 +341,7 @@ TEST(UvppV3PollSource, closeCancellationCanReleaseOwnerBeforeNativeClose) {
 TEST(UvppV3PollSource, invalidMasksUseAwaitPolicyAndLeaveSourceReusable) {
   uv::loop loop;
   socket_pair sockets;
-  uv::poll_source source{loop, sockets.fd[0]};
+  uv::poll_source source{loop, sockets.fd[0], uv::socket_poll};
   auto wait = [&]() -> uv::co::task<void> {
     for (auto mask : {uv::poll_events{}, uv::poll_events::from_raw(0x100)}) {
       auto invalid = co_await uv::ops::next(source, mask);
@@ -329,7 +367,7 @@ TEST(UvppV3PollSource, rejectsDifferentExecutionLoopBeforeArming) {
   uv::loop loop;
   uv::loop other;
   socket_pair sockets;
-  uv::poll_source source{loop, sockets.fd[0]};
+  uv::poll_source source{loop, sockets.fd[0], uv::socket_poll};
   auto wait = [&]() -> uv::co::task<void> {
     try {
       (void)co_await uv::ops::next(source, uv::poll_event::readable);
@@ -359,7 +397,7 @@ TEST(UvppV3PollSource, failedInitializationLeavesNoNativeHandleToClose) {
 TEST(UvppV3PollSource, completionErrorStopsAndReleasesWaiterBeforeRetry) {
   uv::loop loop;
   socket_pair sockets;
-  uv::poll_source source{loop, sockets.fd[0]};
+  uv::poll_source source{loop, sockets.fd[0], uv::socket_poll};
   int deliveries = 0;
   auto wait = [&]() -> uv::co::task<void> {
     auto error = co_await uv::ops::next(source, uv::poll_event::readable);
@@ -393,8 +431,8 @@ TEST(UvppV3PollSource, nativeSubmissionConflictUsesBothErrorPolicies) {
   socket_pair sockets;
   // Two inactive handles may initialize. Once the first is active, libuv
   // rejects starting the other with UV_EEXIST; they never poll concurrently.
-  uv::poll_source first{loop, sockets.fd[0]};
-  uv::poll_source second{loop, sockets.fd[0]};
+  uv::poll_source first{loop, sockets.fd[0], uv::socket_poll};
+  uv::poll_source second{loop, sockets.fd[0], uv::socket_poll};
   auto wait = [&]() -> uv::co::task<void> {
     auto cancelled = co_await uv::ops::next(first, uv::poll_event::readable);
     EXPECT_EQ(cancelled.error(), uv::make_error_code(UV_ECANCELED));
@@ -419,5 +457,4 @@ TEST(UvppV3PollSource, nativeSubmissionConflictUsesBothErrorPolicies) {
   expect_done(b);
   EXPECT_NO_THROW(loop.close());
 }
-#endif
 #endif

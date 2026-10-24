@@ -1,11 +1,12 @@
 #include <csignal>
 #include <cstdlib>
 #include <type_traits>
-#include <unistd.h>
+#include "platform-support.hpp"
 
 #include "gtest/gtest.h"
 #include "uvpp/uv.hpp"
 
+#ifndef _WIN32
 TEST(Uvpp2Signal, runsRuntimeCallback) {
   uv::loop loop;
   uv::signal signal(loop);
@@ -142,6 +143,15 @@ TEST(Uvpp2Poll, reportsReadableFileDescriptorWithStaticCallback) {
   close(fds[1]);
 }
 
+#else
+TEST(Uvpp2Poll, posixPipeDescriptor) {
+  GTEST_SKIP() << "Windows uv_poll supports sockets, not POSIX pipe descriptors";
+}
+TEST(Uvpp2Signal, posixSignalDelivery) {
+  GTEST_SKIP() << "SIGUSR1 and raise delivery require POSIX signals";
+}
+#endif
+
 TEST(Uvpp2ProcessOptions, buildsFluentOptions) {
   auto options = uv::raw::process_options::make("git")
     .arg("status")
@@ -231,11 +241,11 @@ TEST(Uvpp2ProcessOptions, buildsPipeStdioEntries) {
 }
 
 TEST(Uvpp2Process, inheritedEnvironmentIsVisibleToChild) {
-  ::setenv("UVPP_TEST_INHERIT_VAR", "present", 1);
+  uv_os_setenv("UVPP_TEST_INHERIT_VAR", "present");
 
   uv::loop loop;
-  auto options = uv::raw::process_options::make("/bin/sh")
-    .args({"-c", "test -n \"$UVPP_TEST_INHERIT_VAR\""});
+  auto options = uv::raw::process_options::make(uvpp::test::executable_path())
+    .args({"--uvpp-child", "environment", "present"});
 
   int exit_status = -1;
   uv::raw::process process(loop, options, [&](uv::raw::process &self, uv::raw::process_exit exit) {
@@ -247,15 +257,15 @@ TEST(Uvpp2Process, inheritedEnvironmentIsVisibleToChild) {
   EXPECT_EQ(exit_status, 0);
   loop.close();
 
-  ::unsetenv("UVPP_TEST_INHERIT_VAR");
+  uv_os_unsetenv("UVPP_TEST_INHERIT_VAR");
 }
 
 TEST(Uvpp2Process, emptyEnvironmentHidesParentVariables) {
-  ::setenv("UVPP_TEST_INHERIT_VAR", "present", 1);
+  uv_os_setenv("UVPP_TEST_INHERIT_VAR", "present");
 
   uv::loop loop;
-  auto options = uv::raw::process_options::make("/bin/sh")
-    .args({"-c", "test -z \"$UVPP_TEST_INHERIT_VAR\""})
+  auto options = uv::raw::process_options::make(uvpp::test::executable_path())
+    .args({"--uvpp-child", "environment", "absent"})
     .empty_environment();
 
   int exit_status = -1;
@@ -268,14 +278,14 @@ TEST(Uvpp2Process, emptyEnvironmentHidesParentVariables) {
   EXPECT_EQ(exit_status, 0);
   loop.close();
 
-  ::unsetenv("UVPP_TEST_INHERIT_VAR");
+  uv_os_unsetenv("UVPP_TEST_INHERIT_VAR");
 }
 
 TEST(Uvpp2Process, reportsExitStatus) {
   uv::loop loop;
 
-  auto options = uv::raw::process_options::make("/bin/sh")
-    .args({"-c", "exit 7"});
+  auto options = uv::raw::process_options::make(uvpp::test::executable_path())
+    .args({"--uvpp-child", "exit", "7"});
 
   bool exited = false;
   bool closed = false;
@@ -348,8 +358,8 @@ void on_static_process_exit(uv::raw::process &process, uv::raw::process_exit exi
 TEST(Uvpp2Process, reportsExitStatusWithStaticCallback) {
   uv::loop loop;
 
-  auto options = uv::raw::process_options::make("/bin/sh")
-    .args({"-c", "exit 3"});
+  auto options = uv::raw::process_options::make(uvpp::test::executable_path())
+    .args({"--uvpp-child", "exit", "3"});
   static_process_exited = false;
   static_process_closed = false;
 

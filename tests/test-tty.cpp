@@ -1,16 +1,16 @@
 #include <optional>
-#include <unistd.h>
+#include "platform-support.hpp"
 
 #include "gtest/gtest.h"
 #include "uvpp/uv.hpp"
 
 TEST(Uvpp2Tty, initializesWhenStdoutIsATty) {
-  if (uv_guess_handle(STDOUT_FILENO) != UV_TTY) {
+  if (uv_guess_handle(1) != UV_TTY) {
     GTEST_SKIP() << "stdout is not a tty";
   }
 
   uv::loop loop;
-  uv::tty tty(loop, STDOUT_FILENO, false);
+  uv::tty tty(loop, 1, false);
 
   auto size = tty.size();
   EXPECT_GE(size.width, 0);

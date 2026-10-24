@@ -6,7 +6,7 @@
 #include <optional>
 #include <string>
 #include <string_view>
-#include <unistd.h>
+#include "platform-support.hpp"
 
 #include "gtest/gtest.h"
 #include "uvpp/handles/pipe.hpp"
@@ -45,7 +45,7 @@ inline bool loopback_tcp_is_permitted() {
 
 inline std::filesystem::path filesystem_test_path(std::string_view name) {
   return std::filesystem::temp_directory_path() /
-      ("uvpp-v3-filesystem-" + std::to_string(::getpid()) + "-" + std::string{name});
+      ("uvpp-v3-filesystem-" + std::to_string(uv_os_getpid()) + "-" + std::string{name});
 }
 
 inline void write_filesystem_test_file(const std::filesystem::path &path, std::string_view contents) {
@@ -94,7 +94,7 @@ struct connected_tcp_pair {
 };
 
 inline std::string v3_pipe_path() {
-  return "/tmp/uvpp-v3-pipe-test-" + std::to_string(uv_os_getpid());
+  return pipe_path("v3");
 }
 
 inline bool local_pipe_is_permitted() {

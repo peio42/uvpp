@@ -1,5 +1,5 @@
 #include <type_traits>
-#include <unistd.h>
+#include "platform-support.hpp"
 
 #include "gtest/gtest.h"
 #include "uvpp/uv.hpp"
@@ -34,9 +34,15 @@ TEST(Uvpp2Layout, reconstructsHandlesFromNativePointers) {
   uv::fs_poll fs_poll(loop);
   uv::idle idle(loop);
   uv::pipe pipe(loop);
+#ifdef _WIN32
+  uv_os_sock_t fds[2]{};
+  ASSERT_EQ(uv_socketpair(SOCK_STREAM, 0, fds, 0, 0), 0);
+  uv::poll poll(loop, fds[0], uv::socket_poll);
+#else
   int fds[2]{};
   ASSERT_EQ(::pipe(fds), 0);
   uv::poll poll(loop, fds[0]);
+#endif
   uv::prepare prepare(loop);
   uv::signal signal(loop);
   uv::timer timer(loop);
@@ -82,8 +88,13 @@ TEST(Uvpp2Layout, reconstructsHandlesFromNativePointers) {
   udp.close();
   loop.run();
   loop.close();
+#ifdef _WIN32
+  closesocket(fds[0]);
+  closesocket(fds[1]);
+#else
   close(fds[0]);
   close(fds[1]);
+#endif
 }
 
 TEST(Uvpp2Layout, reconstructsTtyFromNativePointersWhenAvailable) {

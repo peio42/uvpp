@@ -9,6 +9,30 @@
 # Imported targets
 #   LibUV::LibUV          - the libuv library
 
+# Prefer upstream/vcpkg config targets, which carry Windows system libraries
+# and configuration-specific locations. Older vcpkg checkouts used unofficial-libuv.
+find_package(libuv CONFIG QUIET)
+if(TARGET libuv::uv_a)
+  set(_uvpp_libuv_target libuv::uv_a)
+elseif(TARGET libuv::uv)
+  set(_uvpp_libuv_target libuv::uv)
+else()
+  find_package(unofficial-libuv CONFIG QUIET)
+  if(TARGET unofficial::libuv::libuv)
+    set(_uvpp_libuv_target unofficial::libuv::libuv)
+  endif()
+endif()
+if(_uvpp_libuv_target)
+  if(NOT TARGET LibUV::LibUV)
+    add_library(LibUV::LibUV INTERFACE IMPORTED)
+    set_target_properties(LibUV::LibUV PROPERTIES
+      INTERFACE_LINK_LIBRARIES "${_uvpp_libuv_target}")
+  endif()
+  set(LibUV_FOUND TRUE)
+  unset(_uvpp_libuv_target)
+  return()
+endif()
+
 find_package(PkgConfig QUIET)
 if(PkgConfig_FOUND)
   pkg_check_modules(PC_LibUV QUIET libuv)

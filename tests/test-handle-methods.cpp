@@ -1,19 +1,9 @@
 #include <filesystem>
-#include <netinet/in.h>
 #include <string>
-#include <unistd.h>
+#include "platform-support.hpp"
 
 #include "gtest/gtest.h"
 #include "uvpp/uv.hpp"
-
-namespace {
-
-std::filesystem::path handle_path(const char *name) {
-  return std::filesystem::temp_directory_path() /
-         ("uvpp-handle-" + std::to_string(::getpid()) + "-" + name);
-}
-
-}
 
 TEST(Uvpp2HandleMethods, exposesNativeFileDescriptorAndSocketBuffers) {
   uv::loop loop;
@@ -55,7 +45,7 @@ TEST(Uvpp2HandleMethods, exposesTcpOptionsAndSocknames) {
 }
 
 TEST(Uvpp2HandleMethods, exposesPipePathAndPendingState) {
-  auto path = handle_path("pipe.sock");
+  auto path = std::filesystem::path{uvpp::test::pipe_path("methods")};
   std::filesystem::remove(path);
 
   uv::loop loop;
