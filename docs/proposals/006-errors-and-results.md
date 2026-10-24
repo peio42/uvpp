@@ -293,3 +293,14 @@ Local Linux validation passes `make test-all GTEST_ARGS=--gtest_brief=1` with
 GCC and Clang: each main suite passes 389 tests with two TTY skips, each isolated
 allocation suite passes both cases, and examples build. Native Windows/macOS
 validation of this helper change remains delegated to the platform CI jobs.
+
+A dedicated `uv_errno_t` overload now forwards native enum constants through the
+signed `int` specialization, preserving `throw_if_error(UV_EBADF)` convenience
+without accepting arbitrary enums or unsigned values. Native integer counts
+still select the type-preserving template; explicit-result operation branches
+are unchanged. Core tests cover the enum overload's `int` return type, zero, and
+native error delivery alongside integer and wide-count behavior.
+
+The enum-overload follow-up passes local `make test-all GTEST_ARGS=--gtest_brief=1`
+with GCC and Clang: 390 main cases pass with two TTY skips per compiler,
+both isolated allocation cases pass, and examples build.

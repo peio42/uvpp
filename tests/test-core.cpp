@@ -17,16 +17,24 @@ concept checked_status = requires(T status) {
   { uv::throw_if_error(status) } -> std::same_as<T>;
 };
 
+template<class T>
+concept accepted_status = requires(T status) { uv::throw_if_error(status); };
+
+enum foreign_status { foreign_error = -1 };
+
 static_assert(checked_status<signed char>);
 static_assert(checked_status<short>);
 static_assert(checked_status<int>);
 static_assert(checked_status<long>);
 static_assert(checked_status<long long>);
 static_assert(checked_status<ssize_t>);
-static_assert(!checked_status<unsigned int>);
-static_assert(!checked_status<bool>);
-static_assert(!checked_status<double>);
-static_assert(!checked_status<uv_errno_t>);
+static_assert(!accepted_status<unsigned int>);
+static_assert(!accepted_status<bool>);
+static_assert(!accepted_status<double>);
+static_assert(!accepted_status<foreign_status>);
+static_assert(accepted_status<uv_errno_t>);
+static_assert(std::same_as<decltype(uv::throw_if_error(UV_EBADF)), int>);
+static_assert(std::same_as<decltype(uv::throw_if_error(uv_errno_t{})), int>);
 
 void leak_opendir_result_for_death_test() {
   uv::fs::raw::opendir_result result{0, reinterpret_cast<void *>(1)};
@@ -49,9 +57,12 @@ TEST(Uvpp2Core, mapsLibuvStatusesToErrorCodes) {
 
 TEST(Uvpp2Core, checkThrowsUvppErrorOnLibuvFailure) {
   EXPECT_EQ(uv::throw_if_error(0), 0);
+  EXPECT_EQ(uv::throw_if_error(uv_errno_t{}), 0);
+  const int integer_error = UV_EINVAL;
+  EXPECT_THROW(uv::throw_if_error(integer_error), uv::error);
 
   try {
-    uv::throw_if_error<int>(UV_EINVAL);
+    uv::throw_if_error(UV_EINVAL);
     FAIL() << "uv::throw_if_error should throw on negative libuv status";
   } catch (const uv::error &err) {
     EXPECT_EQ(err.code(), static_cast<std::error_code>(uv::make_error_code(UV_EINVAL)));

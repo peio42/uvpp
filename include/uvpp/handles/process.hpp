@@ -834,7 +834,7 @@ public:
 
   void kill(int signum) {
     if (state_ == nullptr || state_->closing()) {
-      throw_if_error<int>(UV_EBADF);
+      throw_if_error(UV_EBADF);
     }
     throw_if_error(uv_process_kill(&state_->native, signum));
   }
@@ -933,10 +933,10 @@ public:
 
   void request_close() {
     if (state_ == nullptr) {
-      throw_if_error<int>(UV_EBADF);
+      throw_if_error(UV_EBADF);
     }
     if (!state_->exited) {
-      throw_if_error<int>(UV_EBUSY);
+      throw_if_error(UV_EBUSY);
     }
     (void)state_->request_close();
   }

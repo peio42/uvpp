@@ -56,9 +56,10 @@ produces the equivalent `std::error_code`. Nonnegative values map to an empty
 and unchanged value on success, and throws on a negative value. Positive byte
 counts are never narrowed to `int`; only negative native error codes are converted
 for `uv::error`. Callers must supply libuv error codes for negative values, which
-fit `int`. Enumeration constants need an explicit integral type, for example
-`throw_if_error<int>(UV_EINVAL)`. Its return value is used, for example, to preserve `uv_run()`'s
-nonzero result. Submission setup can also throw standard exceptions from string,
+fit `int`. A `uv_errno_t` overload delegates through `int`, allowing
+`throw_if_error(UV_EINVAL)` and returning `int` for enum arguments. Other enum
+types remain outside this overload. Its return value is used, for example, to
+preserve `uv_run()`'s nonzero result. Submission setup can also throw standard exceptions from string,
 vector, or callback storage allocation and explicit argument validation.
 
 Non-throwing variants exist selectively: `loop.try_close()` and supported request
