@@ -173,8 +173,14 @@ Setting a positive repeat on an inactive timer does not restart it. See
 [libuv's timer timing rules](https://docs.libuv.org/en/v1.x/timer.html).
 
 Duration inputs accept standard integral and floating-point chrono representations.
-Finite negative values clamp to zero; positive fractions truncate to whole
-milliseconds. Non-finite or overflowing values report `UV_EINVAL` before native
+Finite negative values first normalize to zero, then conversion to whole
+milliseconds truncates toward zero, without rounding up. For example, `-2ms`
+and `500us` both become `0ms`, while `1500us` becomes `1ms`. A zero timeout
+requests delivery on a subsequent loop iteration, not inline: an elapsed duration
+can therefore request an immediate timer without imposing a minimum one-millisecond
+delay. A repeat interval converted to zero disables repetition. This differs
+from `uv::co::sleep_for`, which rounds positive fractional milliseconds up.
+Non-finite or overflowing values report `UV_EINVAL` before native
 mutation or callback installation. Integral native-millisecond counts retain the
 full `uint64_t` range; ordinary integral units with an integer conversion factor
 are checked without overflowing intermediate chrono arithmetic. Other ratios and
@@ -186,7 +192,12 @@ integral boundaries; use integral milliseconds for exact native counts.
 `std::chrono::duration<uint64_t, std::milli>`, preserving native unsigned counts
 rather than narrowing them into signed milliseconds. `due_in()` retains the
 `UVPP_HAS_TIMER_GET_DUE_IN` capability gate (libuv 1.40.0). These native getters
-have no operational failure channel. Construction remains throwing initialization;
+have no operational failure channel and do not check `closing()`. They observe
+native state while the initialized handle's storage remains valid, including
+during closing. The associated loop must also remain alive for these queries.
+These observations do not imply that the timer remains active or can be restarted;
+the mutating methods still reject closing handles with `UV_EBADF`.
+Construction remains throwing initialization;
 callback preparation may allocate before `start` runs. Raw timeout rounding and
 lifetime rules do not change the separate high-level `uv::co::sleep_for` contract.
 

@@ -99,6 +99,49 @@ TEST(RawWatchers, signalFailurePreservesActiveCallbackAndStopReleasesIt) {
   loop.close();
 }
 
+TEST(RawWatchers, nativeReentrantStartFailureRestoresExecutingSignalCallback) {
+  uv::loop loop;
+  uv::raw::signal watcher{loop};
+  int calls = 0;
+  bool replacement_called = false;
+  auto original = std::make_shared<int>(42);
+  std::weak_ptr<int> retained = original;
+  ASSERT_TRUE(watcher.start(SIGINT, [&, original, count = 0](auto &self, int signum) mutable {
+    calls = ++count;
+    EXPECT_EQ(signum, SIGINT);
+    EXPECT_EQ(*original, 42);
+    if (count == 1) {
+      auto replacement = std::make_shared<int>(7);
+      std::weak_ptr<int> released = replacement;
+      // This reaches uv_signal_start and commit_start while the original
+      // callable has been moved out of persistent_callback_slot for delivery.
+      auto started = self.start(0, [&, replacement](auto&, int) { replacement_called = true; });
+      EXPECT_EQ(started.error(), uv::make_error_code(UV_EINVAL));
+      replacement.reset();
+      EXPECT_TRUE(released.expired());
+      EXPECT_FALSE(retained.expired());
+      EXPECT_NE(uv_is_active(self.native_handle()), 0);
+      EXPECT_EQ(self.native()->signum, SIGINT);
+    }
+  }));
+  original.reset();
+  auto *native = watcher.native();
+  const auto dispatch = native->signal_cb;
+  // Exercise registered native dispatch without platform-specific OS signals.
+  dispatch(native, SIGINT);
+  EXPECT_EQ(native->signal_cb, dispatch);
+  EXPECT_NE(uv_is_active(watcher.native_handle()), 0);
+  EXPECT_FALSE(retained.expired());
+  dispatch(native, SIGINT);
+  EXPECT_EQ(calls, 2);
+  EXPECT_FALSE(replacement_called);
+  EXPECT_TRUE(watcher.stop());
+  EXPECT_TRUE(retained.expired());
+  watcher.close();
+  loop.run();
+  loop.close();
+}
+
 TEST(RawWatchers, signalOneShotQuiescesBeforeRuntimeAndStaticRearming) {
 #ifdef _WIN32
   GTEST_SKIP() << "These delivery tests use POSIX SIGUSR1 and raise().";

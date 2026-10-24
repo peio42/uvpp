@@ -264,6 +264,46 @@ TEST_F(RawTimer, invalidDurationsPreserveNativeScheduleRepeatAndCallback) {
   EXPECT_TRUE(retained.expired());
 }
 
+TEST_F(RawTimer, failedReentrantStartPreservesExecutingCallbackAndNativeSchedule) {
+  int calls = 0;
+  bool replacement_called = false;
+  auto original = std::make_shared<int>(42);
+  std::weak_ptr<int> retained = original;
+  ASSERT_TRUE(timer.start(0ms, 1ms, [&, original, count = 0](auto &self) mutable {
+    calls = ++count;
+    EXPECT_EQ(*original, 42);
+    EXPECT_TRUE(self.active());
+    EXPECT_EQ(uv_timer_get_repeat(self.native()), std::uint64_t{1});
+    if (count == 1) {
+      auto replacement = std::make_shared<int>(7);
+      std::weak_ptr<int> released = replacement;
+      using floating = std::chrono::duration<double, std::milli>;
+      auto started = self.start(0ms, floating{(std::numeric_limits<double>::infinity)()},
+        [&, replacement](auto&) { replacement_called = true; });
+      EXPECT_EQ(started.error(), uv::make_error_code(UV_EINVAL));
+      replacement.reset();
+      EXPECT_TRUE(released.expired());
+      EXPECT_FALSE(retained.expired());
+      EXPECT_TRUE(self.active());
+      EXPECT_EQ(uv_timer_get_repeat(self.native()), std::uint64_t{1});
+    } else {
+      EXPECT_EQ(count, 2);
+      EXPECT_TRUE(self.stop());
+    }
+  }));
+  original.reset();
+  // Bounded native loop progress: losing the callback must fail, not hang.
+  const auto deadline = std::chrono::steady_clock::now() + 5s;
+  while (calls < 2 && std::chrono::steady_clock::now() < deadline) {
+    loop.run(uv::run_mode::nowait);
+  }
+  EXPECT_EQ(calls, 2); // Mutable state belongs to the original callable.
+  EXPECT_FALSE(replacement_called);
+  EXPECT_FALSE(timer.active());
+  EXPECT_TRUE(timer.stop());
+  EXPECT_TRUE(retained.expired());
+}
+
 TEST_F(RawTimer, durationConversionPreservesWideNativeCountsAndTruncatesFractions) {
   const auto maximum = (std::numeric_limits<std::uint64_t>::max)();
   ASSERT_TRUE(timer.set_repeat(uv::raw::timer::duration{maximum}));

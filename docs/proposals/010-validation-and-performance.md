@@ -482,3 +482,13 @@ public headers compile independently with both compilers under C++20 and
 the sandbox because of socket/ptrace restrictions. Native Windows/macOS jobs,
 allocation-failure injection, and measured performance budgets remain validation
 gates; the portable fixtures are not a claim of native platform execution.
+
+Reentrant start rejection now has two additional regression cases. A repeating
+raw timer rejects an invalid repeat duration from inside its executing callback,
+then delivers the same mutable callable again on its unchanged native schedule.
+A raw signal callback attempts `start(0, ...)`, reaching libuv's native rejection
+and `commit_start` while `persistent_callback_slot` is temporarily empty during
+delivery. Two explicit invocations of the registered native dispatch verify that
+the original callable is restored with its mutable state intact, without relying
+on platform-specific OS signal delivery. Both cases check rejected-capture release,
+continued original-capture lifetime, native activity, and capture release at stop.
