@@ -84,6 +84,10 @@ namespace uv {
     return status;
   }
 
+  inline int throw_if_error(uv_errno_t status) {
+    return throw_if_error(static_cast<int>(status));
+  }
+
   template<class T>
   class result {
   public:

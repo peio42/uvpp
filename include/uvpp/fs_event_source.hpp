@@ -162,7 +162,7 @@ public:
     // Prepare before native initialization, so C++ setup failure needs no close.
     std::string path_storage{path};
     if (path.find('\0') != std::string_view::npos) {
-      throw_if_error<int>(UV_EINVAL);
+      throw_if_error(UV_EINVAL);
     }
     auto state = std::make_unique<detail::fs_event_source_state>();
     state->loop = &loop;
@@ -301,7 +301,7 @@ public:
 
   void request_close() {
     if (!state_) {
-      throw_if_error<int>(UV_EBADF);
+      throw_if_error(UV_EBADF);
     }
     (void)state_->request_close();
   }
