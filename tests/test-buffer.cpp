@@ -51,6 +51,22 @@ void expect_wide_native_buffer_lengths() {
   }
 }
 
+// Type-dependent comparisons also avoid Clang diagnosing a self-comparison
+// when a native length/count type happens to be size_t on this platform.
+template<class NativeLength, class NativeCount>
+void expect_rejected_native_limits() {
+  if constexpr (std::numeric_limits<std::size_t>::digits > std::numeric_limits<NativeLength>::digits) {
+    char storage{};
+    const auto length = static_cast<std::size_t>(std::numeric_limits<NativeLength>::max()) + 1;
+    EXPECT_THROW((uv::buffer_view{&storage, length}), std::length_error);
+  }
+
+  if constexpr (std::numeric_limits<std::size_t>::digits > std::numeric_limits<NativeCount>::digits) {
+    const auto count = static_cast<std::size_t>(std::numeric_limits<NativeCount>::max()) + 1;
+    EXPECT_THROW(uv::detail::checked_buffer_count(count), std::length_error);
+  }
+}
+
 } // namespace
 
 TEST(Uvpp2Buffer, preservesNativeLengthsBeyondUnsignedInt) {
@@ -58,14 +74,5 @@ TEST(Uvpp2Buffer, preservesNativeLengthsBeyondUnsignedInt) {
 }
 
 TEST(Uvpp2Buffer, rejectsLengthsAndCountsOutsideNativeLimits) {
-  if constexpr (std::numeric_limits<std::size_t>::digits > std::numeric_limits<uv::detail::native_buffer_length>::digits) {
-    char storage{};
-    const auto length = static_cast<std::size_t>(std::numeric_limits<uv::detail::native_buffer_length>::max()) + 1;
-    EXPECT_THROW((uv::buffer_view{&storage, length}), std::length_error);
-  }
-
-  if constexpr (std::numeric_limits<std::size_t>::digits > std::numeric_limits<unsigned int>::digits) {
-    const auto count = static_cast<std::size_t>(std::numeric_limits<unsigned int>::max()) + 1;
-    EXPECT_THROW(uv::detail::checked_buffer_count(count), std::length_error);
-  }
+  expect_rejected_native_limits<uv::detail::native_buffer_length, unsigned int>();
 }

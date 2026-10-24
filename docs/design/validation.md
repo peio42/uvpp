@@ -59,3 +59,8 @@ uses a dependent native type so the Windows length assignment is not
 instantiated; failing value-returning coroutines use `co_return` with a throwing
 helper; joiner variables have distinct names; and the Unix backend-fd body is
 excluded on Windows after the explicit skip. Compiler warnings remain enabled.
+
+Buffer rejection tests compare size limits through dependent native length/count
+types as well. This avoids Clang's tautological-comparison warning when a native
+type aliases `size_t`, while retaining overflow rejection checks on platforms
+with narrower native fields.
