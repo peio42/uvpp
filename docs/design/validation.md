@@ -4,7 +4,7 @@ The CI workflow selects Ubuntu 24.04 x64 (GCC and Clang), Windows Server 2022
 x64 (MSVC), and macOS 26 ARM64 (Apple Clang). These jobs build the opt-in
 `UVPP_BUILD_TESTS` and `UVPP_BUILD_EXAMPLES` CMake targets in Debug mode. CTest
 runs the main suite and the separate UDP allocation-injection binary, each with
-a 180-second timeout. Failed jobs retain CTest diagnostics as artifacts.
+a 300-second timeout. Failed jobs retain CTest diagnostics as artifacts.
 Google Test's per-case progress remains in CTest logs so an abort identifies the
 last running case. Linux ASan/UBSan remains a separate Makefile job with leak detection.
 
@@ -45,3 +45,11 @@ allocates an iterator proxy inside `noexcept`. Copy assignment retains its
 copy/swap rollback guarantee, with no change to borrowed payload ownership or
 release-build allocation count. The isolated failure-budget sweep covers those
 metadata construction failures as well as copied buffer storage.
+
+Interface-name lookup and IPv6 scope-identifier conversion have separate tests:
+zero is invalid for name lookup, while Windows identifier conversion simply
+formats the numeric value and Unix delegates to name lookup. Tests preserve
+those native semantics. The CMake test property and workflow CLI both allow
+300 seconds per binary; the workflow's 30-minute job limit remains separate.
+A successful macOS retry after a timeout does not establish whether runner load
+or an intermittent test caused the original delay.

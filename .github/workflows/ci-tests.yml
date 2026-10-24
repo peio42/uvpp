@@ -76,7 +76,7 @@ jobs:
         run: cmake --build build/ci --config Debug --parallel 2
 
       - name: Run both test executables
-        run: ctest --test-dir build/ci -C Debug --output-on-failure --timeout 180
+        run: ctest --test-dir build/ci -C Debug --output-on-failure --timeout 300
 
       - name: Upload test diagnostics
         if: failure()
