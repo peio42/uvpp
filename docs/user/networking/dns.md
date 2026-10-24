@@ -78,3 +78,11 @@ is never permission to destroy that state early.
 The underlying low-level `getaddrinfo_request` callback API remains separately
 available for caller-owned request storage. It is not the high-level result
 surface documented here.
+
+## IPv6 interface identifiers
+
+The existing `<uvpp/net/interface.hpp>` helpers expose libuv's platform behavior.
+`interface_name(index)` looks up an interface name. `interface_identifier(index)`
+returns a scope identifier: Windows formats the numeric index (including zero)
+without validating it, while Unix looks up the interface name and rejects zero.
+Use an actual interface index when building a scoped IPv6 address.

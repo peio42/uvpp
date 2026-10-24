@@ -89,7 +89,7 @@ if(UVPP_BUILD_TESTS)
   foreach(target uvpp-tests uvpp-udp-allocation)
     target_link_libraries(${target} PRIVATE uvpp::uvpp GTest::gtest)
     add_test(NAME ${target} COMMAND ${target})
-    set_tests_properties(${target} PROPERTIES TIMEOUT 180)
+    set_tests_properties(${target} PROPERTIES TIMEOUT 300)
   endforeach()
 endif()
 

@@ -292,3 +292,22 @@ the adjusted test.
 `make test-all GTEST_ARGS=--gtest_brief=1` passes locally with GCC and Clang:
 389 main tests pass with two TTY skips per compiler, both isolated allocation
 cases pass, and examples build.
+
+## Interface identifier semantics and platform timeout
+
+The reported Windows interface test conflated name lookup with IPv6 scope
+identifier conversion. The wrapper is unchanged: Windows `uv_if_indextoiid()`
+formats an index as a string, including zero; Unix delegates to interface-name
+lookup. Separate tests now retain zero-index name failure on every platform and
+assert the platform-specific identifier outcome.
+
+A reported macOS run timed out at 180 seconds and passed on retry in approximately
+63 seconds. Both the CMake per-test property and the workflow's CTest option now
+allow 300 seconds per binary. The cause of the original timeout remains unknown;
+this gives slower runs more margin without removing the deadline or per-case
+progress diagnostics. The overall job timeout stays at 30 minutes.
+
+Local GCC/Clang validation passes both complete 392-case main suites (390 pass,
+two TTY skips), both allocation suites, and example builds. CMake's generated
+CTest properties confirm 300-second limits for both binaries. Native CI reruns
+remain necessary for the Windows-specific assertion and macOS timeout margin.

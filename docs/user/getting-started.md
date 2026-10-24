@@ -78,7 +78,7 @@ ctest --test-dir build/cmake -C Debug --output-on-failure
 
 Both options default to `OFF`, so library consumers do not need Google Test.
 CTest runs the main suite and the separate UDP allocation suite, each with a
-180-second timeout. Build examples are compiled but not run (some are servers).
+300-second timeout. Build examples are compiled but not run (some are servers).
 
 On Ubuntu, install `libuv1-dev libgtest-dev`; on macOS, use
 `brew install libuv googletest`. On Windows, install
