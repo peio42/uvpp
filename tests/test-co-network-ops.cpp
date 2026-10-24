@@ -199,7 +199,7 @@ TYPED_TEST(NetworkOpsStream, AcceptResultsTransferOwnersAndWaitForProvisionalCle
   } else {
     std::filesystem::remove(path);
     listener = std::make_unique<Listener>(std::move(
-        uv::ops::make_pipe_listener(loop, path, true, 8)).value());
+        uv::ops::make_pipe_listener(loop, path)).value());
   }
   auto canceled = [&]() -> uv::co::task<void> {
     auto result = co_await uv::ops::accept(*listener);
