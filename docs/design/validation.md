@@ -11,8 +11,14 @@ last running case. Linux ASan/UBSan remains a separate Makefile job with leak de
 The library interface target has no Google Test dependency. CMake prefers
 libuv's config targets (including the older vcpkg unofficial target), retaining
 configuration-specific paths and system libraries; pkg-config/path discovery
-remains the Unix fallback. MSVC validation binaries enable conforming C++20
-parsing. Contributor commands and dependencies are in
+remains the Unix fallback. The internal `uvpp-validation-options` interface
+target carries MSVC warning/conformance options and `NOMINMAX` /
+`WIN32_LEAN_AND_MEAN`. Each test and example executable explicitly links it
+privately; the public `uvpp::uvpp` target and installed export do not depend on
+it. This replaces directory-wide target enumeration. Thread-pool fixtures read
+`UV_THREADPOOL_SIZE` through `uv_os_getenv`, retrying with a resized buffer on
+`UV_ENOBUFS`; no CRT deprecation suppression is defined. Contributor commands and
+dependencies are in
 [repository checks](../user/getting-started.md#repository-checks).
 
 Test portability lives in fixtures rather than a second library API. Child

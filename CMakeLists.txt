@@ -80,6 +80,21 @@ install(
 option(UVPP_BUILD_TESTS "Build the repository test suites" OFF)
 option(UVPP_BUILD_EXAMPLES "Build the repository examples" OFF)
 
+# Internal, opt-in usage requirements for repository validation executables.
+if(MSVC)
+  add_library(uvpp-validation-options INTERFACE)
+  target_compile_options(uvpp-validation-options INTERFACE
+    /W4
+    /permissive-
+    /Zc:__cplusplus
+    /utf-8
+  )
+  target_compile_definitions(uvpp-validation-options INTERFACE
+    NOMINMAX
+    WIN32_LEAN_AND_MEAN
+  )
+endif()
+
 if(UVPP_BUILD_TESTS)
   enable_testing()
   find_package(GTest CONFIG REQUIRED)
@@ -88,6 +103,9 @@ if(UVPP_BUILD_TESTS)
   add_executable(uvpp-udp-allocation tests/main.cpp tests/udp-allocation.cpp)
   foreach(target uvpp-tests uvpp-udp-allocation)
     target_link_libraries(${target} PRIVATE uvpp::uvpp GTest::gtest)
+    if(MSVC)
+      target_link_libraries(${target} PRIVATE uvpp-validation-options)
+    endif()
     add_test(NAME ${target} COMMAND ${target})
     set_tests_properties(${target} PROPERTIES TIMEOUT 300)
   endforeach()
@@ -99,17 +117,8 @@ if(UVPP_BUILD_EXAMPLES)
     get_filename_component(name "${source}" NAME_WE)
     add_executable(uvpp-example-${name} "${source}")
     target_link_libraries(uvpp-example-${name} PRIVATE uvpp::uvpp)
-  endforeach()
-endif()
-
-if(MSVC)
-  # Apply conforming C++20 parsing to repository binaries, without imposing
-  # warning or conformance flags on downstream users of the interface target.
-  get_directory_property(uvpp_targets BUILDSYSTEM_TARGETS)
-  foreach(target IN LISTS uvpp_targets)
-    if(NOT target STREQUAL "uvpp")
-      target_compile_options(${target} PRIVATE /W4 /permissive- /Zc:__cplusplus /utf-8)
-      target_compile_definitions(${target} PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN _CRT_SECURE_NO_WARNINGS)
+    if(MSVC)
+      target_link_libraries(uvpp-example-${name} PRIVATE uvpp-validation-options)
     endif()
   endforeach()
 endif()

@@ -5,6 +5,7 @@
 #include <cstddef>
 #include <memory>
 #include <span>
+#include <string>
 #include <thread>
 #include <vector>
 
@@ -17,11 +18,25 @@ std::size_t configured_threadpool_size() {
   constexpr std::size_t default_size = 4;
   constexpr std::size_t max_test_size = 32;
 
-  const char *raw = std::getenv("UV_THREADPOOL_SIZE");
-  if (!raw || *raw == '\0') {
-    return default_size;
+  std::string buffer(32, '\0');
+  for (;;) {
+    auto size = buffer.size();
+    const auto status = uv_os_getenv("UV_THREADPOOL_SIZE", buffer.data(), &size);
+    if (status == UV_ENOENT) {
+      return default_size;
+    }
+    if (status == UV_ENOBUFS) {
+      buffer.resize(size);
+      continue;
+    }
+    uv::throw_if_error(status);
+    if (size == 0) {
+      return default_size;
+    }
+    break;
   }
 
+  const char *raw = buffer.c_str();
   char *end = nullptr;
   const auto value = std::strtoul(raw, &end, 10);
   if (end == raw || value == 0 || value > max_test_size) {
