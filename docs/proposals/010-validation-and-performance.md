@@ -278,3 +278,17 @@ Examples also build. The native coroutine notification case passes 100
 consecutive repetitions with each compiler. These checks do not exercise
 Windows short-path expansion, MSVC iterator proxies, or the macOS backend;
 passing platform CI reruns remain required.
+
+## Immediate IPC write result on Windows
+
+The remaining reported pipe test expected a terminal error from an unconnected
+immediate handle write. Windows `uv_try_write2()` returns `UV_EAGAIN` because
+immediate handle transfer is unsupported; the wrapper already preserves that
+outcome. The test now asserts the exact Windows would-block result (including
+empty error code and zero progress), while retaining Unix terminal-error checks.
+No production result mapping changes are needed. Native Windows CI must confirm
+the adjusted test.
+
+`make test-all GTEST_ARGS=--gtest_brief=1` passes locally with GCC and Clang:
+389 main tests pass with two TTY skips per compiler, both isolated allocation
+cases pass, and examples build.

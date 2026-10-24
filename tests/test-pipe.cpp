@@ -285,7 +285,7 @@ TEST(Uvpp2Pipe, writeWithHandleSendsStreamOverIpc) {
   std::filesystem::remove(path);
 }
 
-TEST(Uvpp2Pipe, writeWithHandleNowReturnsErrorOnUnconnectedPipe) {
+TEST(Uvpp2Pipe, writeWithHandleNowReportsUnconnectedPipeOutcome) {
   uv::loop loop;
   uv::pipe ipc(loop, true);
   uv::tcp handle(loop);
@@ -294,8 +294,20 @@ TEST(Uvpp2Pipe, writeWithHandleNowReturnsErrorOnUnconnectedPipe) {
   uv::buffer_view buf{msg, 1};
   auto r = ipc.write_with_handle_now(std::span<const uv::buffer_view>{&buf, 1}, handle);
 
+#ifdef _WIN32
+  // Native immediate handle transfer is unsupported on Windows. libuv returns
+  // EAGAIN without attempting the write, even for an unconnected pipe.
+  EXPECT_TRUE(r.would_block());
+  EXPECT_FALSE(r.has_error());
+  EXPECT_EQ(r.raw(), UV_EAGAIN);
+  EXPECT_FALSE(r.error_code());
+#else
   EXPECT_TRUE(r.has_error());
+  EXPECT_FALSE(r.would_block());
+  EXPECT_TRUE(r.error_code());
+#endif
   EXPECT_FALSE(r.ok());
+  EXPECT_EQ(r.bytes_written(), 0u);
 
   ipc.close();
   handle.close();

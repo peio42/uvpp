@@ -173,3 +173,11 @@ before submission; these preparation functions are not `noexcept`. Completion
 counts stay `ssize_t` until converted to the public byte count; only negative
 native errors narrow to `int`. IPC handle receive follows that same error-only
 narrowing rule.
+
+The existing pipe wrapper's `write_with_handle_now()` preserves
+`uv_try_write2()`'s platform result: Windows does not support immediate handle
+transfer and returns `UV_EAGAIN`, even for an unconnected pipe. Its
+`write_now_result` therefore has `would_block() == true`, `has_error() == false`,
+and an empty `error_code()`. Unix unconnected pipes report a terminal native
+error instead. The platform test asserts each outcome separately rather than
+accepting either status on every platform.

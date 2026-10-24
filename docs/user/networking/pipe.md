@@ -76,3 +76,11 @@ and [buffers](../buffers.md) for byte lifetimes.
 to uvpp; callers must not overwrite it, replace uvpp-owned callbacks, or
 independently close the handle. Moving the owner preserves this storage and its
 callback state. Raw wrappers keep `data` available to application code.
+
+## Immediate handle transfer on the existing callback wrapper
+
+`uv::pipe::write_with_handle_now()` returns `write_now_result`. On Windows,
+libuv does not support this immediate operation and returns `UV_EAGAIN`, exposed
+as `would_block()` rather than `has_error()`. Repeating the same immediate call
+does not enable handle transfer; use `write_with_handle()` and retain the request,
+payload, and exported handle through its completion callback.
