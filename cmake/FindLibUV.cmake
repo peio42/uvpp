@@ -10,7 +10,11 @@
 #   LibUV::LibUV          - the libuv library
 
 # Prefer upstream/vcpkg config targets, which carry Windows system libraries
-# and configuration-specific locations. Older vcpkg checkouts used unofficial-libuv.
+# and configuration-specific locations. If both upstream targets exist, prefer
+# the static libuv::uv_a over libuv::uv, independently of BUILD_SHARED_LIBS.
+# This preference applies to config targets; the find_library fallback below
+# follows the platform's normal library search policy.
+# Older vcpkg checkouts used unofficial-libuv.
 find_package(libuv CONFIG QUIET)
 if(TARGET libuv::uv_a)
   set(_uvpp_libuv_target libuv::uv_a)

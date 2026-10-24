@@ -164,8 +164,7 @@ Linux. Integration tests run outside the network-restricted sandbox. Windows
 and macOS jobs have not been executed locally; their native results remain pending.
 
 Broader TSan CI work, fault injection beyond the existing UDP case,
-installed-package validation, and recorded cross-platform benchmark baselines remain
-proposed. Acceptance requires those additions plus verified incremental rebuilding,
+and recorded cross-platform benchmark baselines remain proposed. Acceptance requires those additions plus verified incremental rebuilding,
 a working platform matrix, and stable regression budgets.
 
 ## Confirmed Feature-Gating Gaps
@@ -386,3 +385,27 @@ binaries. Fresh-process cancellation checks pass with two workers and with a
 long zero-padded value representing two workers, exercising the `UV_ENOBUFS`
 resize path. Configuration-only MSVC-branch generation confirms the CRT
 suppression is absent from all test/example compilation commands.
+
+## Installed-package and libuv target discovery
+
+The static-first upstream config-target order (`libuv::uv_a`, then `libuv::uv`)
+is now documented, including its independence from `BUILD_SHARED_LIBS` and the
+separate fallback library-search behavior. `LibUV::LibUV` still wraps the selected
+target and retains its transitive/platform/configuration requirements.
+
+Ordinary platform CI jobs now install and relocate uvpp outside the checkout and
+configure/build a copied external consumer with `find_package(uvpp CONFIG REQUIRED)`.
+The consumer checks the imported target and package/header paths against the
+relocated prefix. The installed config discovers libuv through the installed
+find module; no repository validation target is required. Windows applications
+set their own header macros privately. The existing release-package consumer
+check remains in place; passing native platform CI is still required.
+
+Local validation installs to a temporary prefix, relocates it, and builds the
+copied external consumer with GCC and Clang; an incorrect expected prefix is
+rejected. A controlled libuv config exposing both real system static/shared
+libraries selects `libuv::uv_a` and links successfully through the interface
+wrapper even with `BUILD_SHARED_LIBS=ON`. Complete Make GCC/Clang suites also
+pass (392 main cases passed, two TTY skips per compiler, both allocation cases
+passed, examples built). Native Windows/macOS execution of the new installed
+consumer steps remains a CI validation gate.

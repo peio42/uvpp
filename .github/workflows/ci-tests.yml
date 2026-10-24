@@ -77,6 +77,34 @@ jobs:
       - name: Run both test executables
         run: ctest --test-dir build/ci -C Debug --output-on-failure --timeout 300
 
+      - name: Install and relocate package outside the checkout
+        run: |
+          cmake --install build/ci --config Debug --prefix "${{ runner.temp }}/uvpp-stage"
+          cmake -E rename "${{ runner.temp }}/uvpp-stage" "${{ runner.temp }}/uvpp-installed"
+          cmake -E copy_directory examples/cmake-consumer "${{ runner.temp }}/uvpp-consumer"
+
+      - name: Configure external consumer on Linux and macOS
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          cmake -S "${{ runner.temp }}/uvpp-consumer" -B "${{ runner.temp }}/uvpp-consumer-build" -G Ninja \
+            -DCMAKE_CXX_COMPILER=${{ matrix.cxx }} -DCMAKE_BUILD_TYPE=Debug \
+            -DCMAKE_PREFIX_PATH="${{ runner.temp }}/uvpp-installed" \
+            -DUVPP_EXPECTED_INSTALL_PREFIX="${{ runner.temp }}/uvpp-installed"
+
+      - name: Configure external consumer on Windows
+        if: runner.os == 'Windows'
+        run: >-
+          cmake -S "${{ runner.temp }}/uvpp-consumer" -B "${{ runner.temp }}/uvpp-consumer-build"
+          -G "Visual Studio 17 2022" -A x64
+          -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake"
+          -DVCPKG_TARGET_TRIPLET=x64-windows
+          -DCMAKE_PREFIX_PATH="${{ runner.temp }}/uvpp-installed"
+          -DUVPP_EXPECTED_INSTALL_PREFIX="${{ runner.temp }}/uvpp-installed"
+
+      - name: Build external consumer against the installed package
+        run: cmake --build "${{ runner.temp }}/uvpp-consumer-build" --config Debug --parallel 2
+
       - name: Upload test diagnostics
         if: failure()
         uses: actions/upload-artifact@v4

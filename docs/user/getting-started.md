@@ -55,8 +55,23 @@ target_link_libraries(myapp PRIVATE uvpp::uvpp)
 
 The interface target propagates C++20, include paths, libuv, and thread dependencies.
 For an installed checkout, replace `add_subdirectory(uvpp)` with
-`find_package(uvpp REQUIRED)`. Pin the development revision you validated when
+`find_package(uvpp CONFIG REQUIRED)`. Pin the development revision you validated when
 fetching the dependency; these guides do not imply a published stable v3 package.
+
+Dependency discovery first uses libuv's CMake config package. When it exports
+both `libuv::uv_a` and `libuv::uv`, uvpp prefers the static `libuv::uv_a`; this
+selection does not consult the consumer's `BUILD_SHARED_LIBS`. Otherwise it uses
+`libuv::uv`, then the older vcpkg `unofficial::libuv::libuv` target, then
+pkg-config-assisted header/library discovery. The last fallback follows normal
+platform library search rules and does not force static linkage.
+
+`LibUV::LibUV` forwards the selected config target's usage requirements, including
+include directories, configuration-specific locations, and system libraries.
+The installed uvpp package ships its own `FindLibUV.cmake` beside its config file;
+libuv and thread dependencies are discovered on the consumer's system. Neither
+the source checkout nor repository validation targets are needed by the consumer.
+On Windows, applications using Windows headers can set `NOMINMAX` and
+`WIN32_LEAN_AND_MEAN` privately, as shown in the external consumer example.
 
 For a source checkout, CMake derives a build identity from its Git tag and
 revision. Supply `-DUVPP_VERSION=3.0.0-rc.1` to set it explicitly. CMake package
@@ -93,6 +108,12 @@ POSIX signal-delivery and pipe-descriptor polling tests are excluded on Windows
 with explicit skip cases; coroutine polling uses sockets on every platform.
 TTY tests require a terminal, and symlink tests may skip when creation is denied.
 A configured job is not a portability guarantee until it passes on its runner.
+
+Each ordinary platform CI job also installs uvpp outside the checkout, relocates
+the installation, and configures/builds a copied external consumer using
+`find_package(uvpp CONFIG REQUIRED)`. The validation checks that the package and
+its exported header paths come from the relocated prefix. The release-package
+workflow retains its installed-consumer build as well.
 
 The Makefile remains available for GCC/Clang development on Unix:
 
