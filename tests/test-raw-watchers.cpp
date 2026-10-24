@@ -1,16 +1,22 @@
+#include <chrono>
 #include <csignal>
 #include <filesystem>
 #include <memory>
 #include <string>
 #include <type_traits>
+#ifndef _WIN32
 #include <sys/socket.h>
 #include <unistd.h>
+#endif
 
 #include "gtest/gtest.h"
-#include "uvpp/uv.hpp"
+#include "uvpp/handles/fs_event.hpp"
+#include "uvpp/handles/poll.hpp"
+#include "uvpp/handles/signal.hpp"
 
 namespace {
 
+#ifndef _WIN32
 struct socket_pair {
   int fd[2]{-1, -1};
   socket_pair() {
@@ -18,11 +24,19 @@ struct socket_pair {
   }
   ~socket_pair() { ::close(fd[0]); ::close(fd[1]); }
 };
+#endif
 
 struct watched_directory {
-  std::filesystem::path path = std::filesystem::temp_directory_path() /
-    ("uvpp-raw-watchers-" + std::to_string(::getpid()));
-  watched_directory() { std::filesystem::create_directories(path); }
+  std::filesystem::path path;
+  watched_directory() {
+    const auto stamp = std::chrono::steady_clock::now().time_since_epoch().count();
+    for (unsigned int attempt = 0;; ++attempt) {
+      path = std::filesystem::temp_directory_path() /
+        ("uvpp-raw-watchers-" + std::to_string(stamp) + "-" + std::to_string(attempt));
+      // Claim a fresh directory even when another test process chose the same stamp.
+      if (std::filesystem::create_directory(path)) break;
+    }
+  }
   ~watched_directory() { std::filesystem::remove_all(path); }
 };
 
@@ -63,7 +77,7 @@ TEST(RawWatchers, signalFailurePreservesActiveCallbackAndStopReleasesIt) {
   auto token = std::make_shared<int>(1);
   std::weak_ptr<int> retained = token;
   EXPECT_EQ(watcher.start(0, [token](auto&, auto) {}).error(), uv::make_error_code(UV_EINVAL));
-  ASSERT_TRUE(watcher.start(SIGUSR1, [token](auto&, auto) {}));
+  ASSERT_TRUE(watcher.start(SIGINT, [token](auto&, auto) {}));
   token.reset();
   auto rejected = std::make_shared<int>(2);
   std::weak_ptr<int> released = rejected;
@@ -79,13 +93,16 @@ TEST(RawWatchers, signalFailurePreservesActiveCallbackAndStopReleasesIt) {
   EXPECT_TRUE(retained.expired());
   watcher.close();
   EXPECT_EQ(watcher.stop().error(), uv::make_error_code(UV_EBADF));
-  EXPECT_EQ(watcher.start_static<+[](uv::raw::signal&, int) {}>(SIGUSR1).error(),
+  EXPECT_EQ(watcher.start_static<+[](uv::raw::signal&, int) {}>(SIGINT).error(),
             uv::make_error_code(UV_EBADF));
   loop.run();
   loop.close();
 }
 
 TEST(RawWatchers, signalOneShotQuiescesBeforeRuntimeAndStaticRearming) {
+#ifdef _WIN32
+  GTEST_SKIP() << "These delivery tests use POSIX SIGUSR1 and raise().";
+#else
   uv::loop loop;
   uv::raw::signal watcher{loop};
   struct context { int calls = 0; std::weak_ptr<int> first; } context;
@@ -115,9 +132,13 @@ TEST(RawWatchers, signalOneShotQuiescesBeforeRuntimeAndStaticRearming) {
   loop.run();
   EXPECT_EQ(context.calls, 3);
   loop.close();
+#endif
 }
 
 TEST(RawWatchers, signalPersistentReplacementDoesNotRestoreOldCallable) {
+#ifdef _WIN32
+  GTEST_SKIP() << "These delivery tests use POSIX SIGUSR1 and raise().";
+#else
   uv::loop loop;
   uv::raw::signal watcher{loop};
   int calls = 0;
@@ -138,9 +159,13 @@ TEST(RawWatchers, signalPersistentReplacementDoesNotRestoreOldCallable) {
   loop.run();
   EXPECT_EQ(calls, 2);
   loop.close();
+#endif
 }
 
 TEST(RawWatchers, pollRejectsInvalidMasksAndZeroMaskReleasesCallback) {
+#ifdef _WIN32
+  GTEST_SKIP() << "This poll fixture requires POSIX socketpair().";
+#else
   socket_pair sockets;
   uv::loop loop;
   uv::raw::poll watcher{loop, sockets.fd[0], uv::socket_poll};
@@ -160,9 +185,13 @@ TEST(RawWatchers, pollRejectsInvalidMasksAndZeroMaskReleasesCallback) {
   EXPECT_EQ(watcher.stop().error(), uv::make_error_code(UV_EBADF));
   loop.run();
   loop.close();
+#endif
 }
 
 TEST(RawWatchers, pollErrorQuiescesBeforeRearmingAndPreservesApplicationData) {
+#ifdef _WIN32
+  GTEST_SKIP() << "This poll fixture requires POSIX socketpair().";
+#else
   socket_pair sockets;
   uv::loop loop;
   uv::raw::poll watcher{uv::loop_view{loop.native()}, sockets.fd[0]};
@@ -188,9 +217,13 @@ TEST(RawWatchers, pollErrorQuiescesBeforeRearmingAndPreservesApplicationData) {
   loop.run();
   EXPECT_EQ(calls, 1);
   loop.close();
+#endif
 }
 
 TEST(RawWatchers, pollStaticErrorCanRearmRuntimeCallback) {
+#ifdef _WIN32
+  GTEST_SKIP() << "This poll fixture requires POSIX socketpair().";
+#else
   socket_pair sockets;
   uv::loop loop;
   uv::raw::poll watcher{loop, sockets.fd[0]};
@@ -209,6 +242,7 @@ TEST(RawWatchers, pollStaticErrorCanRearmRuntimeCallback) {
   loop.run();
   EXPECT_EQ(calls, 1);
   loop.close();
+#endif
 }
 
 #ifdef __linux__
@@ -316,7 +350,7 @@ TEST(RawWatchers, closeQuiescesAndReleasesCapturesBeforeCloseCompletion) {
   uv::raw::signal watcher{loop};
   auto token = std::make_shared<int>(1);
   std::weak_ptr<int> retained = token;
-  ASSERT_TRUE(watcher.start(SIGUSR1, [token](auto&, auto) {}));
+  ASSERT_TRUE(watcher.start(SIGINT, [token](auto&, auto) {}));
   token.reset();
   bool closed = false;
   watcher.close([&](auto &self) { closed = true; EXPECT_FALSE(self.active()); });

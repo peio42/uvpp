@@ -448,3 +448,11 @@ raw watcher public headers compile independently with both compilers under C++20
 The complete suites and leak checking run outside the sandbox because of socket
 and ptrace restrictions. Cross-platform validation, allocation fault injection,
 and measured allocation/performance budgets remain open.
+
+The raw-watcher test source now guards POSIX headers, socket fixtures, and
+signal-delivery cases on Windows, reporting explicit skips for the latter two.
+Signal registration/lifetime checks use `SIGINT`, and temporary-directory setup
+uses only standard C++ with exclusive directory creation instead of `getpid()`.
+Generic status, signal registration/close, native-query, and fs-event setup tests
+remain available. This removes those source-level POSIX dependencies; it does
+not constitute a native Windows build or runtime validation.
