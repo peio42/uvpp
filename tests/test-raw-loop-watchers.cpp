@@ -15,6 +15,17 @@ using namespace std::chrono_literals;
 namespace {
 
 template<class Watcher>
+void count_and_stop_phase(Watcher &self) {
+  ++*self.template user_data<int>();
+  EXPECT_TRUE(self.stop());
+}
+
+template<class Watcher>
+void unexpected_static_phase(Watcher&) {
+  ADD_FAILURE() << "Unexpected static phase callback";
+}
+
+template<class Watcher>
 class RawPhaseWatcher : public ::testing::Test {
 protected:
   uv::loop loop;
@@ -62,11 +73,7 @@ TYPED_TEST(RawPhaseWatcher, activeRuntimeToStaticReplacementReleasesOldCapture) 
   token.reset();
   int called = 0;
   this->watcher.user_data(called);
-  constexpr auto callback = +[](TypeParam &self) {
-    ++*self.template user_data<int>();
-    EXPECT_TRUE(self.stop());
-  };
-  ASSERT_TRUE(this->watcher.template start_static<callback>());
+  ASSERT_TRUE(this->watcher.template start_static<count_and_stop_phase<TypeParam>>());
   EXPECT_TRUE(old.expired());
   this->tick();
   EXPECT_EQ(called, 1);
@@ -74,8 +81,7 @@ TYPED_TEST(RawPhaseWatcher, activeRuntimeToStaticReplacementReleasesOldCapture) 
 }
 
 TYPED_TEST(RawPhaseWatcher, activeStaticToRuntimeReplacementUsesNewCallable) {
-  constexpr auto old = +[](TypeParam&) { ADD_FAILURE() << "Old static callback survived replacement"; };
-  ASSERT_TRUE(this->watcher.template start_static<old>());
+  ASSERT_TRUE(this->watcher.template start_static<unexpected_static_phase<TypeParam>>());
   int called = 0;
   ASSERT_TRUE(this->watcher.start([&](TypeParam &self) {
     ++called;
@@ -90,13 +96,9 @@ TYPED_TEST(RawPhaseWatcher, reentrantReplacementDoesNotRestoreExecutingCallable)
   std::weak_ptr<int> old = token;
   int called = 0;
   this->watcher.user_data(called);
-  constexpr auto replacement = +[](TypeParam &self) {
-    ++*self.template user_data<int>();
-    EXPECT_TRUE(self.stop());
-  };
   ASSERT_TRUE(this->watcher.start([&, token](TypeParam &self) {
     EXPECT_EQ(*token, 1);
-    EXPECT_TRUE(self.template start_static<replacement>());
+    EXPECT_TRUE(self.template start_static<count_and_stop_phase<TypeParam>>());
     EXPECT_FALSE(old.expired()); // The executing callable must still be alive.
   }));
   token.reset();
@@ -135,7 +137,7 @@ TYPED_TEST(RawPhaseWatcher, closeQuiescesReleasesCaptureAndRejectsRestart) {
   EXPECT_EQ(this->watcher.start([rejected](TypeParam&) {}).error(), uv::make_error_code(UV_EBADF));
   rejected.reset();
   EXPECT_TRUE(released.expired());
-  EXPECT_EQ(this->watcher.template start_static<+[](TypeParam&) {}>().error(),
+  EXPECT_EQ(this->watcher.template start_static<unexpected_static_phase<TypeParam>>().error(),
             uv::make_error_code(UV_EBADF));
   EXPECT_EQ(this->watcher.stop().error(), uv::make_error_code(UV_EBADF));
   this->tick();

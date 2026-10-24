@@ -529,3 +529,15 @@ CI rerun remains required to validate the MSVC workaround.
 The rearming-fixture follow-up passes complete GCC/Clang suites locally: 436 main
 cases pass with two existing TTY skips per compiler, both isolated allocation
 cases pass, and examples build. No library API, test skip, or warning policy changes.
+
+A further reported MSVC run reveals the corresponding local-target lookup failure
+in the typed phase tests (`C2326`, inaccessible `replacement`). Their static
+callback targets now all use namespace-scope function-template specializations,
+including direct runtime/static replacements and closing-state rejection. The
+original three watcher types and all lifecycle/capture assertions remain covered,
+without additional skips. This fixture-only follow-up still requires native
+Windows confirmation.
+
+The typed-phase follow-up passes all 18 focused phase cases and both complete
+GCC/Clang suites locally (436 main cases passed, two existing TTY skips per
+compiler, both isolated allocation cases passed, examples built).

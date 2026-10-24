@@ -127,3 +127,13 @@ The one-shot rearming fixture now uses a namespace-scope static callback and
 explicitly typed runtime callbacks. Its runtime-to-static-to-runtime sequence,
 three deliveries, inactive one-shot observation, capture lifetime, and close
 checks remain intact. Native Windows CI must confirm the lookup workaround.
+
+The next reported Windows build reaches the typed phase-watcher rearming test,
+then reports `C2326` for its local constexpr `replacement` target referenced from
+inside another callback. All local static-dispatch targets in the phase fixtures
+now use namespace-scope function-template specializations instead. Runtime/static
+switching, reentrant replacement, capture lifetime, and closing-state assertions
+remain, with no platform skip. For new cross-platform fixtures invoking static
+callback APIs from another callback, prefer named namespace-scope function targets
+to avoid the reported local-constant lookup paths in MSVC. Native CI must confirm
+this typed-test follow-up as well.
