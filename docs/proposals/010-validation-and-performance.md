@@ -248,3 +248,33 @@ also pass syntax-only GCC/Clang compilation with a temporary libuv header overla
 that puts a 32-bit `len` before `base`, matching the Windows buffer layout; this
 is a focused structural check, not an MSVC build or Windows runtime validation.
 CMake configuration confirms both CTest commands retain per-case progress.
+
+## Native filesystem notifications and MSVC allocation injection
+
+A subsequent native run reached the end of the macOS suite, with only the
+filesystem subscription integration test failing (zero deliveries before its
+two-second deadline). Windows reached the same test and asserted in libuv's
+long-filename/parent-path comparison; the isolated allocation test also stopped
+inside its UDP copy-assignment failure sweep.
+
+The notification fixtures now canonicalize their temporary directory and expand
+Windows short-name aliases before watcher startup. The coroutine integration
+test drives repeated real mutations from a timer until two notifications arrive,
+rather than relying on a single write made before `loop.run()`. A five-second
+deadline still fails stalled delivery, and duplicate/coalesced notifications
+remain valid. Precise subscription transitions retain deterministic callback
+coverage.
+
+For UDP copy assignment, the last vector member previously default-constructed
+under allocation injection. MSVC's debug STL allocates a proxy in that noexcept
+constructor; it now uses the fallible size constructor and rebuilds pointers
+into the copied storage. The existing allocation sweep still visits every
+failure boundary and verifies rollback/reusability. Both fixes require native
+reruns; the Windows log does not provide a stack trace for the allocation abort.
+
+Local Linux validation passes both complete GCC/Clang suites (389 passed,
+two TTY skips per 391-case main suite; both isolated allocation cases pass).
+Examples also build. The native coroutine notification case passes 100
+consecutive repetitions with each compiler. These checks do not exercise
+Windows short-path expansion, MSVC iterator proxies, or the macOS backend;
+passing platform CI reruns remain required.

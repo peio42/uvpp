@@ -44,7 +44,7 @@ inline bool loopback_tcp_is_permitted() {
 }
 
 inline std::filesystem::path filesystem_test_path(std::string_view name) {
-  return std::filesystem::temp_directory_path() /
+  return filesystem_test_directory() /
       ("uvpp-v3-filesystem-" + std::to_string(uv_os_getpid()) + "-" + std::string{name});
 }
 

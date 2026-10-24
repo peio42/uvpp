@@ -12,7 +12,7 @@ using namespace std::chrono_literals;
 namespace {
 
 std::filesystem::path watch_path(const char *name) {
-  return std::filesystem::temp_directory_path() /
+  return uvpp::test::filesystem_test_directory() /
          ("uvpp-watch-" + std::to_string(uv_os_getpid()) + "-" + name);
 }
 

@@ -29,3 +29,19 @@ results are required for Windows/macOS validation; local Linux results establish
 only that platform's baseline. Minimum-libuv coverage, installed-package CI,
 broader fault injection, and performance gates remain tracked in
 [proposal 010](../proposals/010-validation-and-performance.md).
+
+Native filesystem notification fixtures resolve the existing temporary directory
+before appending a test name. On Windows they additionally expand 8.3 aliases
+with `GetLongPathNameW`, matching libuv's long-path prefix comparison. The native
+coroutine watcher test produces repeated timer-driven mutations while waiting
+for two deliveries, with a bounded deadline. It does not assume synchronous
+backend arming or one notification per write; deterministic trampoline tests
+continue to cover exact subscription/slot behavior.
+
+The UDP batch copy constructor initializes its pointer-metadata vector with the
+fallible size constructor before rebuilding pointers into copied storage. This
+keeps allocation injection out of MSVC's debug vector default constructor, which
+allocates an iterator proxy inside `noexcept`. Copy assignment retains its
+copy/swap rollback guarantee, with no change to borrowed payload ownership or
+release-build allocation count. The isolated failure-budget sweep covers those
+metadata construction failures as well as copied buffer storage.
