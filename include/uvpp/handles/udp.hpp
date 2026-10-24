@@ -19,7 +19,7 @@
 #include "uvpp/core/version.hpp"
 #include "uvpp/handles/handle.hpp"
 #include "uvpp/net/address.hpp"
-#include "uvpp/net/buffer.hpp"
+#include "uvpp/core/buffer.hpp"
 #include "uvpp/net/socket_address.hpp"
 #include "uvpp/requests/udp_send.hpp"
 

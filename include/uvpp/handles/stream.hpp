@@ -11,7 +11,7 @@
 #include "uvpp/core/callback.hpp"
 #include "uvpp/core/error.hpp"
 #include "uvpp/handles/handle.hpp"
-#include "uvpp/net/buffer.hpp"
+#include "uvpp/core/buffer.hpp"
 #include "uvpp/requests/shutdown.hpp"
 #include "uvpp/requests/write.hpp"
 

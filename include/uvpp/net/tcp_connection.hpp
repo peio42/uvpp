@@ -15,7 +15,7 @@
 #include "uvpp/detail/owner_close.hpp"
 #include "uvpp/detail/stream_io.hpp"
 #include "uvpp/net/address.hpp"
-#include "uvpp/net/buffer.hpp"
+#include "uvpp/core/buffer.hpp"
 
 namespace uv {
 

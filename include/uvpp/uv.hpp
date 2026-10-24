@@ -1,5 +1,6 @@
 #pragma once
 
+#include "uvpp/core/buffer.hpp"
 #include "uvpp/core/error.hpp"
 #include "uvpp/core/loop.hpp"
 #include "uvpp/core/types.hpp"
@@ -14,7 +15,6 @@
 #include "uvpp/fs/operations.hpp"
 #include "uvpp/fs/result.hpp"
 #include "uvpp/net/address.hpp"
-#include "uvpp/net/buffer.hpp"
 #include "uvpp/net/interface.hpp"
 #include "uvpp/net/pipe_connection.hpp"
 #include "uvpp/net/pipe_listener.hpp"

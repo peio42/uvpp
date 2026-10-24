@@ -76,9 +76,9 @@ paths; [proposal 010](../proposals/010-validation-and-performance.md) tracks gat
 
 ## Repository organization
 
-- `include/uvpp/core/`: loop, native storage, callback boundary, results, capabilities.
+- `include/uvpp/core/`: loop, native storage, buffers, callback boundary, results, capabilities.
 - `include/uvpp/handles/` and `requests/`: current low-level binding machinery.
-- `include/uvpp/net/`: address/buffer vocabulary and network owners.
+- `include/uvpp/net/`: address vocabulary and network owners.
 - `include/uvpp/co/`: tasks, cancellation, sleep, task scopes, resource scopes.
 - `include/uvpp/detail/`: shared stream I/O and asynchronous close machinery.
 - `docs/user/`: strictly v3 usage and current availability.

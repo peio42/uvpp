@@ -38,7 +38,8 @@ resuming the task. A new read may start immediately afterward.
 
 Shared storage vocabulary also includes `uv::owned_buffer` and its explicit
 `.view()` producing a borrowed `uv::buffer_view`, declared in
-`<uvpp/net/buffer.hpp>`. A view never extends storage lifetime.
+`<uvpp/core/buffer.hpp>`. These types and their native buffer conversions are
+shared by filesystem and network I/O. A view never extends storage lifetime.
 
 `write_copy`, owning read adapters, `read_exactly`, buffer pools, and bounded
 queues remain proposed. See [proposal 005](../proposals/005-buffers-and-flow-control.md).
