@@ -64,3 +64,12 @@ Buffer rejection tests compare size limits through dependent native length/count
 types as well. This avoids Clang's tautological-comparison warning when a native
 type aliases `size_t`, while retaining overflow rejection checks on platforms
 with narrower native fields.
+
+UDP batch copy coverage includes copy construction and assignment from both a
+fresh empty lot and a cleared lot retaining capacity, replacing populated
+assignment destinations, and reuse of the empty copies. A separate ordinary
+copy test uses three datagrams with 2/3/2 buffers: it verifies the three-entry
+view, seven buffer records, IPv4/IPv6/default destinations, and each borrowed
+base/length after overwriting source metadata. Copies own distinct metadata
+arrays and preserve borrowed addresses and payload pointers. The isolated
+allocation sweep remains separate and covers rollback/reusability under failure.
