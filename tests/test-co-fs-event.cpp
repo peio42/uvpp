@@ -298,32 +298,40 @@ TEST_F(UvppV3FsEventSource, rejectsWrongLoopClosedAndMovedFromWaits) {
 }
 
 TEST_F(UvppV3FsEventSource, nativeNotificationsRemainSubscribedAcrossWaits) {
+  uv::timer modifier{loop};
   uv::timer timeout{loop};
   bool timed_out = false;
-  timeout.start(2s, [&](uv::timer &self) {
+  unsigned received = 0;
+  unsigned modifications = 0;
+  // Some backends finish arming asynchronously. Keep producing real changes
+  // until delivery, rather than assuming a write before run() is observable.
+  // Duplicate/coalesced events need not correspond one-to-one with mutations.
+  modifier.start(1ms, 10ms, [&](uv::timer &) {
+    uvpp::test::write_filesystem_test_file(path / (received == 0 ? "first" : "second"),
+                                         std::to_string(++modifications));
+  });
+  timeout.start(5s, [&](uv::timer &self) {
     timed_out = true;
+    modifier.close();
     source->request_close();
     self.close();
   });
-  unsigned received = 0;
   auto receive = [&]() -> uv::co::task<void> {
     for (int i = 0; i != 2; ++i) {
       auto event = co_await source->next();
       EXPECT_TRUE(event.events.has(uv::fs_event_flag::rename) ||
                   event.events.has(uv::fs_event_flag::change));
       ++received;
-      if (i == 0) {
-        uvpp::test::write_filesystem_test_file(path / "second", "second");
-      }
     }
+    modifier.close();
     timeout.close();
     co_await source->close();
   };
   auto execution = uv::co::spawn(loop, receive());
-  uvpp::test::write_filesystem_test_file(path / "first", "first");
   loop.run();
   EXPECT_FALSE(timed_out);
   EXPECT_EQ(received, 2u);
+  EXPECT_GT(modifications, 0u);
   EXPECT_TRUE(execution.done());
   EXPECT_NO_THROW(execution.rethrow_if_failed());
 }

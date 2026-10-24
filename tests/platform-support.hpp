@@ -17,6 +17,22 @@
 #endif
 
 namespace uvpp::test {
+// Resolve symlinks and Windows 8.3 aliases before starting a watcher. libuv's
+// Windows backend compares the watched path with GetLongPathNameW results.
+inline std::filesystem::path filesystem_test_directory() {
+  auto directory = std::filesystem::canonical(std::filesystem::temp_directory_path());
+#ifdef _WIN32
+  const auto required = GetLongPathNameW(directory.c_str(), nullptr, 0);
+  if (required == 0) throw std::runtime_error{"GetLongPathNameW failed"};
+  std::wstring expanded(required, L'\0');
+  const auto length = GetLongPathNameW(directory.c_str(), expanded.data(), required);
+  if (length == 0 || length >= required) throw std::runtime_error{"GetLongPathNameW failed"};
+  expanded.resize(length);
+  directory = std::filesystem::path{expanded};
+#endif
+  return directory;
+}
+
 inline std::string executable_path() {
   std::string path(32768, '\0');
   std::size_t size = path.size();

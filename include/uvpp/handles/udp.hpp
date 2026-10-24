@@ -222,7 +222,11 @@ namespace uv {
       : raw_buffers_{other.raw_buffers_},
         buffer_starts_{other.buffer_starts_},
         buffer_counts_{other.buffer_counts_},
-        addresses_{other.addresses_} {
+        addresses_{other.addresses_},
+        // MSVC's debug vector default constructor allocates an iterator proxy
+        // despite being noexcept. Use its fallible size constructor so injected
+        // allocation failure propagates through copy assignment's rollback.
+        buffer_arrays_(other.buffer_arrays_.size()) {
       rebuild_buffer_pointers();
     }
 
