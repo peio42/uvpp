@@ -124,7 +124,7 @@ TEST(UvppV3PollSource, idleIntervalRetainsNoStaleReadiness) {
   uv::loop loop;
   socket_pair sockets;
   uv::poll_source source{loop, sockets.fd[0], uv::socket_poll};
-  uv::timer sender{loop};
+  uv::raw::timer sender{loop};
   ASSERT_EQ(sockets.write("x", 1), 1);
   bool fresh_write = false;
   auto wait = [&]() -> uv::co::task<void> {
@@ -134,7 +134,7 @@ TEST(UvppV3PollSource, idleIntervalRetainsNoStaleReadiness) {
     co_await uv::co::sleep_for(std::chrono::milliseconds{1});
     char byte{};
     EXPECT_EQ(sockets.read(&byte, 1), 1);
-    sender.start(std::chrono::milliseconds{1}, [&](uv::timer &timer) {
+    sender.start(std::chrono::milliseconds{1}, [&](uv::raw::timer &timer) {
       fresh_write = true;
       EXPECT_EQ(sockets.write("y", 1), 1);
       timer.close();

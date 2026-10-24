@@ -160,12 +160,12 @@ TEST(UvppV3LoopPosting, drainBudgetAllowsTimerProgressBeforeBacklogCompletes) {
   uv::loop loop;
   uv::loop_posting posting(loop, 128, 4);
   auto endpoint = posting.endpoint();
-  uv::timer timer(loop);
+  uv::raw::timer timer(loop);
   int delivered = 0;
   bool timer_during_backlog = false;
   endpoint.post([&] {
     ++delivered;
-    timer.start(std::chrono::milliseconds{0}, [&](uv::timer &self) {
+    timer.start(std::chrono::milliseconds{0}, [&](uv::raw::timer &self) {
       timer_during_backlog = delivered > 0 && delivered < 128;
       self.close();
     });

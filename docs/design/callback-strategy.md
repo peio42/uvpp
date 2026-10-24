@@ -117,7 +117,7 @@ state survives reentrant destruction until native close.
 
 The private `detail::raw_watcher_handle` shares callback commitment, stop/close
 release, and explicit native-query results across `raw::signal`, `raw::poll`,
-and `raw::fs_event`. It uses existing persistent callable storage; `take()`
+and `raw::fs_event`, plus timer/idle/prepare/check. It uses existing persistent callable storage; `take()`
 extracts a terminal callable and advances its generation before delivery.
 No hidden per-operation allocation or coroutine state is introduced.
 
@@ -132,3 +132,18 @@ immediate rearm without native one-shot post-callback stop interfering. This is
 single-delivery wrapper behavior, not native signal-handler one-shot semantics.
 Native `data` remains application-owned, storage survives close completion, and
 callback exceptions still terminate. See [the user contract](../user/raw-watchers.md).
+
+
+For raw timers, actual native activity at callback entry identifies whether libuv
+has rearmed the timer. Inactive one-shot delivery uses terminal extraction;
+repeating delivery retains mutable callable state. Stop, close, and one-shot
+completion release the subscription, so no-argument `again()` requires native
+activity and otherwise returns `UV_EINVAL`; fresh `start` supplies a new callable.
+`set_repeat(0)` from a repeated delivery does not erase the already-rearmed final
+timeout. A replacement installed by any delivery survives old callback unwinding.
+
+Raw idle/prepare/check starts explicitly stop/restart native dispatch before
+committing runtime or static callbacks. Native start alone ignores callback
+replacement on active phase watchers on both Unix and Windows. The executing
+callable remains local until return, and generation tracking prevents restoration
+of a replaced/stopped callback. Peer ordering may change during this restart.

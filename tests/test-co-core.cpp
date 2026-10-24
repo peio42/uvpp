@@ -63,8 +63,8 @@ TEST(UvppV3Coroutine, sleepForBindsColdTaskToTheSpawnLoop) {
   auto root = sleeper();
   EXPECT_FALSE(entered);
 
-  uv::timer callback_timer(loop);
-  callback_timer.start(1ms, [&](uv::timer &self) {
+  uv::raw::timer callback_timer(loop);
+  callback_timer.start(1ms, [&](uv::raw::timer &self) {
     callback_ran = true;
     self.close();
   });

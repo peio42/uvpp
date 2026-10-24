@@ -132,7 +132,7 @@ TEST(Uvpp2Core, valueResultSupportsMoveOnlyValues) {
 
 TEST(Uvpp2Core, loopCloseIsExplicitAndReportsBusyLoops) {
   uv::loop loop;
-  uv::timer timer(loop);
+  uv::raw::timer timer(loop);
 
   auto busy = loop.try_close();
   ASSERT_TRUE(busy);

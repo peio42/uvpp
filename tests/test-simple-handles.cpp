@@ -3,13 +3,13 @@
 
 TEST(Uvpp2Idle, runsRuntimeCallback) {
   uv::loop loop;
-  uv::idle idle(loop);
+  uv::raw::idle idle(loop);
 
   int marker = 42;
   int called = 0;
 
   idle.user_data(marker);
-  idle.start([&](uv::idle &self) {
+  idle.start([&](uv::raw::idle &self) {
     called++;
     EXPECT_EQ(self.user_data<int>(), &marker);
     self.close();
@@ -22,16 +22,16 @@ TEST(Uvpp2Idle, runsRuntimeCallback) {
 
 TEST(Uvpp2Idle, startReplacesRuntimeCallbackSlot) {
   uv::loop loop;
-  uv::idle idle(loop);
+  uv::raw::idle idle(loop);
 
   int replaced = 0;
   int called = 0;
 
-  idle.start([&](uv::idle &) {
+  idle.start([&](uv::raw::idle &) {
     replaced++;
   });
 
-  idle.start([&](uv::idle &self) {
+  idle.start([&](uv::raw::idle &self) {
     called++;
     self.close();
   });
@@ -44,14 +44,14 @@ TEST(Uvpp2Idle, startReplacesRuntimeCallbackSlot) {
 
 static int static_idle_called = 0;
 
-static void on_static_idle(uv::idle &idle) {
+static void on_static_idle(uv::raw::idle &idle) {
   static_idle_called++;
   idle.close();
 }
 
 TEST(Uvpp2Idle, runsStaticCallback) {
   uv::loop loop;
-  uv::idle idle(loop);
+  uv::raw::idle idle(loop);
   static_idle_called = 0;
 
   idle.start_static<on_static_idle>();
@@ -63,11 +63,11 @@ TEST(Uvpp2Idle, runsStaticCallback) {
 
 TEST(Uvpp2Prepare, runsRuntimeCallback) {
   uv::loop loop;
-  uv::prepare prepare(loop);
+  uv::raw::prepare prepare(loop);
 
   int called = 0;
 
-  prepare.start([&](uv::prepare &self) {
+  prepare.start([&](uv::raw::prepare &self) {
     called++;
     self.close();
   });
@@ -79,14 +79,14 @@ TEST(Uvpp2Prepare, runsRuntimeCallback) {
 
 static int static_prepare_called = 0;
 
-static void on_static_prepare(uv::prepare &prepare) {
+static void on_static_prepare(uv::raw::prepare &prepare) {
   static_prepare_called++;
   prepare.close();
 }
 
 TEST(Uvpp2Prepare, runsStaticCallback) {
   uv::loop loop;
-  uv::prepare prepare(loop);
+  uv::raw::prepare prepare(loop);
   static_prepare_called = 0;
 
   prepare.start_static<on_static_prepare>();
@@ -98,13 +98,13 @@ TEST(Uvpp2Prepare, runsStaticCallback) {
 
 TEST(Uvpp2Check, runsRuntimeCallback) {
   uv::loop loop;
-  uv::check check(loop);
-  uv::idle driver(loop);
+  uv::raw::check check(loop);
+  uv::raw::idle driver(loop);
 
   int called = 0;
 
-  driver.start([](uv::idle &) {});
-  check.start([&](uv::check &self) {
+  driver.start([](uv::raw::idle &) {});
+  check.start([&](uv::raw::check &self) {
     called++;
     driver.close();
     self.close();
@@ -116,9 +116,9 @@ TEST(Uvpp2Check, runsRuntimeCallback) {
 }
 
 static int static_check_called = 0;
-static uv::idle *static_check_driver = nullptr;
+static uv::raw::idle *static_check_driver = nullptr;
 
-static void on_static_check(uv::check &check) {
+static void on_static_check(uv::raw::check &check) {
   static_check_called++;
   static_check_driver->close();
   check.close();
@@ -126,12 +126,12 @@ static void on_static_check(uv::check &check) {
 
 TEST(Uvpp2Check, runsStaticCallback) {
   uv::loop loop;
-  uv::check check(loop);
-  uv::idle driver(loop);
+  uv::raw::check check(loop);
+  uv::raw::idle driver(loop);
   static_check_called = 0;
   static_check_driver = &driver;
 
-  driver.start([](uv::idle &) {});
+  driver.start([](uv::raw::idle &) {});
   check.start_static<on_static_check>();
 
   loop.run();

@@ -7,32 +7,32 @@
 static_assert(uv::stream_handle<uv::tcp>);
 static_assert(uv::stream_handle<uv::pipe>);
 static_assert(uv::stream_handle<uv::tty>);
-static_assert(!uv::stream_handle<uv::timer>);
+static_assert(!uv::stream_handle<uv::raw::timer>);
 
-static_assert(uv::detail::native_handle_recoverable<uv::timer>);
+static_assert(uv::detail::native_handle_recoverable<uv::raw::timer>);
 static_assert(!uv::detail::native_handle_recoverable<int>);
 
 TEST(Uvpp2Layout, reconstructsHandlesFromNativePointers) {
   static_assert(std::is_standard_layout_v<uv::async::native_storage>);
-  static_assert(std::is_standard_layout_v<uv::check::native_storage>);
+  static_assert(std::is_standard_layout_v<uv::raw::check::native_storage>);
   static_assert(std::is_standard_layout_v<uv::raw::fs_event::native_storage>);
   static_assert(std::is_standard_layout_v<uv::fs_poll::native_storage>);
-  static_assert(std::is_standard_layout_v<uv::idle::native_storage>);
+  static_assert(std::is_standard_layout_v<uv::raw::idle::native_storage>);
   static_assert(std::is_standard_layout_v<uv::pipe::native_storage>);
   static_assert(std::is_standard_layout_v<uv::raw::poll::native_storage>);
-  static_assert(std::is_standard_layout_v<uv::prepare::native_storage>);
+  static_assert(std::is_standard_layout_v<uv::raw::prepare::native_storage>);
   static_assert(std::is_standard_layout_v<uv::raw::signal::native_storage>);
-  static_assert(std::is_standard_layout_v<uv::timer::native_storage>);
+  static_assert(std::is_standard_layout_v<uv::raw::timer::native_storage>);
   static_assert(std::is_standard_layout_v<uv::tcp::native_storage>);
   static_assert(std::is_standard_layout_v<uv::tty::native_storage>);
   static_assert(std::is_standard_layout_v<uv::udp::native_storage>);
 
   uv::loop loop;
   uv::async async(loop);
-  uv::check check(loop);
+  uv::raw::check check(loop);
   uv::raw::fs_event fs_event(loop);
   uv::fs_poll fs_poll(loop);
-  uv::idle idle(loop);
+  uv::raw::idle idle(loop);
   uv::pipe pipe(loop);
 #ifdef _WIN32
   uv_os_sock_t fds[2]{};
@@ -43,32 +43,32 @@ TEST(Uvpp2Layout, reconstructsHandlesFromNativePointers) {
   ASSERT_EQ(::pipe(fds), 0);
   uv::raw::poll poll(loop, fds[0]);
 #endif
-  uv::prepare prepare(loop);
+  uv::raw::prepare prepare(loop);
   uv::raw::signal signal(loop);
-  uv::timer timer(loop);
+  uv::raw::timer timer(loop);
   uv::tcp tcp(loop);
   uv::udp udp(loop);
 
   EXPECT_EQ(&async, &uv::async::from_native(async.native()));
   EXPECT_EQ(&async, &uv::async::from_native(async.native_handle()));
-  EXPECT_EQ(&check, &uv::check::from_native(check.native()));
-  EXPECT_EQ(&check, &uv::check::from_native(check.native_handle()));
+  EXPECT_EQ(&check, &uv::raw::check::from_native(check.native()));
+  EXPECT_EQ(&check, &uv::raw::check::from_native(check.native_handle()));
   EXPECT_EQ(&fs_event, &uv::raw::fs_event::from_native(fs_event.native()));
   EXPECT_EQ(&fs_event, &uv::raw::fs_event::from_native(fs_event.native_handle()));
   EXPECT_EQ(&fs_poll, &uv::fs_poll::from_native(fs_poll.native()));
   EXPECT_EQ(&fs_poll, &uv::fs_poll::from_native(fs_poll.native_handle()));
-  EXPECT_EQ(&idle, &uv::idle::from_native(idle.native()));
-  EXPECT_EQ(&idle, &uv::idle::from_native(idle.native_handle()));
+  EXPECT_EQ(&idle, &uv::raw::idle::from_native(idle.native()));
+  EXPECT_EQ(&idle, &uv::raw::idle::from_native(idle.native_handle()));
   EXPECT_EQ(&pipe, &uv::pipe::from_native(pipe.native()));
   EXPECT_EQ(&pipe, &uv::pipe::from_native(pipe.native_handle()));
   EXPECT_EQ(&poll, &uv::raw::poll::from_native(poll.native()));
   EXPECT_EQ(&poll, &uv::raw::poll::from_native(poll.native_handle()));
-  EXPECT_EQ(&prepare, &uv::prepare::from_native(prepare.native()));
-  EXPECT_EQ(&prepare, &uv::prepare::from_native(prepare.native_handle()));
+  EXPECT_EQ(&prepare, &uv::raw::prepare::from_native(prepare.native()));
+  EXPECT_EQ(&prepare, &uv::raw::prepare::from_native(prepare.native_handle()));
   EXPECT_EQ(&signal, &uv::raw::signal::from_native(signal.native()));
   EXPECT_EQ(&signal, &uv::raw::signal::from_native(signal.native_handle()));
-  EXPECT_EQ(&timer, &uv::timer::from_native(timer.native()));
-  EXPECT_EQ(&timer, &uv::timer::from_native(timer.native_handle()));
+  EXPECT_EQ(&timer, &uv::raw::timer::from_native(timer.native()));
+  EXPECT_EQ(&timer, &uv::raw::timer::from_native(timer.native_handle()));
   EXPECT_EQ(&tcp, &uv::tcp::from_native(tcp.native()));
   EXPECT_EQ(&tcp, &uv::tcp::from_native(tcp.native_handle()));
   EXPECT_EQ(&udp, &uv::udp::from_native(udp.native()));

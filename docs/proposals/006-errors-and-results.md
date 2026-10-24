@@ -324,3 +324,19 @@ Initialization remains separately documented throwing setup. Raw poll/fs-event
 completion results normalize successful `raw_status()` to zero and expose direct
 `error_code()`. High-level source waits and their `uv::ops` facades are unchanged.
 See [the implemented contract](../user/raw-watchers.md).
+
+
+## Raw timer and loop-phase migration progress
+
+`uv::raw::{timer,idle,prepare,check}` now share migrated raw watcher storage,
+explicit start/stop status and native queries, successful replacement commitment,
+and capture release on stop/close. Timer one-shot completion extracts its callable
+before user delivery; repeated callbacks retain mutable state. Timer `again`
+requires an active subscription, and `set_repeat` reports duration/closing errors
+as status. Raw duration validation and unsigned chrono getters are documented.
+Idle/prepare/check restart native delivery to support active runtime/static
+replacement. The shared loop, high-level coroutine sleep, and application-owned
+raw `data` contracts remain unchanged. See [the implemented user contract](../user/raw-watchers.md#timers)
+and [lifecycle tests](../../tests/test-raw-loop-watchers.cpp). Broader platform,
+allocation-failure, and performance validation remain open; this is not an API
+freeze or a high-level owner expansion.

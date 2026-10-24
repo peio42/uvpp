@@ -1,9 +1,8 @@
-# Raw signal, poll, and filesystem watchers
+# Raw callback watchers
 
-`uv::raw::signal`, `uv::raw::poll`, and `uv::raw::fs_event` provide caller-owned
-callback subscriptions on the shared `uv::loop`. Include their corresponding
-`<uvpp/handles/signal.hpp>`, `<uvpp/handles/poll.hpp>`, or
-`<uvpp/handles/fs_event.hpp>` header, or `<uvpp/uv.hpp>`.
+`uv::raw::{signal,poll,fs_event,timer,idle,prepare,check}` provide caller-owned
+callbacks on the shared `uv::loop`. Include the corresponding
+`<uvpp/handles/<name>.hpp>` header or `<uvpp/uv.hpp>`.
 
 These wrappers are neither copyable nor movable. Keep their storage alive through
 native close completion, explicitly call `close()`, and drive the loop through
@@ -19,7 +18,7 @@ contracts. Their native objects are not raw wrapper instances.
 ## Errors and subscription state
 
 All `start`, `start_static`, signal `start_oneshot` variants, and `stop` operations
-return `uv::status`. Inspect the initiating status independently of later event
+return `uv::status`. Timer `again` and `set_repeat` also return `uv::status`. Inspect the initiating status independently of later event
 results. A rejected start does not install or retain its new runtime callable.
 The old callable remains installed only while the native source remains active;
 a native reconfiguration failure can itself stop that source. No portable
@@ -130,3 +129,85 @@ successful statuses normalize to zero without losing their event payloads.
 Filesystem notifications retain libuv's backend-dependent names, flags,
 coalescing, and loss limitations. See [libuv's fs-event documentation](https://docs.libuv.org/en/v1.x/fs_event.html).
 `fs_poll` remains outside this migration slice.
+
+
+## Timers
+
+`uv::raw::timer` supports `start(timeout, cb)`, `start(timeout, repeat, cb)`,
+and `start_static<Callback>(timeout, repeat = 0ms)`. Callbacks receive `timer&`.
+
+```cpp
+using namespace std::chrono_literals;
+uv::loop loop;
+uv::raw::timer timer{loop};
+auto started = timer.start(10ms, [](uv::raw::timer& self) {
+  // This one-shot subscription has already finished. A fresh start is allowed.
+  self.close();
+});
+if (!started) timer.close();
+loop.run();
+loop.close();
+```
+
+A repeating timer retains its callback between firings. Libuv rearms it before
+user delivery; the wrapper uses actual native activity at delivery to distinguish
+persistent events from terminal one-shot completion. Terminal delivery extracts
+the runtime callable before invoking it, so captures are released when that
+invocation returns even if the timer remains open. A callback can immediately
+start a replacement, with either dispatch form. There is no extra operation state
+or per-firing uvpp allocation.
+
+`stop()` and `close()` release the subscription callable. `again()` only reuses an
+active subscription, returning `UV_EINVAL` if the timer is inactive (including
+never started, explicitly stopped, or completed one-shot). Start a new
+subscription with a callback after those terminal states. This deliberately
+narrows native `uv_timer_again`, which can reuse a stopped timer's native callback;
+raw uvpp does not resurrect a released callback. For an active subscription,
+`again()` follows native repeat timing; a zero repeat makes it a successful no-op.
+All mutating methods return `UV_EBADF` while closing.
+
+`set_repeat(interval)` changes the configured repeat without changing an already
+scheduled timeout. Setting repeat to zero from a repeating callback still permits
+the already-scheduled next firing; that final delivery releases the callback.
+Setting a positive repeat on an inactive timer does not restart it. See
+[libuv's timer timing rules](https://docs.libuv.org/en/v1.x/timer.html).
+
+Duration inputs accept standard integral and floating-point chrono representations.
+Finite negative values clamp to zero; positive fractions truncate to whole
+milliseconds. Non-finite or overflowing values report `UV_EINVAL` before native
+mutation or callback installation. Integral native-millisecond counts retain the
+full `uint64_t` range; ordinary integral units with an integer conversion factor
+are checked without overflowing intermediate chrono arithmetic. Other ratios and
+floating-point values convert through `long double`, rejecting values at or above
+2^64 milliseconds. This conversion can inherit floating-point rounding near
+integral boundaries; use integral milliseconds for exact native counts.
+
+`repeat()` and version-gated `due_in()` return `timer::duration`, a
+`std::chrono::duration<uint64_t, std::milli>`, preserving native unsigned counts
+rather than narrowing them into signed milliseconds. `due_in()` retains the
+`UVPP_HAS_TIMER_GET_DUE_IN` capability gate (libuv 1.40.0). These native getters
+have no operational failure channel. Construction remains throwing initialization;
+callback preparation may allocate before `start` runs. Raw timeout rounding and
+lifetime rules do not change the separate high-level `uv::co::sleep_for` contract.
+
+## Idle, prepare, and check
+
+`uv::raw::{idle,prepare,check}` expose `start(cb)`, `start_static<Callback>()`, and
+`stop()`. Their callbacks receive a reference to their wrapper and carry no native
+completion error. Start/stop errors use the immediate `status` result.
+
+All three retain their subscription between loop iterations until stop or close.
+Successful replacement supports runtime-to-runtime, runtime-to-static,
+static-to-runtime, and static-to-static transitions, including from inside the
+executing callback. Each start stops and restarts native delivery before committing
+the new callable because native start on an already-active phase watcher does
+not replace its callback. This can change that handle's order relative to other
+watchers of the same phase; no order among peers is promised. Stop and close
+release stored captures, while an executing callable survives until it returns.
+
+Idle callbacks run each iteration while active and force a zero poll timeout;
+they are not a low-priority background-work facility. Prepare callbacks run
+before polling, and check callbacks after polling. An active prepare/check
+watcher alone does not guarantee that polling returns promptly; use an actual
+wake source or `run(run_mode::nowait)` when appropriate. There is no new high-level
+phase owner, coroutine frontend, queue, or cross-thread entry point in this slice.

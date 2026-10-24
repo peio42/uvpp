@@ -298,19 +298,19 @@ TEST_F(UvppV3FsEventSource, rejectsWrongLoopClosedAndMovedFromWaits) {
 }
 
 TEST_F(UvppV3FsEventSource, nativeNotificationsRemainSubscribedAcrossWaits) {
-  uv::timer modifier{loop};
-  uv::timer timeout{loop};
+  uv::raw::timer modifier{loop};
+  uv::raw::timer timeout{loop};
   bool timed_out = false;
   unsigned received = 0;
   unsigned modifications = 0;
   // Some backends finish arming asynchronously. Keep producing real changes
   // until delivery, rather than assuming a write before run() is observable.
   // Duplicate/coalesced events need not correspond one-to-one with mutations.
-  modifier.start(1ms, 10ms, [&](uv::timer &) {
+  modifier.start(1ms, 10ms, [&](uv::raw::timer &) {
     uvpp::test::write_filesystem_test_file(path / (received == 0 ? "first" : "second"),
                                          std::to_string(++modifications));
   });
-  timeout.start(5s, [&](uv::timer &self) {
+  timeout.start(5s, [&](uv::raw::timer &self) {
     timed_out = true;
     modifier.close();
     source->request_close();

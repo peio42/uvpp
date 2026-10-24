@@ -207,3 +207,14 @@ remains active. Constructors retain throwing initialization. Native descriptor
 and buffer-size queries return results; fs-event `path()` returns
 `result<std::string>` and may throw on C++ allocation. See
 [raw watchers](../user/raw-watchers.md) for the complete implemented contract.
+
+
+Raw timer/idle/prepare/check operations follow the same explicit start/stop and
+native-query policy. Timer `again` and `set_repeat` return `status`; all mutating
+methods reject closing handles with `UV_EBADF`. An inactive timer's `again()`
+returns `UV_EINVAL` because terminal states release its callable. Duration
+validation reports `UV_EINVAL` for non-finite or unrepresentable inputs before
+changing native state or callbacks; finite negatives clamp to zero. Native repeat
+and due-in getters carry unsigned chrono counts without an operational failure
+channel. Initialization and runtime callable preparation remain separate throwing
+setup; see [the user contract](../user/raw-watchers.md#timers).

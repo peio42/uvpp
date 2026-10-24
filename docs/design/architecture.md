@@ -120,3 +120,18 @@ and query results. Shared subscription bookkeeping commits callbacks after
 successful start, preserves an old callable only while its native source remains
 active, and releases terminal slots before user delivery. High-level source
 ownership and pending-event policies remain separate; see [raw watchers](../user/raw-watchers.md).
+
+
+## Raw timers and loop phases
+
+`uv::raw::{timer,idle,prepare,check}` use the same `raw_watcher_handle` subscription
+bookkeeping as the migrated signal/poll/fs-event families. Native init remains
+throwing setup; start/stop and timer `again`/`set_repeat` return `status`, with
+shared explicit native-query results. Terminal one-shot timer delivery extracts
+its callable before invocation, while repeated events retain the callable.
+Inactive `again` cannot resurrect a callback released by stop or completion.
+Phase starts stop/restart native dispatch so active runtime/static replacement
+actually installs the new callback. Duration validation precedes native mutation,
+and timer getters preserve unsigned native milliseconds. Shared loop, native
+address stability, application-owned `data`, and explicit close completion are
+unchanged. See [raw callback watchers](../user/raw-watchers.md).

@@ -32,12 +32,12 @@ TEST(UvppV3SignalSource, failedConstructionRetainsInitializedHandleThroughNative
 TEST(UvppV3SignalSource, remainsSubscribedBetweenSuccessiveNextCalls) {
   uv::loop loop;
   uv::signal_source source(loop, SIGUSR1);
-  uv::timer sender(loop);
+  uv::raw::timer sender(loop);
   int sent = 0;
   std::optional<uv::signal_number> first;
   std::optional<uv::signal_number> second;
 
-  sender.start(1ms, 1ms, [&](uv::timer &self) {
+  sender.start(1ms, 1ms, [&](uv::raw::timer &self) {
     ASSERT_EQ(::raise(SIGUSR1), 0);
     if (++sent == 2) {
       self.close();
@@ -64,17 +64,17 @@ TEST(UvppV3SignalSource, remainsSubscribedBetweenSuccessiveNextCalls) {
 TEST(UvppV3SignalSource, deliveryReleasesWaiterBeforeResumingTheContinuation) {
   uv::loop loop;
   uv::signal_source source(loop, SIGUSR1);
-  uv::timer first_sender(loop);
-  uv::timer second_sender(loop);
+  uv::raw::timer first_sender(loop);
+  uv::raw::timer second_sender(loop);
   bool first_continuation_rearmed = false;
   std::optional<uv::signal_number> first;
   std::optional<uv::signal_number> second;
 
-  first_sender.start(1ms, [&](uv::timer &self) {
+  first_sender.start(1ms, [&](uv::raw::timer &self) {
     ASSERT_EQ(::raise(SIGUSR1), 0);
     self.close();
   });
-  second_sender.start(20ms, [&](uv::timer &self) {
+  second_sender.start(20ms, [&](uv::raw::timer &self) {
     // The second signal is deliberately separate from the first callback. The
     // continuation must already have installed its next() wait by this point.
     EXPECT_TRUE(first_continuation_rearmed);
@@ -129,7 +129,7 @@ TEST(UvppV3SignalSource, coalescesNotificationReceivedWithoutAWaiter) {
 TEST(UvppV3SignalSource, cancelledWaitLeavesTheSubscriptionUsable) {
   uv::loop loop;
   uv::signal_source source(loop, SIGUSR1);
-  uv::timer canceller(loop);
+  uv::raw::timer canceller(loop);
   std::optional<uv::result<uv::signal_number>> cancelled;
   std::optional<uv::signal_number> received;
 
@@ -138,7 +138,7 @@ TEST(UvppV3SignalSource, cancelledWaitLeavesTheSubscriptionUsable) {
     loop.stop();
   };
   auto cancelled_execution = uv::co::spawn(loop, wait_then_stop());
-  canceller.start(1ms, [&](uv::timer &self) {
+  canceller.start(1ms, [&](uv::raw::timer &self) {
     cancelled_execution.request_stop();
     self.close();
   });
@@ -151,8 +151,8 @@ TEST(UvppV3SignalSource, cancelledWaitLeavesTheSubscriptionUsable) {
   EXPECT_EQ(cancelled->error(), uv::make_error_code(UV_ECANCELED));
   EXPECT_FALSE(source.closing());
 
-  uv::timer sender(loop);
-  sender.start(1ms, [&](uv::timer &self) {
+  uv::raw::timer sender(loop);
+  sender.start(1ms, [&](uv::raw::timer &self) {
     ASSERT_EQ(::raise(SIGUSR1), 0);
     self.close();
   });
@@ -205,12 +205,12 @@ TEST(UvppV3SignalSource, movePreservesTheNativeSubscriptionAddress) {
   uv::signal_source initial(loop, SIGUSR1);
   auto *native = initial.native();
   uv::signal_source source(std::move(initial));
-  uv::timer sender(loop);
+  uv::raw::timer sender(loop);
   std::optional<uv::signal_number> received;
 
   EXPECT_EQ(source.native(), native);
   EXPECT_EQ(initial.native(), nullptr);
-  sender.start(1ms, [&](uv::timer &self) {
+  sender.start(1ms, [&](uv::raw::timer &self) {
     ASSERT_EQ(::raise(SIGUSR1), 0);
     self.close();
   });

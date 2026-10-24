@@ -456,3 +456,29 @@ uses only standard C++ with exclusive directory creation instead of `getpid()`.
 Generic status, signal registration/close, native-query, and fs-event setup tests
 remain available. This removes those source-level POSIX dependencies; it does
 not constitute a native Windows build or runtime validation.
+
+## Raw timer/idle/prepare/check migration validation
+
+[Raw loop-watcher tests](../../tests/test-raw-loop-watchers.cpp) add 27 cases:
+three typed phase-watcher suites cover persistent mutable state, stable native
+identity and application `data`, active runtime/static replacement in both
+directions, reentrant replacement, stop/reuse, capture release, native close
+completion, and rejected operations on closing handles. Timer cases cover
+terminal one-shot release without explicit stop, runtime/static rearming,
+repeat-to-zero final delivery, active-only `again`, stop/reuse, closing-state
+errors, invalid-duration rollback, finite-negative/sub-millisecond conversion,
+full-width unsigned repeat counts, and owner release from native close completion.
+The fixtures use only standard C++ and libuv; no POSIX-only headers, native
+socket fixtures, or signal delivery are required. Phase delivery uses bounded
+`run(nowait)` iterations instead of relying on a prepare/check watcher to wake
+an otherwise blocking poll.
+
+Local Linux validation passes both complete GCC/Clang suites: 434 passed,
+two existing TTY skips per compiler, both isolated allocation tests passed, and
+examples built. A focused Clang ASan/UBSan binary passes all 43 raw loop-watcher,
+historical timer/phase, and async cases with leak detection. All four migrated
+public headers compile independently with both compilers under C++20 and
+`-Wall -Wextra -Werror`. Complete network suites and leak checking run outside
+the sandbox because of socket/ptrace restrictions. Native Windows/macOS jobs,
+allocation-failure injection, and measured performance budgets remain validation
+gates; the portable fixtures are not a claim of native platform execution.

@@ -39,7 +39,7 @@ as available below are experimental and may change before release.
 | Poll owner | `poll_source`, per-wait `next(mask)`, `uv::ops::next`, and terminal close; descriptor ownership remains with the caller |
 | Process owner | `process`, synchronous spawn, `wait()`, `kill()`, and close after exit; stdio and resource-scope ownership remain deferred |
 | Explicit-result operations | `uv::ops::{read_some,write,accept,recv_from,send_to,close}`, `uv::ops::resolve(...)`, and `uv::ops::fs::{open,read,write,close}` |
-| Raw layer | `uv::raw::fs`, `uv::raw::process`, and [`uv::raw::{signal,poll,fs_event}`](raw-watchers.md) are available; the broader low-level namespace/error-policy migration is unfinished |
+| Raw layer | `uv::raw::fs`, `uv::raw::process`, and [raw callback watchers](raw-watchers.md) (`signal`, `poll`, `fs_event`, `timer`, `idle`, `prepare`, `check`) are available; the broader low-level namespace/error-policy migration is unfinished |
 | Filesystem | `uv::fs::{open,read,write,close}` with `uv::ops::fs` result counterparts; directories and broader filesystem operations remain proposed |
 | Other domains | fs-poll, threading and utility code exists, but their v3 surfaces have not been consolidated in these guides |
 
@@ -49,4 +49,4 @@ implicit server task spawning, or bounded I/O queue yet. Remaining design work
 and validation gates are tracked in [proposals](../proposals/index.md).
 
 [Raw watchers](raw-watchers.md) documents caller-owned signal, descriptor-readiness,
-and filesystem-event subscriptions, explicit statuses, and callback lifetimes.
+filesystem-event, timer, and loop-phase callbacks, explicit statuses, and lifetimes.
