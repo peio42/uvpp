@@ -84,9 +84,9 @@ TEST(UvppV3Coroutine, resourceScopeWaitsForEveryTcpCloseCompletion) {
   listener.listen([&](uv::raw::tcp &server, uv::status status) {
     EXPECT_TRUE(status);
     auto peer = std::make_unique<uv::raw::tcp>(loop);
-    EXPECT_NO_THROW(server.accept(*peer));
+    EXPECT_TRUE(server.accept(*peer));
     peers.push_back(std::move(peer));
-  });
+  }).throw_if_error();
   const uv::ipv4 address{"127.0.0.1", listener.sockname().value().port()};
   bool finish_completed = false;
 

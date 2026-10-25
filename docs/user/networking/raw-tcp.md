@@ -138,21 +138,18 @@ close/reset method is entered; that leaves native state untouched. Operational
 failures are statuses, not converted `std::bad_alloc` or user-callable exceptions.
 Exceptions escaping runtime/static C callbacks terminate at the native boundary.
 
-## Transitional stream and request APIs
+## Stream and transitional request APIs
 
-The handle still inherits `uv::stream<raw::tcp, uv_tcp_t>`. This step does **not**
-claim the final v3 contract for the following operations:
+The handle inherits `uv::raw::stream<raw::tcp, uv_tcp_t>`.
+[`listen`, `accept`, `read_start`, `read_stop` and `blocking`](raw-stream.md)
+return statuses and share runtime/static replacement, stop and close cleanup.
+Read results preserve borrowed buffers, EOF and byte counts. A pending read loan
+can retain its subscription until its final native notification or close completion.
 
-- `listen`, `accept`, `read_start`, `read_stop`, `blocking`, write and shutdown
-  submission retain their existing throwing submission behavior and callback-slot
-  rules. Use only initialized, non-closing handles with these legacy operations.
-- `connect` and `connect_static` retain their throwing submission API and use a
-  separate caller-owned `uv::connect_request`. This step does not rename requests
-  or convert their submission protocol. Write/shutdown requests remain separate
-  `uv::write_request` / `uv::shutdown_request` objects.
-- Completion statuses remain distinct from submission exceptions. Read results
-  retain EOF/byte counts and `write_now_result` retains bytes/would-block/error;
-  none is reduced to a plain status by this migration.
+`connect` / `connect_static`, write and shutdown still retain throwing submission
+and separate caller-owned `uv::connect_request`, `uv::write_request` and
+`uv::shutdown_request`. Their completion statuses remain distinct from submission
+exceptions. `write_now_result` retains bytes/would-block/error.
 
 Requests and borrowed write/read buffers must survive their actual native
 completion, including cancellation caused by close. Clearing handle-owned stream

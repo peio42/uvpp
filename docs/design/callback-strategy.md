@@ -180,4 +180,15 @@ close has quiesced delivery. Runtime reset close stores its prepared close calla
 only after native initiation succeeds, avoiding callback replacement on failure.
 Handle read/allocator/listener slots are separate from connect/write/shutdown
 request callbacks, which remain retained until their own actual completion.
-Stream start/stop/submission rollback is deferred to the next network slice.
+Raw stream subscription migration is implemented: native success commits runtime/
+static selection, read replacement stops before restart, and generations prevent
+old callback unwinding from restoring retired state. The allocator and reader are
+one paired slot; a checked-out pair spans native buffer allocation through read
+notification. A pending pair can survive stop/replacement and is released at read
+notification, the next native allocation, or native close completion before user
+close delivery. Terminal reads stop/release active ownership before user delivery;
+the executing pair still retains its buffer. Allocators must not reconfigure/close
+or recursively run the loop while native allocation is in progress. Listener errors
+remain persistent while native activity remains; inactive backend failures retire
+the selection before delivery. Connect/write/shutdown migration remains deferred.
+See [the stream contract](../user/networking/raw-stream.md).

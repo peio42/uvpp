@@ -32,7 +32,7 @@ TEST(UvppV3Coroutine, tcpConnectionConnectsMovesAndCloses) {
   const auto address = uv::ipv4{"127.0.0.1", listener.sockname().value().port()};
   listener.listen([&](uv::raw::tcp &, uv::status status) {
     EXPECT_TRUE(status);
-  });
+  }).throw_if_error();
 
   bool connected = false;
   bool write_completed = false;
@@ -456,7 +456,7 @@ TEST(UvppV3Coroutine, tcpConnectionClosesDuringExceptionalTaskExit) {
     throw;
   }
   const auto address = uv::ipv4{"127.0.0.1", listener.sockname().value().port()};
-  listener.listen([&](uv::raw::tcp &server, uv::status) { server.close(); });
+  listener.listen([&](uv::raw::tcp &server, uv::status) { server.close(); }).throw_if_error();
 
   auto client = [&]() -> uv::co::task<void> {
     auto socket = co_await uv::tcp_connection::connect(address);
@@ -495,7 +495,7 @@ TEST(UvppV3Coroutine, tcpConnectionReadSomeStopsAndReleasesSlotsBeforeResumption
   listener.listen([&](uv::raw::tcp &server, uv::status status) {
     ASSERT_TRUE(status);
     peer = std::make_unique<uv::raw::tcp>(loop);
-    ASSERT_NO_THROW(server.accept(*peer));
+    ASSERT_TRUE(server.accept(*peer));
     reply_request = std::make_unique<uv::write_request>();
     peer->write(*reply_request, std::as_bytes(std::span{reply.data(), reply.size()}),
       [&](uv::write_request &, uv::status write_status) {
@@ -503,7 +503,7 @@ TEST(UvppV3Coroutine, tcpConnectionReadSomeStopsAndReleasesSlotsBeforeResumption
         peer->close();
         server.close();
       });
-  });
+  }).throw_if_error();
 
   std::string received;
   bool saw_eof = false;
@@ -773,10 +773,10 @@ TEST(UvppV3Coroutine, tcpConnectionPermitsOneReadAndOneWrite) {
         EXPECT_EQ((std::string_view{peer_buffer.data(),
                       static_cast<std::size_t>(result.count())}), request);
         peer_received_request = true;
-        peer.read_stop();
+        peer.read_stop().throw_if_error();
         peer.write(response_request, std::as_bytes(std::span{response.data(), response.size()}),
             [](uv::write_request &, uv::status status) { EXPECT_TRUE(status); });
-      });
+      }).throw_if_error();
 
   auto reader = [&]() -> uv::co::task<void> {
     const auto result = co_await pair.client->read_some(client_buffer);

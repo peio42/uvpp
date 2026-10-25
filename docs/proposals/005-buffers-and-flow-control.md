@@ -187,3 +187,16 @@ tests include it directly. Local `make test-all GTEST_ARGS=--gtest_brief=1`
 passes both complete compiler suites (390 main cases passed, two TTY skips per
 compiler), both isolated allocation cases, and example builds. The moved header
 is byte-identical to its former location.
+
+## Raw stream subscription progress
+
+The persistent `uv::raw::stream` slice now pairs allocation/read callback ownership
+across native buffer loans. Stop/replacement releases the active generation while
+an outstanding loan keeps its original pair through final read delivery, the next
+native allocation, or close completion. Terminal reads stop before user delivery;
+normal/reset close retires pending pairs before user close callbacks. Callback
+preparation can throw independently of native status failures. Reader/listener
+reentrancy and runtime/static replacement are covered by
+[stream tests](../../tests/test-raw-stream.cpp). Request migration, buffer pools and
+higher-level flow control remain separate work. See the
+[implemented contract](../user/networking/raw-stream.md).

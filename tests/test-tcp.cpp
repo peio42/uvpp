@@ -53,7 +53,7 @@ TEST(Uvpp2Tcp, acceptsReadsAndWrites) {
 
     accepted_connection = true;
     accepted = std::make_unique<uv::raw::tcp>(loop);
-    srv.accept(*accepted);
+    srv.accept(*accepted).throw_if_error();
     accepted->user_data(server_marker);
 
     accepted->read_start(test_alloc, [&](uv::raw::tcp &stream, uv::read_result read) {
@@ -76,8 +76,8 @@ TEST(Uvpp2Tcp, acceptsReadsAndWrites) {
           accepted_closed = true;
         });
       });
-    });
-  });
+    }).throw_if_error();
+  }).throw_if_error();
 
   auto bound = server.sockname().value();
   uv::ipv4 connect_addr{"127.0.0.1", bound.port()};
@@ -111,7 +111,7 @@ TEST(Uvpp2Tcp, acceptsReadsAndWrites) {
         server.close([&](uv::raw::tcp &) {
           server_closed = true;
         });
-      });
+      }).throw_if_error();
     });
   });
 
@@ -201,7 +201,7 @@ TEST(Uvpp2Tcp, closeResetClosesConnectedTcp) {
     accepted_connection = true;
 
     auto accepted = std::make_unique<uv::raw::tcp>(loop);
-    srv.accept(*accepted);
+    srv.accept(*accepted).throw_if_error();
     srv.close([&](uv::raw::tcp &) {
       server_closed = true;
     });
@@ -216,10 +216,10 @@ TEST(Uvpp2Tcp, closeResetClosesConnectedTcp) {
         accepted_closed = true;
         delete &closed;
       });
-    });
+    }).throw_if_error();
 
     accepted.release();
-  });
+  }).throw_if_error();
 
   auto bound = server.sockname().value();
   client.connect(connect_req, uv::ipv4{"127.0.0.1", bound.port()},

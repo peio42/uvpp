@@ -82,14 +82,14 @@ cleanup_sample run_once(std::size_t connection_count) {
     }
     auto peer = std::make_unique<uv::raw::tcp>(loop);
     try {
-      listener.accept(*peer);
+      listener.accept(*peer).throw_if_error();
     } catch (const uv::error &error) {
       server_status = error.code().value();
       peer->close();
       return;
     }
     peers.push_back(std::move(peer));
-  });
+  }).throw_if_error();
 
   cleanup_sample sample;
   auto cleanup = [&]() -> uv::co::task<void> {

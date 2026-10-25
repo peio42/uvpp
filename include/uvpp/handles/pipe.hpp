@@ -44,7 +44,7 @@ namespace uv {
   }
 #endif
 
-  class pipe final : public stream<pipe, uv_pipe_t> {
+  class pipe final : public raw::stream<pipe, uv_pipe_t> {
   public:
     explicit pipe(loop &l, bool ipc = false) {
       throw_if_error(uv_pipe_init(l.native(), native(), ipc ? 1 : 0));

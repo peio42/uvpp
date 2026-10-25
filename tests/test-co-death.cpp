@@ -142,8 +142,8 @@ TEST(UvppV3CoroutineDeathTest, tcpConnectionDestructionWithActivePipeHandleExpor
         std::terminate();
       }
       peer = std::make_unique<uv::raw::tcp>(loop);
-      server.accept(*peer);
-    });
+      server.accept(*peer).throw_if_error();
+    }).throw_if_error();
     std::optional<uv::pipe_connection> pipe;
     std::optional<uv::tcp_connection> source;
     auto establish = [&]() -> uv::co::task<void> {

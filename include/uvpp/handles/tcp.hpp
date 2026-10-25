@@ -110,23 +110,6 @@ namespace uv::raw {
       return result<socket_address>{addr};
     }
 
-    void close() noexcept {
-      base::close();
-      release_callbacks();
-    }
-
-    void close(close_callback cb) noexcept {
-      base::close(std::move(cb));
-      release_callbacks();
-    }
-
-    template<auto Callback>
-      requires std::invocable<decltype(Callback), tcp&>
-    void close_static() noexcept {
-      base::template close_static<Callback>();
-      release_callbacks();
-    }
-
     void connect(connect_request &request, const ipv4 &addr, connect_request::callback callback) {
       ::uv::detail::submit_request(request, std::move(callback), [&] {
         return uv_tcp_connect(request.native(), native(), addr.native_sockaddr(), &tcp::connect_trampoline);
@@ -156,7 +139,7 @@ namespace uv::raw {
 #if UVPP_HAS_TCP_CLOSE_RESET
     status close_reset() noexcept {
       if (!initialized() || closing()) return status::from_native(UV_EBADF);
-      const auto result = status::from_native(uv_tcp_close_reset(native(), nullptr));
+      const auto result = status::from_native(uv_tcp_close_reset(native(), &tcp::close_reset_trampoline));
       if (result) release_callbacks();
       return result;
     }
@@ -176,7 +159,9 @@ namespace uv::raw {
     status close_reset_static() noexcept {
       if (!initialized() || closing()) return status::from_native(UV_EBADF);
       const auto result = status::from_native(uv_tcp_close_reset(native(), [](uv_handle_t *raw) noexcept {
-        ::uv::detail::invoke_static_callback<Callback>(tcp::from_native(raw));
+        auto &self = tcp::from_native(raw);
+        self.finish_close();
+        ::uv::detail::invoke_static_callback<Callback>(self);
       }));
       if (result) release_callbacks();
       return result;
@@ -222,7 +207,7 @@ namespace uv::raw {
 
 
     static void close_reset_trampoline(uv_handle_t *raw) noexcept {
-      basic_handle<tcp, uv_tcp_t>::close_trampoline(raw);
+      base::close_trampoline(raw);
     }
 
     static void connect_trampoline(uv_connect_t *raw, int status) noexcept {

@@ -29,7 +29,7 @@ namespace uv {
     int height = 0;
   };
 
-  class tty final : public stream<tty, uv_tty_t> {
+  class tty final : public raw::stream<tty, uv_tty_t> {
   public:
     tty(loop &l, uv_file file, bool readable) {
       throw_if_error(uv_tty_init(l.native(), native(), file, readable ? 1 : 0));

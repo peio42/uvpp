@@ -1,9 +1,11 @@
 #include <array>
+#include <chrono>
 #include <cstdlib>
 #include <new>
 
 #include "gtest/gtest.h"
 #include "uvpp/handles/udp.hpp"
+#include "uvpp/handles/tcp.hpp"
 #include "uvpp/net/tcp_listener.hpp"
 #include "uvpp/net/pipe_listener.hpp"
 #include "uvpp/net/udp_socket.hpp"
@@ -150,5 +152,60 @@ TEST(NetworkFactoriesAllocation, CppFailuresThrowInBothCreationPolicies) {
   expect_creation_bad_alloc(loop, [&] { uv::pipe_listener owner{loop, path}; }, 1);
   expect_creation_bad_alloc(loop, [&] { (void)uv::ops::make_pipe_listener(loop, path); }, 1);
 #endif
+  EXPECT_NO_THROW(loop.close());
+}
+
+// The isolated allocation binary also verifies the raw stream substrate: even
+// heap-backed prepared callables must move through native delivery without copies.
+TEST(RawStreamAllocation, preparedSubscriptionsAndRepeatedDeliveryNeedNoCppAllocation) {
+  uv::loop loop;
+  uv::raw::tcp listener{loop}, client{loop}, peer{loop};
+  uv::connect_request request;
+  bool accepted = false, connected = false;
+  listener.bind(uv::ipv4{"127.0.0.1", 0}).throw_if_error();
+  listener.listen([&](uv::raw::tcp &self, uv::status status) {
+    EXPECT_TRUE(status);
+    EXPECT_TRUE(self.accept(peer));
+    accepted = true;
+  }).throw_if_error();
+  client.connect(request, listener.sockname().value().to_v4(), [&](uv::connect_request&, uv::status status) {
+    EXPECT_TRUE(status);
+    connected = true;
+  });
+  const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds{5};
+  while (!(accepted && connected) && std::chrono::steady_clock::now() < deadline)
+    loop.run(uv::run_mode::nowait);
+  if (!(accepted && connected)) {
+    listener.close(); client.close(); peer.close(); loop.run();
+    FAIL() << "TCP pair setup timed out";
+  }
+  using substrate = uv::raw::stream<uv::raw::tcp, uv_tcp_t>;
+  std::array<char, 8> storage{};
+  std::array<char, 256> capture{};
+  int delivered = 0;
+  substrate::allocate_callback allocator = [&, capture](uv::raw::tcp&, std::size_t) {
+    storage[0] = capture[0];
+    return uv::buffer_view{storage.data(), storage.size()};
+  };
+  substrate::read_callback reader = [&, capture](uv::raw::tcp&, uv::read_result) { delivered += 1 + capture[0]; };
+  uv::status started, stopped;
+  {
+    allocation_failure no_cpp_allocation{0};
+    started = client.read_start(std::move(allocator), std::move(reader));
+    if (started) {
+      auto *native = client.native_stream();
+      for (int i = 0; i < 1000; ++i) {
+        uv_buf_t buffer{};
+        native->alloc_cb(client.native_handle(), storage.size(), &buffer);
+        native->read_cb(native, 0, &buffer);
+      }
+      stopped = client.read_stop();
+    }
+  }
+  EXPECT_TRUE(started);
+  EXPECT_TRUE(stopped);
+  EXPECT_EQ(delivered, 1000);
+  listener.close(); client.close(); peer.close();
+  loop.run();
   EXPECT_NO_THROW(loop.close());
 }

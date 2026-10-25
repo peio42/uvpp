@@ -301,3 +301,16 @@ High-level `loop_posting` retains its independent synchronized native protocol.
 See [the implemented user contract](../user/async.md) and
 [raw async tests](../../tests/test-raw-async.cpp). Broader native platform,
 allocation-failure, and performance gates remain open.
+
+## Raw stream subscription progress
+
+The persistent `uv::raw::stream` slice now pairs allocation/read callback ownership
+across native buffer loans. Stop/replacement releases the active generation while
+an outstanding loan keeps its original pair through final read delivery, the next
+native allocation, or close completion. Terminal reads stop before user delivery;
+normal/reset close retires pending pairs before user close callbacks. Callback
+preparation can throw independently of native status failures. Reader/listener
+reentrancy and runtime/static replacement are covered by
+[stream tests](../../tests/test-raw-stream.cpp). Request migration, buffer pools and
+higher-level flow control remain separate work. See the
+[implemented contract](../user/networking/raw-stream.md).

@@ -70,14 +70,14 @@ TEST(UvppV3Coroutine, pipeConnectionStreamsWithBorrowedBuffersAndScopedCleanup) 
         ASSERT_EQ(result.count(), 4);
         EXPECT_EQ((std::string_view{server_buffer.data(), 4}), "ping");
         server_received = true;
-        stream.read_stop();
+        stream.read_stop().throw_if_error();
         stream.write(response_request, uv::buffer_view{response.data(), response.size()},
             [&](uv::write_request &, uv::status status) {
               EXPECT_TRUE(status);
               server_wrote = true;
               stream.close();
             });
-      });
+      }).throw_if_error();
 
   uv::co::task_scope tasks(pair.loop);
   uv::co::resource_scope resources(pair.loop);
@@ -293,10 +293,10 @@ TEST(UvppV3Coroutine, pipeConnectionPermitsOneReadAndOneWrite) {
         EXPECT_EQ((std::string_view{peer_buffer.data(),
                       static_cast<std::size_t>(result.count())}), request);
         peer_received_request = true;
-        peer.read_stop();
+        peer.read_stop().throw_if_error();
         peer.write(response_request, std::as_bytes(std::span{response.data(), response.size()}),
             [](uv::write_request &, uv::status status) { EXPECT_TRUE(status); });
-      });
+      }).throw_if_error();
 
   auto reader = [&]() -> uv::co::task<void> {
     const auto result = co_await pair.client->read_some(client_buffer);
@@ -358,8 +358,8 @@ TEST(UvppV3Coroutine, ipcPipeTransfersTcpIntoAStableReceivedOwner) {
   tcp_listener.listen([&](uv::raw::tcp &server, uv::status status) {
     EXPECT_TRUE(status);
     tcp_peer = std::make_unique<uv::raw::tcp>(loop);
-    EXPECT_NO_THROW(server.accept(*tcp_peer));
-  });
+    EXPECT_TRUE(server.accept(*tcp_peer));
+  }).throw_if_error();
 
   bool received_tcp = false;
   bool received_owner_was_stable = false;
@@ -557,8 +557,8 @@ TEST(UvppV3Coroutine, pipeWriteWithHandleRejectsANonIpcPipe) {
   tcp_listener.listen([&](uv::raw::tcp &server, uv::status status) {
     EXPECT_TRUE(status);
     peer = std::make_unique<uv::raw::tcp>(loop);
-    EXPECT_NO_THROW(server.accept(*peer));
-  });
+    EXPECT_TRUE(server.accept(*peer));
+  }).throw_if_error();
   int status = 0;
 
   auto run = [&]() -> uv::co::task<void> {
@@ -600,8 +600,8 @@ TEST(UvppV3Coroutine, ipcPipeWriteWithHandleRejectsAnActiveWrite) {
   tcp_listener.listen([&](uv::raw::tcp &server, uv::status status) {
     EXPECT_TRUE(status);
     peer = std::make_unique<uv::raw::tcp>(loop);
-    EXPECT_NO_THROW(server.accept(*peer));
-  });
+    EXPECT_TRUE(server.accept(*peer));
+  }).throw_if_error();
   bool writers_finished = false;
   bool write_completed = false;
   int write_with_handle_status = 0;
@@ -699,8 +699,8 @@ TEST(UvppV3Coroutine, pipeWriteWithHandleUsesTheTcpExportSlotAcrossPipes) {
   tcp_listener.listen([&](uv::raw::tcp &server, uv::status status) {
     EXPECT_TRUE(status);
     peer = std::make_unique<uv::raw::tcp>(loop);
-    EXPECT_NO_THROW(server.accept(*peer));
-  });
+    EXPECT_TRUE(server.accept(*peer));
+  }).throw_if_error();
   bool first_completed = false;
   int second_status = 0;
 
@@ -765,9 +765,9 @@ TEST(UvppV3Coroutine, ipcPipeBackToBackHandleWritesPreserveBytesAndOwners) {
   tcp_listener.listen([&](uv::raw::tcp &server, uv::status status) {
     EXPECT_TRUE(status);
     auto peer = std::make_unique<uv::raw::tcp>(loop);
-    EXPECT_NO_THROW(server.accept(*peer));
+    EXPECT_TRUE(server.accept(*peer));
     peers.push_back(std::move(peer));
-  });
+  }).throw_if_error();
   int received_count = 0;
   int valid_owners = 0;
   std::string received_bytes;

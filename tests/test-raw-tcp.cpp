@@ -241,7 +241,7 @@ TEST_F(RawTcp, closeReleasesListenerCapturesAndKeepsSentinelThroughCompletion) {
   ASSERT_TRUE(handle.bind(uv::ipv4{"127.0.0.1", 0}));
   auto token = std::make_shared<int>(42);
   std::weak_ptr<int> weak = token;
-  handle.listen([token](tcp&, uv::status) { ADD_FAILURE(); });
+  handle.listen([token](tcp&, uv::status) { ADD_FAILURE(); }).throw_if_error();
   token.reset();
   EXPECT_FALSE(weak.expired());
   int closed = 0;
@@ -307,9 +307,9 @@ struct connected_pair {
     server.listen([&](tcp &self, uv::status status) {
       EXPECT_TRUE(status);
       if (!status) return;
-      EXPECT_NO_THROW(self.accept(peer));
+      EXPECT_TRUE(self.accept(peer));
       accepted = true;
-    });
+    }).throw_if_error();
     const auto address = server.sockname().value().to_v4();
     client.connect(request, address, [&](uv::connect_request &req, uv::status status) {
       EXPECT_EQ(&req, &request);
@@ -366,7 +366,7 @@ TEST(RawTcpConnected, resetReleasesReadCapturesAndRetainsCloseCallbackUntilCompl
   auto read = std::make_shared<int>(1);
   std::weak_ptr<int> released = read;
   pair.client.read_start([](tcp&, std::size_t) { return uv::buffer_view{}; },
-                         [read](tcp&, uv::read_result) { ADD_FAILURE(); });
+                         [read](tcp&, uv::read_result) { ADD_FAILURE(); }).throw_if_error();
   read.reset();
   auto close = std::make_shared<int>(2);
   std::weak_ptr<int> retained = close;
@@ -416,7 +416,7 @@ TEST(RawTcpConnected, resetFailureDuringShutdownPreservesReadSubscriptionAndRequ
     rejected.reset();
     EXPECT_TRUE(released.expired());
     EXPECT_FALSE(self.closing());
-  });
+  }).throw_if_error();
   read.reset();
   auto pending = std::make_shared<int>(2);
   std::weak_ptr<int> request_retained = pending;

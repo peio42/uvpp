@@ -137,3 +137,25 @@ remain, with no platform skip. For new cross-platform fixtures invoking static
 callback APIs from another callback, prefer named namespace-scope function targets
 to avoid the reported local-constant lookup paths in MSVC. Native CI must confirm
 this typed-test follow-up as well.
+
+## Raw stream persistent migration
+
+`test-raw-stream.cpp` covers status guards, cross-loop/type accept rejection,
+native would-block and blocking-mode outcomes, runtime/static listener and read
+replacement, mutable/reentrant callable lifetime, terminal and nonterminal
+notifications, paired buffer loans across replacement/stop, and all six normal/
+reset close forms. The inactive-listener-error test injects delivery after native
+quiescence; it does not reproduce a Windows AcceptEx failure. Real loopback TCP
+reads and shutdown cover borrowed payload and EOF. Callback preparation exceptions
+remain distinct from native failures, and callback exceptions terminate.
+
+The isolated allocation binary (`udp-allocation.cpp`, also used for network-owner
+allocation tests) prepares heap-backed stream callables before disabling C++
+allocation. Starting, delivering 1,000 allocation/read callback pairs and stopping
+must then succeed. This measures wrapper C++ allocation for prepared callbacks and
+caller-provided storage; it does not count libuv backend C allocation or user buffer
+allocation, nor claim callback construction is allocation-free.
+
+Windows-target syntax checks use MinGW headers and named namespace-scope static
+callback targets. Native Windows/MSVC execution remains a CI check; local Linux
+runs and cross-compilation do not substitute for that backend validation.

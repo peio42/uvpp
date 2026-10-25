@@ -48,7 +48,7 @@ TEST(Uvpp2Pipe, acceptsReadsAndWrites) {
 
     accepted_connection = true;
     accepted = std::make_unique<uv::pipe>(loop);
-    srv.accept(*accepted);
+    srv.accept(*accepted).throw_if_error();
 
     accepted->read_start(pipe_alloc, [&](uv::pipe &stream, uv::read_result read) {
       if (read.eof()) {
@@ -68,8 +68,8 @@ TEST(Uvpp2Pipe, acceptsReadsAndWrites) {
           accepted_closed = true;
         });
       });
-    });
-  });
+    }).throw_if_error();
+  }).throw_if_error();
 
   client.connect(connect_req, path, [&](uv::connect_request &, uv::status status) {
     ASSERT_TRUE(status);
@@ -96,7 +96,7 @@ TEST(Uvpp2Pipe, acceptsReadsAndWrites) {
         server.close([&](uv::pipe &) {
           server_closed = true;
         });
-      });
+      }).throw_if_error();
     });
   });
 
@@ -166,7 +166,7 @@ TEST(Uvpp2Pipe, bindsAndConnectsWithPipeNameFlags) {
     accepted_connection = true;
 
     accepted = std::make_unique<uv::pipe>(loop);
-    srv.accept(*accepted);
+    srv.accept(*accepted).throw_if_error();
 
     accepted->close([&](uv::pipe &) {
       accepted_closed = true;
@@ -174,7 +174,7 @@ TEST(Uvpp2Pipe, bindsAndConnectsWithPipeNameFlags) {
     srv.close([&](uv::pipe &) {
       server_closed = true;
     });
-  });
+  }).throw_if_error();
 
   client.connect(connect_req, path, uv::pipe_name_flag::no_truncate,
     [&](uv::connect_request &, uv::status status) {
@@ -238,7 +238,7 @@ TEST(Uvpp2Pipe, writeWithHandleSendsStreamOverIpc) {
     ASSERT_TRUE(status);
 
     auto *accepted = new uv::pipe(loop, true);
-    srv.accept(*accepted);
+    srv.accept(*accepted).throw_if_error();
     srv.close();
 
     accepted->read_start(pipe_alloc, [&](uv::pipe &ipc, uv::read_result read) {
@@ -252,15 +252,15 @@ TEST(Uvpp2Pipe, writeWithHandleSendsStreamOverIpc) {
       if (ipc.pending_count() > 0) {
         EXPECT_EQ(ipc.pending_type(), uv::handle_type::tcp);
         auto *received = new uv::raw::tcp(loop);
-        ipc.accept(*received);
+        ipc.accept(*received).throw_if_error();
         handle_received = true;
         received->close([](uv::raw::tcp &t) { delete &t; });
       }
 
-      ipc.read_stop();
+      ipc.read_stop().throw_if_error();
       ipc.close([](uv::pipe &p) { delete &p; });
-    });
-  });
+    }).throw_if_error();
+  }).throw_if_error();
 
   ipc_client.connect(connect_req, path, [&](uv::connect_request &, uv::status status) {
     ASSERT_TRUE(status);

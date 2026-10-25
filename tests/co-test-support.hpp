@@ -68,8 +68,8 @@ struct connected_tcp_pair {
     listener.listen([&](uv::raw::tcp &server, uv::status status) {
       EXPECT_TRUE(status);
       peer = std::make_unique<uv::raw::tcp>(loop);
-      EXPECT_NO_THROW(server.accept(*peer));
-    });
+      EXPECT_TRUE(server.accept(*peer));
+    }).throw_if_error();
 
     auto establish = [&]() -> uv::co::task<void> {
       client.emplace(co_await uv::tcp_connection::connect(address));
@@ -136,8 +136,8 @@ struct connected_pipe_pair {
     listener.listen([&](uv::pipe &server, uv::status status) {
       EXPECT_TRUE(status);
       peer = std::make_unique<uv::pipe>(loop);
-      EXPECT_NO_THROW(server.accept(*peer));
-    });
+      EXPECT_TRUE(server.accept(*peer));
+    }).throw_if_error();
 
     auto establish = [&]() -> uv::co::task<void> {
       client.emplace(co_await uv::pipe_connection::connect(path));

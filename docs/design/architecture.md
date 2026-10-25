@@ -191,7 +191,7 @@ and the native Windows Winsock fault-injection tests and pinned CI jobs.
 
 ## Raw TCP handle migration
 
-`uv::raw::tcp` combines the existing `uv::stream` storage/submission substrate
+`uv::raw::tcp` combines the `uv::raw::stream` storage/submission substrate
 with `detail::initializable_handle` lifecycle/native-query guards. The watcher
 initialization helper now specializes this same storage-free base; it preserves
 its prior callback/close semantics. TCP native init failures are already unlinked
@@ -207,9 +207,22 @@ Normal close is void, while reset close can fail before initiation. Reset runtim
 callback installation is committed only after native success; failure retains
 existing stream slots and releases the rejected close callback.
 
-A protected stream callback-release hook quiesces handle-owned listener/read/
-allocator slots after TCP native close initiation. It does not alter request
-callback ownership or early completion rules. All other stream submission and
-TCP connect/request operations retain their existing throwing transitional API;
-there is no separate request namespace migration or new high-level owner here.
-See [the implemented scope](../user/networking/raw-tcp.md).
+The stream substrate is now `uv::raw::stream`, also consumed by the still-legacy
+pipe/TTY family wrappers. Listen/read start/stop/accept/blocking use statuses;
+read outcomes keep signed counts, EOF and borrowed buffers. Runtime/static
+subscription selection is committed after successful native start. Read replacement
+stops the old source first: restart failure after successful stop leaves it stopped.
+The paired allocation/read slot supports generation-tagged checkout across one
+native buffer loan, with inline active/pending storage and no callback copies.
+Terminal read stops before user delivery. Listener errors retain the
+persistent listener while native activity remains; backend-stopped errors release
+selection before delivery (notably Windows fatal accept failures).
+
+Normal/reset close releases active subscriptions after native initiation, while an
+outstanding buffer loan retains its original allocator/reader through native read
+or close completion. All close forms install internal completion cleanup before
+user delivery, even without a user close callback. Reset failure leaves existing
+subscriptions untouched. Request callbacks/storage remain independent. Connect,
+write and shutdown retain their throwing transitional submission protocol.
+See [raw TCP](../user/networking/raw-tcp.md) and
+[stream subscriptions](../user/networking/raw-stream.md).

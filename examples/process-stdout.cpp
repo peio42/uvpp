@@ -48,7 +48,7 @@ int main() {
     std::cout.write(reinterpret_cast<const char *>(bytes.data()),
                     static_cast<std::streamsize>(bytes.size()));
     delete[] storage.data();
-  });
+  }).throw_if_error();
 
   loop.run();
   loop.close();

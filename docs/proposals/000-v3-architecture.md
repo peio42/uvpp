@@ -341,9 +341,14 @@ Normal/reset close releases handle stream slots only after native quiescence;
 reset failure retains existing subscriptions and does not install its new close
 callback. Request callbacks/storage remain independent until actual completion.
 
-The stream substrate and connect/write/shutdown request submission protocols are
-still transitional, including their throwing initiation. Their namespace/error/
-slot migration, then pipe and UDP, remain later slices. This is not a claim of
-fully status-oriented stream I/O. High-level network owners remain independent.
-See [implemented user scope](../user/networking/raw-tcp.md) and
-[TCP tests](../../tests/test-raw-tcp.cpp).
+The substrate is now `uv::raw::stream`. Persistent listen/read start/stop/accept/
+blocking operations use statuses and support runtime/static subscription selection.
+Read allocation/delivery share an inline generation-tagged pair, preserving the
+original buffer owner and reader across replacement/stop through native completion.
+Terminal reads stop/release active slots before delivery. All normal/reset close
+forms retire pending loans at native completion before user close callbacks.
+Connect/write/shutdown request submission still throws and remains a separate
+migration slice, followed by pipe and UDP family-specific setup/operations.
+High-level network owners remain independent. See
+[the stream contract](../user/networking/raw-stream.md) and
+[stream validation](../../tests/test-raw-stream.cpp).

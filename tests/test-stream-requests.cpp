@@ -38,7 +38,7 @@ TEST(Uvpp2StreamRequests, tcpShutdownReportsCompletionAndRemoteEof) {
     accepted_connection = true;
 
     auto *accepted = new uv::raw::tcp(loop);
-    srv.accept(*accepted);
+    srv.accept(*accepted).throw_if_error();
     accepted->read_start(shutdown_alloc, [&](uv::raw::tcp &stream, uv::read_result read) {
       if (!read.eof()) {
         return;
@@ -52,8 +52,8 @@ TEST(Uvpp2StreamRequests, tcpShutdownReportsCompletionAndRemoteEof) {
       server.close([&](uv::raw::tcp &) {
         server_closed = true;
       });
-    });
-  });
+    }).throw_if_error();
+  }).throw_if_error();
 
   auto bound = server.sockname().value();
   uv::ipv4 connect_addr{"127.0.0.1", bound.port()};
@@ -116,7 +116,7 @@ TEST(Uvpp2StreamRequests, tcpShutdownRunsStaticCallback) {
     ASSERT_TRUE(status);
 
     auto *accepted = new uv::raw::tcp(loop);
-    srv.accept(*accepted);
+    srv.accept(*accepted).throw_if_error();
     accepted->read_start(shutdown_alloc, [&](uv::raw::tcp &stream, uv::read_result read) {
       if (!read.eof()) {
         return;
@@ -130,8 +130,8 @@ TEST(Uvpp2StreamRequests, tcpShutdownRunsStaticCallback) {
       server.close([&](uv::raw::tcp &) {
         server_closed = true;
       });
-    });
-  });
+    }).throw_if_error();
+  }).throw_if_error();
 
   auto bound2 = server.sockname().value();
   uv::ipv4 connect_addr{"127.0.0.1", bound2.port()};
@@ -207,7 +207,7 @@ TEST(Uvpp2StreamRequests, writeNowSendsBytesOnConnectedTcp) {
   server.listen([&](uv::raw::tcp &srv, uv::status status) {
     ASSERT_TRUE(status);
     auto *accepted = new uv::raw::tcp(loop);
-    srv.accept(*accepted);
+    srv.accept(*accepted).throw_if_error();
     srv.close();
     accepted->read_start(alloc, [&](uv::raw::tcp &conn, uv::read_result read) {
       if (read.eof()) {
@@ -216,8 +216,8 @@ TEST(Uvpp2StreamRequests, writeNowSendsBytesOnConnectedTcp) {
       }
       ASSERT_TRUE(read.ok());
       bytes_read += static_cast<std::size_t>(read.count());
-    });
-  });
+    }).throw_if_error();
+  }).throw_if_error();
 
   auto bound = server.sockname().value();
   client.connect(connect_req, uv::ipv4{"127.0.0.1", bound.port()},

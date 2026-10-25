@@ -26,7 +26,7 @@ int main() {
     }
 
     auto *client = new uv::raw::tcp(loop);
-    srv.accept(*client);
+    srv.accept(*client).throw_if_error();
 
     client->read_start(allocate, [client](uv::raw::tcp &stream, uv::read_result read) {
       auto storage = read.storage();
@@ -57,8 +57,8 @@ int main() {
         delete[] storage.data();
         delete request;
       });
-    });
-  });
+    }).throw_if_error();
+  }).throw_if_error();
 
   loop.run();
   return 0;
