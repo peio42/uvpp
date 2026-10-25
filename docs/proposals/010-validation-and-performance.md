@@ -597,3 +597,28 @@ also pass under ASan/UBSan with leak detection. Native timer initialization
 currently has no failing path on a valid loop, so this coverage does not simulate
 native init failures or justify extending rollback assumptions to other families.
 Native Windows/macOS execution remains a CI gate.
+
+## Raw loop-phase explicit initialization validation
+
+[`test-raw-phase-init.cpp`](../../tests/test-raw-phase-init.cpp) adds seven typed
+cases per idle/prepare/check handle (21 cases) covering no native registration
+before init, status errors/capture release on pre-init operations, inert close
+variants, stable native identity/application data, duplicate init preserving the
+active subscription and original loop, close-completion observations, and the
+throwing loop/view constructors. Phase delivery tests use nonblocking loop
+iterations rather than assuming active prepare/check wakes a blocking poll.
+Static callback targets are namespace-scope function templates for MSVC portability.
+
+The timer lifecycle guards are extracted into a shared internal helper without
+new data members or changes to the native reconstruction/callback-slot protocol.
+Existing timer lifecycle, subscription, and native layout cases are included in
+regression validation. The targeted ASan/UBSan run with leak detection passes 58
+cases, with one existing TTY skip. Native Unix and Windows phase init implementations
+currently have no failing path on a valid loop; these tests do not simulate init
+failure. Native Windows/macOS execution remains a CI gate.
+
+Full local `make test-all` validation passes with GCC and Clang: 485 tests pass
+per compiler with two existing TTY skips, both separate UDP allocation cases pass,
+and all examples build. The new typed tests and timer initialization tests also
+compile with Clang `-Wall -Wextra -Werror`. No native Windows/macOS execution was
+performed locally.

@@ -216,12 +216,12 @@ timer's `again()` returns `UV_EINVAL` because terminal states release its callab
 validation reports `UV_EINVAL` for non-finite or unrepresentable inputs before
 changing native state or callbacks; finite negatives clamp to zero. Native repeat
 and due-in getters carry unsigned chrono counts without an operational failure
-channel. Timer default construction is `noexcept`; explicit `init()` returns
-status, rejecting repeated initialization (including after close) with
+channel. Timer/idle/prepare/check default construction is `noexcept`; explicit
+`init()` returns status, rejecting repeated initialization (including after close) with
 `UV_EALREADY`. Before initialization, operational methods return `UV_EBADF`,
-observations return false/zero, and ref/unref/close are inert. Loop-taking timer
-constructors unwrap `init()` and throw; other phase constructors and runtime
-callable preparation retain their separate throwing setup contracts; see
+observations return false/zero, and ref/unref/close are inert. Their loop-taking
+constructors unwrap `init()` and throw. Runtime callable preparation retains its
+separate throwing setup contract; see
 [the user contract](../user/raw-watchers.md#timers).
 
 

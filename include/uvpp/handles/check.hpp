@@ -7,16 +7,25 @@
 
 #include "uvpp/core/error.hpp"
 #include "uvpp/core/loop.hpp"
-#include "uvpp/detail/raw_watcher.hpp"
+#include "uvpp/detail/initializable_raw_watcher.hpp"
 
 namespace uv::raw {
 
-  class check final : public ::uv::detail::raw_watcher_handle<check, uv_check_t> {
+  class check final : public ::uv::detail::initializable_raw_watcher_handle<check, uv_check_t> {
   public:
+    check() noexcept = default;
+
     explicit check(loop &l) : check(loop_view{l.native()}) {}
 
     explicit check(loop_view l) {
-      throw_if_error(uv_check_init(l.native(), native()));
+      init(l).value();
+    }
+
+    status init(loop &l) noexcept { return init(l.view()); }
+
+    status init(loop_view l) noexcept {
+      if (initialized()) return status::from_native(UV_EALREADY);
+      return status::from_native(uv_check_init(l.native(), native()));
     }
 
     status start(callback cb) {
@@ -32,13 +41,13 @@ namespace uv::raw {
     }
 
     status stop() noexcept {
-      if (closing()) return status::from_native(UV_EBADF);
+      if (!initialized() || closing()) return status::from_native(UV_EBADF);
       return commit_stop(uv_check_stop(native()));
     }
 
   private:
     status restart(uv_check_cb native_callback, callback cb = {}) noexcept {
-      if (closing()) return status::from_native(UV_EBADF);
+      if (!initialized() || closing()) return status::from_native(UV_EBADF);
       // Native start on an active loop watcher does not replace its callback.
       const auto stopped = uv_check_stop(native());
       if (stopped < 0) return status::from_native(stopped);

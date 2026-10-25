@@ -370,7 +370,24 @@ successful initialization. No added state, allocation, or native-data reservatio
 is needed. Lifecycle and callback-release coverage lives in
 [`test-raw-timer-init.cpp`](../../tests/test-raw-timer-init.cpp).
 
-This is implemented for timer only. Other raw handle families retain their current
-construction contracts; their failure/rollback paths need individual review
+This is also implemented for idle/prepare/check (see below). Other raw handle
+families retain their current construction contracts; their failure/rollback paths need individual review
 before extending this protocol. Libuv timer init has no native failure path on a
 valid loop, so tests do not claim injected native-init failure coverage.
+
+## Raw loop-phase explicit initialization progress
+
+Idle, prepare, and check now share raw timer's default construction, status-returning
+`init(loop&/loop_view) noexcept`, native-loop-pointer `initialized()`, and pre-init
+observation/close/ref/query guards. Their throwing constructors unwrap `init()`;
+start/static start and stop reject uninitialized handles with `UV_EBADF`. Repeat
+init, including during/after close or with another loop, returns `UV_EALREADY`
+without changing the existing native subscription or callable slot.
+
+Common guards are factored into `detail::initializable_raw_watcher_handle`, also
+used by timer, without a new data member, allocation, or native-data reservation.
+Other watcher families retain their existing protocol. Phase native initialization
+currently succeeds unconditionally on a valid loop in both Unix and Windows
+backends; no synthetic init-failure contract is introduced. See the
+[implemented user contract](../user/raw-watchers.md#idle-prepare-and-check) and
+[portable typed tests](../../tests/test-raw-phase-init.cpp).

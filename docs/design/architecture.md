@@ -125,14 +125,17 @@ ownership and pending-event policies remain separate; see [raw watchers](../user
 ## Raw timers and loop phases
 
 `uv::raw::{timer,idle,prepare,check}` use the same `raw_watcher_handle` subscription
-bookkeeping as the migrated signal/poll/fs-event families. Timer additionally
-supports default construction and explicit `init(loop/loop_view) -> status`; its
-loop-taking constructors unwrap that status. The native `loop` pointer is the
-initialization sentinel, with no additional state field. It remains set after
-close, preventing reinitialization. Timer guards operations before initialization;
-other watcher families retain throwing constructor setup. Start/stop and timer
-`again`/`set_repeat` return `status`, with shared explicit native-query results. Terminal one-shot timer delivery extracts
-its callable before invocation, while repeated events retain the callable.
+bookkeeping as the migrated signal/poll/fs-event families. All four additionally
+support default construction and explicit `init(loop/loop_view) -> status`; their
+loop-taking constructors unwrap that status. The shared internal
+`initializable_raw_watcher_handle` factors out pre-init observation, close/ref,
+and native-query guards without adding storage or changing callback ownership.
+The native `loop` pointer is the initialization sentinel, with no additional state
+field. It remains set after close, preventing reinitialization. All four guard operations before initialization;
+signal/poll/fs-event/async retain their existing constructor setup. Start/stop
+and timer `again`/`set_repeat` return `status`, with shared explicit native-query
+results. Terminal one-shot timer delivery extracts its callable before invocation,
+while repeated events retain the callable.
 Inactive `again` cannot resurrect a callback released by stop or completion.
 Phase starts stop/restart native dispatch so active runtime/static replacement
 actually installs the new callback. Duration validation precedes native mutation,

@@ -199,7 +199,8 @@ handle views after successful initialization; their operations do not perform th
 wrapper's checks. Do not overwrite native `loop`, reinitialize native storage, or
 bypass the wrapper's lifetime protocol. All initialization and observations follow
 loop-thread affinity; `initialized()` provides no cross-thread synchronization.
-These explicit-initialization contracts currently apply to raw timer only.
+The same lifecycle and common-operation rules apply to raw idle, prepare, and
+check handles; timer duration/reconfiguration methods remain timer-specific.
 
 ### Subscriptions and durations
 
@@ -260,6 +261,32 @@ timer. Raw timeout rounding and lifetime rules do not change the separate high-l
 `uv::raw::{idle,prepare,check}` expose `start(cb)`, `start_static<Callback>()`, and
 `stop()`. Their callbacks receive a reference to their wrapper and carry no native
 completion error. Start/stop errors use the immediate `status` result.
+
+Each also supports default construction and `init(loop&)` / `init(loop_view)`
+returning `status` without throwing. Loop-taking constructors unwrap the same
+status. The [explicit initialization lifecycle](#explicit-initialization) matches
+timer: `initialized()` uses the native `loop` pointer and remains true after close;
+repeat initialization returns `UV_EALREADY` without changing subscriptions.
+Before init, start/stop and native descriptor/buffer queries report `UV_EBADF`,
+activity/closing/reference observations return false, and ref/unref/close are inert.
+Pre-init close callbacks are not retained or invoked. Successful init requires
+explicit close and storage retention through completion even without a start.
+Only use borrowed views after initialization. These entry points remain on the
+loop thread and add no storage field or allocation. Native phase initialization
+currently always succeeds for a valid initialized loop on Unix and Windows.
+
+```cpp
+uv::raw::prepare before_poll;
+auto initialized = before_poll.init(loop);
+if (initialized) {
+  auto started = before_poll.start([](uv::raw::prepare& self) {
+    self.close();
+  });
+  if (!started) before_poll.close();
+}
+loop.run(uv::run_mode::nowait); // Do not block waiting for I/O in this example.
+loop.run();                   // Complete close before releasing before_poll.
+```
 
 All three retain their subscription between loop iterations until stop or close.
 Successful replacement supports runtime-to-runtime, runtime-to-static,

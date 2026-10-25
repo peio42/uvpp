@@ -13,13 +13,11 @@
 #include "uvpp/core/error.hpp"
 #include "uvpp/core/loop.hpp"
 #include "uvpp/core/version.hpp"
-#include "uvpp/detail/raw_watcher.hpp"
+#include "uvpp/detail/initializable_raw_watcher.hpp"
 
 namespace uv::raw {
 
-  class timer final : public ::uv::detail::raw_watcher_handle<timer, uv_timer_t> {
-    using base = ::uv::detail::raw_watcher_handle<timer, uv_timer_t>;
-
+  class timer final : public ::uv::detail::initializable_raw_watcher_handle<timer, uv_timer_t> {
   public:
     using duration = std::chrono::duration<std::uint64_t, std::milli>;
 
@@ -31,61 +29,11 @@ namespace uv::raw {
       init(l).value();
     }
 
-    // The native loop pointer records successful initialization, including
-    // during/after close. It is never reset; native storage reuse is unsupported.
-    bool initialized() const noexcept {
-      return native_handle()->loop != nullptr;
-    }
-
     status init(loop &l) noexcept { return init(l.view()); }
 
     status init(loop_view l) noexcept {
       if (initialized()) return status::from_native(UV_EALREADY);
       return status::from_native(uv_timer_init(l.native(), native()));
-    }
-
-    bool active() const noexcept { return initialized() && base::active(); }
-    bool closing() const noexcept { return initialized() && base::closing(); }
-    bool has_ref() const noexcept { return initialized() && base::has_ref(); }
-
-    void ref() noexcept { if (initialized()) base::ref(); }
-    void unref() noexcept { if (initialized()) base::unref(); }
-
-    void close() noexcept { if (initialized()) base::close(); }
-
-    void close(close_callback cb) noexcept {
-      if (initialized()) base::close(std::move(cb));
-    }
-
-    template<auto Callback>
-      requires std::invocable<decltype(Callback), timer&>
-    void close_static() noexcept {
-      if (initialized()) base::template close_static<Callback>();
-    }
-
-    result<uv_os_fd_t> fileno() const noexcept {
-      if (!initialized()) return result<uv_os_fd_t>{make_error_code(UV_EBADF)};
-      return base::fileno();
-    }
-
-    result<int> send_buffer_size() const noexcept {
-      if (!initialized()) return result<int>{make_error_code(UV_EBADF)};
-      return base::send_buffer_size();
-    }
-
-    status send_buffer_size(int size) noexcept {
-      if (!initialized()) return status::from_native(UV_EBADF);
-      return base::send_buffer_size(size);
-    }
-
-    result<int> receive_buffer_size() const noexcept {
-      if (!initialized()) return result<int>{make_error_code(UV_EBADF)};
-      return base::receive_buffer_size();
-    }
-
-    status receive_buffer_size(int size) noexcept {
-      if (!initialized()) return status::from_native(UV_EBADF);
-      return base::receive_buffer_size(size);
     }
 
     template<class Rep, class Period, class RepeatRep, class RepeatPeriod>
