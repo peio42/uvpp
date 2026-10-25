@@ -1,4 +1,5 @@
 #include <array>
+#include <limits>
 #include <cstring>
 #include <memory>
 #include <span>
@@ -641,4 +642,32 @@ TEST(Uvpp2Udp, immediateSendFailureClearsCallback) {
   udp.close();
   loop.run();
   loop.close();
+}
+
+TEST(Uvpp2Udp, receiveStatusNormalizesWideCountsAndPreservesNativeErrors) {
+  for (const auto count : {ssize_t{0}, ssize_t{1}, (std::numeric_limits<ssize_t>::max)()}) {
+    const uv::udp_receive_result received{count, nullptr, nullptr, 0};
+    EXPECT_EQ(received.count(), count);
+    EXPECT_EQ(received.raw_status(), 0);
+    EXPECT_FALSE(received.error_code());
+    EXPECT_TRUE(received.status());
+  }
+  const uv::udp_receive_result failed{UV_EIO, nullptr, nullptr, 0};
+  EXPECT_EQ(failed.count(), UV_EIO);
+  EXPECT_EQ(failed.raw_status(), UV_EIO);
+  EXPECT_EQ(failed.error_code(), uv::make_error_code(UV_EIO));
+  EXPECT_EQ(failed.status().error(), failed.error_code());
+
+  char byte = 'x';
+  const auto buffer = uv_buf_init(&byte, 1);
+  const uv::ipv4 peer{"127.0.0.1", 9};
+  const uv::udp_receive_result datagram{0, &buffer, peer.native_sockaddr(), UV_UDP_PARTIAL};
+  EXPECT_TRUE(datagram.status());
+  EXPECT_FALSE(datagram.empty_event());
+  EXPECT_TRUE(datagram.partial());
+  EXPECT_EQ(datagram.address(), peer.native_sockaddr());
+  EXPECT_EQ(datagram.storage().data(), &byte);
+  const uv::udp_receive_result empty_event{0, &buffer, nullptr, 0};
+  EXPECT_TRUE(empty_event.status());
+  EXPECT_TRUE(empty_event.empty_event());
 }

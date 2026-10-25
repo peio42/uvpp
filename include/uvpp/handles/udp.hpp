@@ -48,7 +48,9 @@ namespace uv {
     bool mmsg_free() const noexcept { return false; }
 #endif
     ssize_t count() const noexcept { return nread_; }
-    uv::status status() const noexcept { return uv::status::from_native(static_cast<int>(nread_)); }
+    int raw_status() const noexcept { return nread_ < 0 ? static_cast<int>(nread_) : 0; }
+    uv::error_code error_code() const noexcept { return make_error_code(raw_status()); }
+    uv::status status() const noexcept { return uv::status::from_native(raw_status()); }
     unsigned flags() const noexcept { return flags_; }
     const sockaddr *address() const noexcept { return addr_; }
 

@@ -99,7 +99,10 @@ normal close does not yet implement the final paired UDP buffer-loan protocol.
 
 `send_now` and gated `send_many_now` keep typed byte/datagram progress,
 would-block and error outcomes, adding only the lifecycle guard. Receive results
-retain empty datagrams versus empty native events, partial packets, borrowed
+expose `raw_status()`, `error_code()` and `status()` with
+nonnegative counts normalized to success before any narrowing conversion.
+`count()` retains its signed native width. They retain empty datagrams versus empty
+native events, partial packets, borrowed
 addresses/buffers and recvmmsg chunk/free flags. Batch/view helpers keep their
 existing explicit allocation/borrowing contracts in `uv`. Payloads, requests and
 native buffers remain alive through actual completion, independently of socket

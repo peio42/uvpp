@@ -237,9 +237,8 @@ that result adaptation cannot miss failures during operation construction.
 ## Remaining low-level adaptation
 
 Specialized completion types still differ in their direct convenience accessors:
-UDP reads and filesystem polling still lack direct `raw_status()` and
-`error_code()` members. Migrated raw poll/fs-event and stream read results now
-provide both.
+Filesystem polling still lacks direct `raw_status()` and `error_code()` members.
+Migrated raw poll/fs-event, stream read and UDP receive results now provide both.
 Filesystem success status is normalized to zero. Their common nested status is now
 `uv::result<void>`, but uniform domain adaptation remains future work.
 
@@ -559,3 +558,9 @@ Send/receive/request and terminal callback-slot migration is deliberately deferr
 existing richer receive/immediate/batch outcomes remain intact. See
 [implemented socket behavior](../user/networking/raw-udp.md) and
 [UDP socket tests](../../tests/test-raw-udp.cpp).
+
+UDP receive result status access now matches stream reads: `raw_status()` normalizes
+nonnegative counts to zero, `error_code()` preserves native failures, and `status()`
+delegates to that normalized code. The signed count, borrowed payload/address and
+receive flags remain independent. Tests cover maximal positive native-width counts,
+negative failures and zero-byte datagrams versus empty events.
