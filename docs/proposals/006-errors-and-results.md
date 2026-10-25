@@ -320,8 +320,8 @@ cleanup, directory ownership rollback, and callback release/reuse are covered in
 `uv::raw::{signal,poll,fs_event}` operations now report native start/stop failures
 as `status`; common native getters use `result<T>` and setters use `status`.
 Fs-event `path()` returns `result<std::string>` with C++ allocation still throwing.
-Signal/fs-event support explicit initialization as recorded below; poll retains
-throwing constructor setup. Raw poll/fs-event
+Signal/poll/fs-event support explicit initialization as recorded below, alongside
+throwing constructors. Raw poll/fs-event
 completion results normalize successful `raw_status()` to zero and expose direct
 `error_code()`. High-level source waits and their `uv::ops` facades are unchanged.
 See [the implemented contract](../user/raw-watchers.md).
@@ -371,7 +371,7 @@ successful initialization. No added state, allocation, or native-data reservatio
 is needed. Lifecycle and callback-release coverage lives in
 [`test-raw-timer-init.cpp`](../../tests/test-raw-timer-init.cpp).
 
-This is also implemented for signal/fs-event/idle/prepare/check (see below). Other raw handle
+This is also implemented for signal/poll/fs-event/idle/prepare/check (see below). Other raw handle
 families retain their current construction contracts; their failure/rollback paths need individual review
 before extending this protocol. Libuv timer init has no native failure path on a
 valid loop, so tests do not claim injected native-init failure coverage.
@@ -411,6 +411,24 @@ registration. Such failure leaves `initialized()` false and permits retry withou
 closing the wrapper; any retained loop-owned infrastructure remains the loop's
 responsibility. Tests cover pre-init rejection, successful init, failed starts,
 repeated init, reentrant one-shot rearming, and close completion; native-init
-fault injection remains a separate validation gate. Poll/async are not migrated
-by this change. See [the user contract](../user/raw-watchers.md) and
+fault injection remains a separate validation gate. Async is not migrated here; poll explicit initialization is recorded below. See [the user contract](../user/raw-watchers.md) and
 [portable initialization tests](../../tests/test-raw-subscription-init.cpp).
+
+## Raw poll explicit initialization progress
+
+Raw poll now has default construction and `init(loop&/loop_view, fd)` plus tagged
+native-socket overloads, all returning `status` without throwing. Constructors
+unwrap the same status. Native `loop` is the initialization sentinel; pre-init
+operations and duplicate init follow the shared watcher contract. Invalid negative
+descriptors report `UV_EBADF`; native errors are preserved.
+
+Windows libuv 1.x has a post-registration error branch before native requests
+exist. `detail::finish_poll_init` synchronously unlinks that incomplete handle and
+clears its native storage, preserving application `data`. This isolated dependency
+on libuv's internal queue avoids dangling registrations and asynchronous cleanup
+of failed constructors, without introducing allocation, loop driving, or new state.
+External nonblocking changes and loop-owned infrastructure may remain. Successful
+init can never be reset/repeated. See the
+[implemented rollback boundary](../design/architecture.md#raw-poll-initialization-rollback),
+[user API](../user/raw-watchers.md#descriptor-readiness), and
+[initialization tests](../../tests/test-raw-poll-init.cpp).

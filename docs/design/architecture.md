@@ -119,7 +119,7 @@ The raw wrappers `uv::raw::{signal,poll,fs_event}` use explicit start/stop statu
 and query results. Shared subscription bookkeeping commits callbacks after
 successful start, preserves an old callable only while its native source remains
 active, and releases terminal slots before user delivery. High-level source
-ownership and pending-event policies remain separate. Raw signal and fs-event
+ownership and pending-event policies remain separate. Raw signal, poll, and fs-event
 also support default construction and status-returning `init(loop/loop_view)`
 through the shared `initializable_raw_watcher_handle`, now parameterized by
 notification payloads. Native `loop` tracks initialization without added state;
@@ -140,7 +140,7 @@ loop-taking constructors unwrap that status. The shared internal
 and native-query guards without adding storage or changing callback ownership.
 The native `loop` pointer is the initialization sentinel, with no additional state
 field. It remains set after close, preventing reinitialization. All four guard operations before initialization;
-Poll and async retain their existing constructor setup. Start/stop
+Async retains its existing constructor setup. Start/stop
 and timer `again`/`set_repeat` return `status`, with shared explicit native-query
 results. Terminal one-shot timer delivery extracts its callable before invocation,
 while repeated events retain the callable.
@@ -167,3 +167,27 @@ documented exception policy. Native `data`, address stability, explicit close,
 and shared loop rules are unchanged. `loop_posting` keeps its independent native
 storage, mutex admission, queue, and producer endpoints. See
 [raw async notifications](../user/async.md).
+
+### Raw poll initialization rollback
+
+Raw poll uses the same explicit initialization helper, with descriptor/socket
+loop and loop-view overloads. `detail::finish_poll_init` handles native errors
+before returning a status or throwing from a constructor. On Unix native errors
+precede registration. Windows libuv 1.x may instead fail `SO_PROTOCOL_INFOW`
+after `uv__handle_init`, before poll requests or handle-owned resources exist.
+The audited [libuv 1.51 backend](https://github.com/libuv/libuv/blob/v1.51.0/src/win/poll.c#L384-L447)
+returns there with only the common handle registration committed.
+That path synchronously removes the inactive, uncommitted registration from
+`handle_queue`, then clears native storage while preserving application `data`.
+This is an isolated dependency on libuv's internal registration queue; both the
+historical pointer-array and current named-structure representations are handled.
+There is no native relocation, nested loop, asynchronous failed-constructor
+cleanup, or added allocation/state field. Any libuv loop-owned peer sockets remain
+owned by the loop. Descriptor nonblocking side effects are not reversed.
+
+This rollback is only valid before native init has committed and before any poll
+request starts. Reinitialization after a successful public init is always rejected.
+The native rollback assumptions must be reviewed if the libuv backend changes.
+Tests model the late failure using a genuine inactive native registration between
+neighboring handles, then verify loop integrity, retry, and close. This supplements
+ordinary invalid-socket failures; it does not inject Windows `getsockopt` itself.

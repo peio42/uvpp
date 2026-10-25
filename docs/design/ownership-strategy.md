@@ -62,13 +62,13 @@ completion, even an error completion, the descriptor identity is terminal and
 cannot be retried safely. Direct destruction diagnoses an unclosed file rather
 than starting unobserved request cleanup.
 
-Raw signal/fs-event/timer/idle/prepare/check may be default-constructed without a native
+Raw signal/poll/fs-event/timer/idle/prepare/check may be default-constructed without a native
 registration. Their native `loop` pointers track successful initialization and
 remain set after close; reinitialization is rejected. Before init, destruction needs no native cleanup
 and close is inert (no close callback delivery). After successful init, the
 normal explicit-close/storage-retention obligations apply even without a start.
 Only use borrowed views after initialization. This contract currently applies to
-raw signal/fs-event/timer/idle/prepare/check; other raw handles retain constructor
+raw signal/poll/fs-event/timer/idle/prepare/check; other raw handles retain constructor
 initialization. Signal native init failure precedes handle registration and leaves
 no handle to close; loop-side infrastructure, if any, is retained by the loop.
 
@@ -170,3 +170,10 @@ polling, cancels its waiter, and retains state through native close; it never
 runs a nested loop. Native `data` points to the stable owner state. A loop must
 survive and be driven through cleanup, even though an inactive source does not
 keep that loop alive. Scope adoption remains deferred.
+
+Raw poll init failures synchronously undo any incomplete native registration
+before returning status or throwing from a constructor. They require no handle
+close and preserve stable storage/application data. This rollback occurs before
+requests exist; it is not a facility for resetting successful or closed handles.
+The caller retains ownership of descriptors/sockets, including native nonblocking
+side effects left by an unsuccessful init.

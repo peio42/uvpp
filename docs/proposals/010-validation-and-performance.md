@@ -653,3 +653,32 @@ per compiler with two existing TTY skips, both separate UDP allocation cases pas
 and all examples build. The final incremental run after bracing GoogleTest
 assertions in constexpr branches emits no warnings; the new tests also pass GCC
 `-Wall -Wextra -Werror` syntax validation.
+
+## Raw poll explicit initialization validation
+
+[`test-raw-poll-init.cpp`](../../tests/test-raw-poll-init.cpp) adds eight lifecycle
+cases parameterized over descriptor and tagged socket init (16 local Unix cases;
+Windows runs the native-socket mode). Coverage includes default storage without
+loop registration, pre-init operational/native-query errors and callable release,
+inert close variants, native failure/retry, stable native identity/application data,
+duplicate init preserving the active subscription/descriptor/original loop,
+reentrant duplicate init, close completion and borrowed socket ownership, throwing
+constructor failure cleanup, actual writable readiness with a bounded nonblocking
+loop, and late-init registration rollback between neighboring handles.
+
+The late-failure case creates a genuine inactive native poll registration, injects
+an init error into the rollback boundary before any request starts, verifies loop
+walk/liveness and native-data preservation, then retries and closes normally.
+It runs across platforms without needing to force Windows `getsockopt` to fail.
+It validates registration cleanup, not a claim of native Winsock fault injection.
+The rollback has an isolated libuv-internal queue dependency (historical array and
+current structure forms); review that boundary when the backend changes.
+
+The 16 focused cases pass, as does Clang `-Wall -Wextra -Werror` compilation.
+Full `make test-all` passes 518 tests per GCC/Clang compiler with two existing TTY
+skips, both separate UDP allocation cases, and all example builds. Targeted
+ASan/UBSan with leak detection passes 49 tests with one existing TTY skip. Native
+Windows/macOS execution and a native Windows post-registration fault injection
+remain CI/follow-up validation gates. Positive integer-descriptor initialization
+is covered on Unix; Windows tests use native sockets and cover negative descriptor
+validation rather than manufacturing CRT ownership of a socket.

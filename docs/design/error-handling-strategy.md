@@ -209,7 +209,12 @@ unwrap the same result. The native loop pointer is the initialization sentinel,
 with repeat init returning `UV_EALREADY` even during/after close. Pre-init starts,
 stops, and queries return `UV_EBADF`; observations are false and close/ref/unref
 are inert. Signal native init failures leave the wrapper unregistered and permit
-retry without close. Poll retains constructor-only initialization. Native descriptor
+retry without close. Poll also supports explicit descriptor/socket `init()`;
+negative descriptors return `UV_EBADF` before native entry. Native failures are
+returned unchanged after synchronous rollback of any incomplete registration,
+leaving retryable uninitialized storage. Loop-taking constructors unwrap the same
+result. Windows late-init rollback is documented in
+[architecture](architecture.md#raw-poll-initialization-rollback). Native descriptor
 and buffer-size queries return results; fs-event `path()` returns
 `result<std::string>` and may throw on C++ allocation after checking initialization
 and closing. See

@@ -315,7 +315,14 @@ Raw timer supports default construction, a native-loop-pointer `initialized()`
 observation, and explicit status-returning `init(loop&/loop_view)` alongside the
 throwing constructors. Before-init operations are guarded without additional
 state storage; successful initialization cannot be repeated, including after
-close. Signal/fs-event/idle/prepare/check also implement this lifecycle through
+close. Signal/poll/fs-event/idle/prepare/check also implement this lifecycle through
 shared internal guards; their start/stop and callback replacement protocol remains unchanged.
 Other raw families retain constructor initialization pending their own migration. See [the implemented timer contract](../user/raw-watchers.md#explicit-initialization)
 and [error-policy progress](006-errors-and-results.md#raw-timer-explicit-initialization-progress).
+
+Raw poll descriptor/socket initialization also supports explicit status and rolls
+back incomplete native registration before reporting failure. Windows libuv's late
+init error branch requires an isolated internal queue rollback; see
+[implemented architecture](../design/architecture.md#raw-poll-initialization-rollback).
+Native external nonblocking side effects are not rolled back. Broader native
+backend failure injection remains a validation gate.

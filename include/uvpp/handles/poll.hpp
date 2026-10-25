@@ -10,7 +10,8 @@
 #include "uvpp/core/error.hpp"
 #include "uvpp/core/loop.hpp"
 #include "uvpp/core/version.hpp"
-#include "uvpp/detail/raw_watcher.hpp"
+#include "uvpp/detail/initializable_raw_watcher.hpp"
+#include "uvpp/detail/poll_init.hpp"
 
 namespace uv {
 
@@ -116,26 +117,41 @@ namespace uv::raw {
     poll_events events_;
   };
 
-  class poll final : public ::uv::detail::raw_watcher_handle<poll, uv_poll_t, poll_result> {
+  class poll final : public ::uv::detail::initializable_raw_watcher_handle<poll, uv_poll_t, poll_result> {
   public:
-    poll(loop &l, int fd) {
-      throw_if_error(uv_poll_init(l.native(), native(), fd));
+    poll() noexcept = default;
+
+    poll(loop &l, int fd) : poll(l.view(), fd) {}
+
+    poll(loop_view l, int fd) { init(l, fd).value(); }
+
+    poll(loop &l, uv_os_sock_t socket, socket_poll_t tag) : poll(l.view(), socket, tag) {}
+
+    poll(loop_view l, uv_os_sock_t socket, socket_poll_t tag) {
+      init(l, socket, tag).value();
     }
 
-    poll(loop_view l, int fd) {
-      throw_if_error(uv_poll_init(l.native(), native(), fd));
+    status init(loop &l, int fd) noexcept { return init(l.view(), fd); }
+
+    status init(loop_view l, int fd) noexcept {
+      if (initialized()) return status::from_native(UV_EALREADY);
+      if (fd < 0) return status::from_native(UV_EBADF);
+      return status::from_native(::uv::detail::finish_poll_init(
+        *native(), uv_poll_init(l.native(), native(), fd)));
     }
 
-    poll(loop &l, uv_os_sock_t socket, socket_poll_t) {
-      throw_if_error(uv_poll_init_socket(l.native(), native(), socket));
+    status init(loop &l, uv_os_sock_t socket, socket_poll_t tag) noexcept {
+      return init(l.view(), socket, tag);
     }
 
-    poll(loop_view l, uv_os_sock_t socket, socket_poll_t) {
-      throw_if_error(uv_poll_init_socket(l.native(), native(), socket));
+    status init(loop_view l, uv_os_sock_t socket, socket_poll_t) noexcept {
+      if (initialized()) return status::from_native(UV_EALREADY);
+      return status::from_native(::uv::detail::finish_poll_init(
+        *native(), uv_poll_init_socket(l.native(), native(), socket)));
     }
 
     status start(poll_events events, callback cb) {
-      if (closing()) return status::from_native(UV_EBADF);
+      if (!initialized() || closing()) return status::from_native(UV_EBADF);
       if (!valid_events(events)) return status::from_native(UV_EINVAL);
       return commit_start(uv_poll_start(native(), events.raw(), &poll::poll_trampoline), std::move(cb));
     }
@@ -151,7 +167,7 @@ namespace uv::raw {
     template<auto Callback>
       requires std::invocable<decltype(Callback), poll&, poll_result>
     status start_static(poll_events events) noexcept {
-      if (closing()) return status::from_native(UV_EBADF);
+      if (!initialized() || closing()) return status::from_native(UV_EBADF);
       if (!valid_events(events)) return status::from_native(UV_EINVAL);
       return commit_start(uv_poll_start(native(), events.raw(), [](uv_poll_t *raw, int status, int events) noexcept {
         auto &self = poll::from_native(raw);
@@ -173,7 +189,7 @@ namespace uv::raw {
     }
 
     status stop() noexcept {
-      if (closing()) return status::from_native(UV_EBADF);
+      if (!initialized() || closing()) return status::from_native(UV_EBADF);
       return commit_stop(uv_poll_stop(native()));
     }
 

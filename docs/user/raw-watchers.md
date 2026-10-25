@@ -103,6 +103,41 @@ coalesce, and signal disposition remains subject to libuv/platform restrictions.
 
 ## Descriptor readiness
 
+`poll() noexcept` creates uninitialized storage. The explicit overloads are:
+
+```cpp
+status init(loop&, int fd) noexcept;
+status init(loop_view, int fd) noexcept;
+status init(loop&, uv_os_sock_t socket, socket_poll_t) noexcept;
+status init(loop_view, uv_os_sock_t socket, socket_poll_t) noexcept;
+```
+
+Call `readiness.init(loop, fd)` or
+`readiness.init(loop, socket, uv::socket_poll)`. Constructors taking these same
+arguments unwrap the result and throw `uv::error` on failure. A valid initialized
+loop is required. Windows supports sockets; use the tagged overload for a native
+`SOCKET`, preserving its width. The descriptor overload takes an integer file
+descriptor, not a narrowed Windows socket value. Negative descriptors report
+`UV_EBADF` before native init.
+
+The [common initialization lifecycle](#explicit-initialization) applies:
+`initialized()` uses native `loop` and remains true after close; repeat init
+returns `UV_EALREADY` without changing the borrowed descriptor, loop, or callback.
+Before init, all runtime/static/raw starts, stop, and native queries return
+`UV_EBADF`; observations are false and ref/unref/close are inert. These checks
+precede event-mask validation. Pre-init close callbacks are not retained or invoked.
+Views require successful initialization, and all operations remain loop-thread
+operations. After success, explicit close and storage retention through completion
+are required even if no start succeeds.
+
+An init failure leaves no wrapper registration in the loop and preserves native
+address/application `data`, so the object can be retried or destroyed without
+close. On Windows, uvpp synchronously rolls back libuv's possible partial handle
+registration before reporting the error. It does not run the loop or allocate
+cleanup state. Native init may already have changed the external socket's
+nonblocking mode; those external changes and loop-owned infrastructure are not
+rolled back.
+
 `uv::raw::poll` borrows its descriptor or socket. The common `poll_event`,
 `poll_events`, `socket_poll`, and mask operators remain in `uv`:
 
@@ -125,7 +160,7 @@ close does not close that descriptor. Keep it open through native poll close.
 Use `socket_poll` as the third constructor argument for `uv_poll_init_socket`.
 
 `start_raw(int, cb)` and `start_static_raw<Callback>(int)` select an integer mask.
-Unknown bits report `UV_EINVAL` before native submission; the existing
+Unknown bits on an initialized, non-closing handle report `UV_EINVAL` before native submission; the existing
 `UVPP_HAS_POLL_DISCONNECT` and `UVPP_HAS_POLL_PRIORITIZED` gates apply. A zero mask
 stops polling and releases the runtime callback. Both dispatch forms return a
 `raw::poll_result`, retaining `events()`, `raw_events()`, and `has_event()`.
@@ -229,7 +264,7 @@ handle views after successful initialization; their operations do not perform th
 wrapper's checks. Do not overwrite native `loop`, reinitialize native storage, or
 bypass the wrapper's lifetime protocol. All initialization and observations follow
 loop-thread affinity; `initialized()` provides no cross-thread synchronization.
-The same lifecycle and common-operation rules apply to raw signal, fs-event,
+The same lifecycle and common-operation rules apply to raw signal, poll, fs-event,
 idle, prepare, and check handles; timer duration/reconfiguration methods remain
 timer-specific.
 
