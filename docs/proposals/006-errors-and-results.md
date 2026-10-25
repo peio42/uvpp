@@ -508,3 +508,9 @@ slot migration, then pipe and UDP, remain later slices. This is not a claim of
 fully status-oriented stream I/O. High-level network owners remain independent.
 See [implemented user scope](../user/networking/raw-tcp.md) and
 [TCP tests](../../tests/test-raw-tcp.cpp).
+
+Raw TCP keepalive now uses explicit `keep_alive(std::chrono::seconds)` and
+`disable_keep_alive()`, both `noexcept -> status`, rather than a boolean selector.
+Enabling requires a positive representable native-second delay; zero/negative/
+overflow inputs return `UV_EINVAL`. Both methods reject pre-init/closing handles
+with `UV_EBADF`. The existing TCP lifecycle/options cases cover both methods.

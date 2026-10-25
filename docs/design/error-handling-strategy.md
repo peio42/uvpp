@@ -261,7 +261,8 @@ active. See [raw async notifications](../user/async.md).
 Raw TCP setup now uses `init() -> status` with throwing constructors delegating to
 `.throw_if_error()`. Open/bind/options/reset return status; sockname/peername return
 `result<socket_address>` with inline payload storage. Common native descriptor and
-buffer results preserve their payloads. Chrono keepalive delay validation reports
+buffer results preserve their payloads. `keep_alive(seconds)` enables keepalive and `disable_keep_alive()` disables it;
+chrono delay validation reports
 `UV_EINVAL` before mutation. Native init failure is already cleaned up by libuv;
 uvpp restores its null loop sentinel without starting asynchronous close.
 

@@ -823,3 +823,9 @@ ASan/UBSan runtime (Clang 16 with GCC 12 standard headers) reproduces the exact
 old invalid-vptr / pthread_getattr_np / EMFILE symbolizer failure with the original
 test, while the corrected subprocess test passes. Native Windows execution
 remains to be confirmed by CI.
+
+The explicit keepalive API (`keep_alive(seconds)` / `disable_keep_alive()`) reuses
+these lifecycle/option cases, covering both methods before init and during close,
+positive enable/disable, and zero/negative/overflow delay rejection. Full GCC/Clang
+suites each pass 548 tests with two existing TTY skips, UDP allocation cases and
+example builds; the 16 targeted TCP cases pass under ASan/UBSan with leak detection.

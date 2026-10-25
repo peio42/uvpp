@@ -68,14 +68,16 @@ views only after successful init. All operations are loop-thread only.
 | `bind(ipv4/ipv6, tcp_bind_flag)` | `status`; flags also compose with `operator|` |
 | `sockname() const`, `peername() const` | `result<socket_address>`; retain address family, port and native sockaddr payload |
 | `no_delay(bool)` | `status` |
-| `keep_alive(bool, chrono::seconds delay = 0s)` | `status`; enabling requires positive delay representable by native `unsigned int` seconds |
+| `keep_alive(chrono::seconds delay)` | `status`; enables keepalive with positive delay representable by native `unsigned int` seconds |
+| `disable_keep_alive()` | `status`; disables keepalive |
 | `simultaneous_accepts(bool)` | `status`; native platform semantics apply |
 | `fileno() const` | `result<uv_os_fd_t>` |
 | Buffer-size getters / setters | `result<int>` / `status` |
 
-These operations are `noexcept` after argument preparation. Negative, zero-when-
-enabling, or unrepresentable keepalive delays report `UV_EINVAL` before native
-mutation. `keep_alive(false)` disables keepalive with the default zero delay.
+These operations are `noexcept` after argument preparation. Negative, zero, or
+unrepresentable keepalive delays report `UV_EINVAL` before native
+mutation. `keep_alive(60s)` enables it and `disable_keep_alive()` disables it.
+There is no default delay; enable/disable intent is explicit.
 Provide integral seconds (or an exactly convertible chrono duration); there is
 no implicit fractional-second rounding. `UVPP_HAS_TCP_REUSEPORT` gates the
 `reuse_port` bind flag; `ipv6_only` retains native IPv6 semantics.

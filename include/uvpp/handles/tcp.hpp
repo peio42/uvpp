@@ -188,13 +188,18 @@ namespace uv::raw {
       return status::from_native(uv_tcp_nodelay(native(), enable ? 1 : 0));
     }
 
-    status keep_alive(bool enable, std::chrono::seconds delay = std::chrono::seconds{0}) noexcept {
+    status keep_alive(std::chrono::seconds delay) noexcept {
       if (!initialized() || closing()) return status::from_native(UV_EBADF);
-      if (delay.count() < 0 || (enable && delay.count() == 0) ||
+      if (delay.count() <= 0 ||
           static_cast<std::uint64_t>(delay.count()) > (std::numeric_limits<unsigned int>::max)())
         return status::from_native(UV_EINVAL);
-      return status::from_native(uv_tcp_keepalive(native(), enable ? 1 : 0,
+      return status::from_native(uv_tcp_keepalive(native(), 1,
                                                  static_cast<unsigned int>(delay.count())));
+    }
+
+    status disable_keep_alive() noexcept {
+      if (!initialized() || closing()) return status::from_native(UV_EBADF);
+      return status::from_native(uv_tcp_keepalive(native(), 0, 0));
     }
 
     status simultaneous_accepts(bool enable) noexcept {

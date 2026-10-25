@@ -33,7 +33,7 @@ TEST(Uvpp2HandleMethods, exposesTcpOptionsAndSocknames) {
   uv::raw::tcp tcp(loop);
 
   EXPECT_TRUE(tcp.no_delay(true));
-  EXPECT_TRUE(tcp.keep_alive(false));
+  EXPECT_TRUE(tcp.disable_keep_alive());
   EXPECT_TRUE(tcp.simultaneous_accepts(true));
 
   tcp.bind(uv::ipv4{"127.0.0.1", 0}).throw_if_error();

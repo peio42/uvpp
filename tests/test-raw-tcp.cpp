@@ -68,7 +68,8 @@ TEST_F(RawTcp, defaultStorageGuardsTcpOperationsWithoutRegistering) {
   EXPECT_EQ(handle.sockname().error(), badf);
   EXPECT_EQ(handle.peername().error(), badf);
   EXPECT_EQ(handle.no_delay(true).error(), badf);
-  EXPECT_EQ(handle.keep_alive(false).error(), badf);
+  EXPECT_EQ(handle.disable_keep_alive().error(), badf);
+  EXPECT_EQ(handle.keep_alive(std::chrono::seconds{60}).error(), badf);
   EXPECT_EQ(handle.simultaneous_accepts(true).error(), badf);
   EXPECT_EQ(handle.fileno().error(), badf);
   EXPECT_EQ(handle.send_buffer_size().error(), badf);
@@ -115,7 +116,7 @@ TEST_F(RawTcp, bindQueriesAndOptionsReturnTypedNativeOutcomes) {
   EXPECT_FALSE(handle.peername());
   EXPECT_TRUE(handle.no_delay(true));
   EXPECT_TRUE(handle.no_delay(false));
-  EXPECT_TRUE(handle.keep_alive(false));
+  EXPECT_TRUE(handle.disable_keep_alive());
   EXPECT_TRUE(handle.simultaneous_accepts(true));
   EXPECT_TRUE(handle.simultaneous_accepts(false));
   const auto reenabled = handle.simultaneous_accepts(true);
@@ -134,11 +135,11 @@ TEST_F(RawTcp, bindQueriesAndOptionsReturnTypedNativeOutcomes) {
   EXPECT_GT(address.value().port(), 0);
   const auto port = address.value().port();
   EXPECT_FALSE(handle.peername());
-  EXPECT_TRUE(handle.keep_alive(true, std::chrono::seconds{60}));
-  EXPECT_TRUE(handle.keep_alive(false));
-  EXPECT_EQ(handle.keep_alive(true).error(), uv::make_error_code(UV_EINVAL));
-  EXPECT_EQ(handle.keep_alive(true, std::chrono::seconds{-1}).error(), uv::make_error_code(UV_EINVAL));
-  EXPECT_EQ(handle.keep_alive(true, std::chrono::seconds{(std::numeric_limits<std::int64_t>::max)()}).error(),
+  EXPECT_TRUE(handle.keep_alive(std::chrono::seconds{60}));
+  EXPECT_TRUE(handle.disable_keep_alive());
+  EXPECT_EQ(handle.keep_alive(std::chrono::seconds{0}).error(), uv::make_error_code(UV_EINVAL));
+  EXPECT_EQ(handle.keep_alive(std::chrono::seconds{-1}).error(), uv::make_error_code(UV_EINVAL));
+  EXPECT_EQ(handle.keep_alive(std::chrono::seconds{(std::numeric_limits<std::int64_t>::max)()}).error(),
             uv::make_error_code(UV_EINVAL));
   EXPECT_EQ(handle.bind(uv::ipv4{"127.0.0.1", 0}, 0x80000000u).error(), uv::make_error_code(UV_EINVAL));
   EXPECT_EQ(handle.sockname().value().port(), port);
@@ -253,7 +254,8 @@ TEST_F(RawTcp, closeReleasesListenerCapturesAndKeepsSentinelThroughCompletion) {
   EXPECT_EQ(handle.bind(uv::ipv4{"127.0.0.1", 0}).error(), badf);
   EXPECT_EQ(handle.open(static_cast<uv_os_sock_t>(-1)).error(), badf);
   EXPECT_EQ(handle.no_delay(true).error(), badf);
-  EXPECT_EQ(handle.keep_alive(false).error(), badf);
+  EXPECT_EQ(handle.disable_keep_alive().error(), badf);
+  EXPECT_EQ(handle.keep_alive(std::chrono::seconds{60}).error(), badf);
   EXPECT_EQ(handle.simultaneous_accepts(true).error(), badf);
   EXPECT_EQ(handle.sockname().error(), badf);
   EXPECT_EQ(handle.peername().error(), badf);
