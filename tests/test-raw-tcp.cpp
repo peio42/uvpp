@@ -286,8 +286,8 @@ struct connected_pair {
   tcp server;
   tcp client;
   tcp peer;
-  uv::connect_request request;
-  uv::shutdown_request shutdown_request;
+  uv::raw::connect_request request;
+  uv::raw::shutdown_request shutdown_request;
   bool shutdown_completed = false;
   bool accepted = false;
   bool connected = false;
@@ -311,11 +311,11 @@ struct connected_pair {
       accepted = true;
     }).throw_if_error();
     const auto address = server.sockname().value().to_v4();
-    client.connect(request, address, [&](uv::connect_request &req, uv::status status) {
+    client.connect(request, address, [&](uv::raw::connect_request &req, uv::status status) {
       EXPECT_EQ(&req, &request);
       EXPECT_TRUE(status);
       connected = true;
-    });
+    }).throw_if_error();
     pump_until([&] { return accepted && connected; });
   }
   template<class Predicate>
@@ -420,11 +420,11 @@ TEST(RawTcpConnected, resetFailureDuringShutdownPreservesReadSubscriptionAndRequ
   read.reset();
   auto pending = std::make_shared<int>(2);
   std::weak_ptr<int> request_retained = pending;
-  pair.client.shutdown(pair.shutdown_request, [&pair, pending](uv::shutdown_request &request, uv::status status) {
+  pair.client.shutdown(pair.shutdown_request, [&pair, pending](uv::raw::shutdown_request &request, uv::status status) {
     EXPECT_EQ(&request, &pair.shutdown_request);
     EXPECT_TRUE(status);
     pair.shutdown_completed = true;
-  });
+  }).throw_if_error();
   pending.reset();
   // Deliver through the registered stream trampoline while shutdown is pending:
   // a failed reset must not change persistent-slot generation or lose its mutable callable.

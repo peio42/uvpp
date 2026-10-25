@@ -103,10 +103,12 @@ No callback copy, per-read C++ allocation, payload copy or hidden read queue is
 introduced. Runtime callable preparation and buffer allocation by the supplied
 allocator remain explicit costs, independent of libuv backend allocations.
 
-## Remaining request migration
+## Request operations
 
-Connect, write and shutdown retain their transitional throwing submission APIs and
-separate `uv::connect_request`, `uv::write_request` and `uv::shutdown_request` storage.
-Their callbacks survive until actual request completion, independently of stream
-subscription cleanup. `write_now` retains its typed byte-count / would-block result.
-Pipe/TTY setup and their family-specific methods are not migrated by this slice.
+[Write, shutdown and TCP connect](raw-requests.md) now use status-oriented
+submission and distinct `uv::raw::{write_request,shutdown_request,connect_request}`
+objects. Their pending state and callbacks survive until actual request completion,
+independently of stream subscription cleanup. `write_now` retains its typed
+byte-count / would-block result. Pipe/TTY family-specific setup is a later slice;
+pipe-specific connect and IPC write retain throwing entry points over the shared
+request lifecycle.

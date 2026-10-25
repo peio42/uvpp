@@ -18,9 +18,9 @@ TEST(Uvpp2Tcp, acceptsReadsAndWrites) {
   uv::loop loop;
   uv::raw::tcp server(loop);
   uv::raw::tcp client(loop);
-  uv::connect_request connect_req;
-  uv::write_request client_write_req;
-  uv::write_request server_write_req;
+  uv::raw::connect_request connect_req;
+  uv::raw::write_request client_write_req;
+  uv::raw::write_request server_write_req;
 
   int server_marker = 1;
   int client_marker = 2;
@@ -68,28 +68,28 @@ TEST(Uvpp2Tcp, acceptsReadsAndWrites) {
 
       static char response[] = "pong";
       uv::buffer_view out{response, 4};
-      stream.write(server_write_req, out, [&](uv::write_request &request, uv::status write_status) {
+      stream.write(server_write_req, out, [&](uv::raw::write_request &request, uv::status write_status) {
         ASSERT_TRUE(write_status);
         EXPECT_EQ(request.user_data<int>(), &server_write_marker);
         server_write_done = true;
         stream.close([&](uv::raw::tcp &) {
           accepted_closed = true;
         });
-      });
+      }).throw_if_error();
     }).throw_if_error();
   }).throw_if_error();
 
   auto bound = server.sockname().value();
   uv::ipv4 connect_addr{"127.0.0.1", bound.port()};
 
-  client.connect(connect_req, connect_addr, [&](uv::connect_request &request, uv::status status) {
+  client.connect(connect_req, connect_addr, [&](uv::raw::connect_request &request, uv::status status) {
     ASSERT_TRUE(status);
     EXPECT_EQ(request.user_data<int>(), &connect_marker);
     client_connected = true;
 
     static char payload[] = "ping";
     uv::buffer_view out{payload, 4};
-    client.write(client_write_req, out, [&](uv::write_request &request, uv::status write_status) {
+    client.write(client_write_req, out, [&](uv::raw::write_request &request, uv::status write_status) {
       ASSERT_TRUE(write_status);
       EXPECT_EQ(request.user_data<int>(), &client_write_marker);
       client_write_done = true;
@@ -112,8 +112,8 @@ TEST(Uvpp2Tcp, acceptsReadsAndWrites) {
           server_closed = true;
         });
       }).throw_if_error();
-    });
-  });
+    }).throw_if_error();
+  }).throw_if_error();
 
   loop.run();
 
@@ -131,7 +131,7 @@ TEST(Uvpp2Tcp, acceptsReadsAndWrites) {
 
 namespace {
 
-void on_static_ipv6_connect(uv::connect_request &, uv::status) {}
+void on_static_ipv6_connect(uv::raw::connect_request &, uv::status) {}
 
 }
 
@@ -177,7 +177,7 @@ TEST(Uvpp2Tcp, socknameToStringMatchesBoundAddress) {
 }
 
 TEST(Uvpp2Tcp, exposesStaticIpv6ConnectOverload) {
-  using connect_static_ipv6 = void (uv::raw::tcp::*)(uv::connect_request &, const uv::ipv6 &);
+  using connect_static_ipv6 = uv::status (uv::raw::tcp::*)(uv::raw::connect_request &, const uv::ipv6 &) noexcept;
   connect_static_ipv6 fn = &uv::raw::tcp::connect_static<on_static_ipv6_connect>;
   (void)fn;
 }
@@ -187,7 +187,7 @@ TEST(Uvpp2Tcp, closeResetClosesConnectedTcp) {
   uv::loop loop;
   uv::raw::tcp server(loop);
   uv::raw::tcp client(loop);
-  uv::connect_request connect_req;
+  uv::raw::connect_request connect_req;
 
   bool accepted_connection = false;
   bool server_observed_close = false;
@@ -223,12 +223,12 @@ TEST(Uvpp2Tcp, closeResetClosesConnectedTcp) {
 
   auto bound = server.sockname().value();
   client.connect(connect_req, uv::ipv4{"127.0.0.1", bound.port()},
-    [&](uv::connect_request &, uv::status status) {
+    [&](uv::raw::connect_request &, uv::status status) {
       ASSERT_TRUE(status);
       client.close_reset([&](uv::raw::tcp &) {
         client_closed = true;
       }).throw_if_error();
-    });
+    }).throw_if_error();
 
   loop.run();
 

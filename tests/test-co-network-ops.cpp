@@ -59,13 +59,13 @@ TYPED_TEST(NetworkOpsStream, ResultsPreserveSlotsCancellationEofAndClosedErrors)
   EXPECT_NO_THROW(first.rethrow_if_failed());
   EXPECT_EQ(canceled, UV_ECANCELED);
 
-  uv::write_request request;
+  uv::raw::write_request request;
   std::string payload{"reply"};
   pair.peer->write(request, std::as_bytes(std::span{payload.data(), payload.size()}),
-      [&](uv::write_request &, uv::status status) {
+      [&](uv::raw::write_request &, uv::status status) {
         EXPECT_TRUE(status);
         pair.peer->close();
-      });
+      }).throw_if_error();
   auto resumed = [&]() -> uv::co::task<void> {
     const auto invalid_read = co_await uv::ops::read_some(*pair.client, {});
     EXPECT_EQ(invalid_read.error().native(), UV_EINVAL);

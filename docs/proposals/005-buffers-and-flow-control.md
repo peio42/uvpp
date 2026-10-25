@@ -197,6 +197,20 @@ native allocation, or close completion. Terminal reads stop before user delivery
 normal/reset close retires pending pairs before user close callbacks. Callback
 preparation can throw independently of native status failures. Reader/listener
 reentrancy and runtime/static replacement are covered by
-[stream tests](../../tests/test-raw-stream.cpp). Request migration, buffer pools and
+[stream tests](../../tests/test-raw-stream.cpp). Request migration is recorded below; buffer pools and
 higher-level flow control remain separate work. See the
 [implemented contract](../user/networking/raw-stream.md).
+
+## Raw stream/TCP request progress
+
+Connect/write/shutdown requests now live separately in `uv::raw`, with immovable
+application-owned storage and `pending()` state. Stream write/shutdown and TCP
+connect return submission statuses. Pending reuse is `UV_EBUSY`; native rejection
+retains no new callback and produces no completion. Runtime/static selection is
+extracted and pending cleared before delivery, allowing reentrant reuse without
+old completion clobbering it. Handle close retains request/payload lifetimes until
+native completion. Typed immediate write/read outcomes remain distinct. Pipe's
+specific connect/IPC interfaces remain throwing adapters over the shared request
+state until its family migration. See the
+[implemented request contract](../user/networking/raw-requests.md) and
+[real request tests](../../tests/test-raw-stream-requests.cpp).

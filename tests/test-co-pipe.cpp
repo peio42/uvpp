@@ -51,7 +51,7 @@ TEST(UvppV3Coroutine, pipeConnectionStreamsWithBorrowedBuffersAndScopedCleanup) 
 
   std::array<char, 32> server_buffer{};
   std::array<char, 4> response{'p', 'o', 'n', 'g'};
-  uv::write_request response_request;
+  uv::raw::write_request response_request;
   bool server_received = false;
   bool server_wrote = false;
   bool handler_completed = false;
@@ -72,11 +72,11 @@ TEST(UvppV3Coroutine, pipeConnectionStreamsWithBorrowedBuffersAndScopedCleanup) 
         server_received = true;
         stream.read_stop().throw_if_error();
         stream.write(response_request, uv::buffer_view{response.data(), response.size()},
-            [&](uv::write_request &, uv::status status) {
+            [&](uv::raw::write_request &, uv::status status) {
               EXPECT_TRUE(status);
               server_wrote = true;
               stream.close();
-            });
+            }).throw_if_error();
       }).throw_if_error();
 
   uv::co::task_scope tasks(pair.loop);
@@ -278,7 +278,7 @@ TEST(UvppV3Coroutine, pipeConnectionPermitsOneReadAndOneWrite) {
   std::array<std::byte, 16> client_buffer{};
   std::string request{"request"};
   std::string response{"response"};
-  uv::write_request response_request;
+  uv::raw::write_request response_request;
   bool peer_received_request = false;
   bool write_completed = false;
   std::string client_received;
@@ -295,7 +295,7 @@ TEST(UvppV3Coroutine, pipeConnectionPermitsOneReadAndOneWrite) {
         peer_received_request = true;
         peer.read_stop().throw_if_error();
         peer.write(response_request, std::as_bytes(std::span{response.data(), response.size()}),
-            [](uv::write_request &, uv::status status) { EXPECT_TRUE(status); });
+            [](uv::raw::write_request &, uv::status status) { EXPECT_TRUE(status); }).throw_if_error();
       }).throw_if_error();
 
   auto reader = [&]() -> uv::co::task<void> {

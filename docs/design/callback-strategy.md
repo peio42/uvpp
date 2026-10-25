@@ -190,5 +190,9 @@ close delivery. Terminal reads stop/release active ownership before user deliver
 the executing pair still retains its buffer. Allocators must not reconfigure/close
 or recursively run the loop while native allocation is in progress. Listener errors
 remain persistent while native activity remains; inactive backend failures retire
-the selection before delivery. Connect/write/shutdown migration remains deferred.
+the selection before delivery. Connect/write/shutdown use separate raw request slots: acceptance commits pending
+state, busy requests reject without mutation, and completion extracts selection
+and clears pending before user delivery. Runtime/static resubmission shares one
+protocol and old completion does not touch the request after delivery. Handle
+close retains request state through its own completion.
 See [the stream contract](../user/networking/raw-stream.md).

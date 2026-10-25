@@ -347,8 +347,22 @@ Read allocation/delivery share an inline generation-tagged pair, preserving the
 original buffer owner and reader across replacement/stop through native completion.
 Terminal reads stop/release active slots before delivery. All normal/reset close
 forms retire pending loans at native completion before user close callbacks.
-Connect/write/shutdown request submission still throws and remains a separate
-migration slice, followed by pipe and UDP family-specific setup/operations.
+Connect/write/shutdown request migration is implemented in the progress section
+below. Pipe and UDP family-specific setup/operations remain later slices.
 High-level network owners remain independent. See
 [the stream contract](../user/networking/raw-stream.md) and
 [stream validation](../../tests/test-raw-stream.cpp).
+
+## Raw stream/TCP request progress
+
+Connect/write/shutdown requests now live separately in `uv::raw`, with immovable
+application-owned storage and `pending()` state. Stream write/shutdown and TCP
+connect return submission statuses. Pending reuse is `UV_EBUSY`; native rejection
+retains no new callback and produces no completion. Runtime/static selection is
+extracted and pending cleared before delivery, allowing reentrant reuse without
+old completion clobbering it. Handle close retains request/payload lifetimes until
+native completion. Typed immediate write/read outcomes remain distinct. Pipe's
+specific connect/IPC interfaces remain throwing adapters over the shared request
+state until its family migration. See the
+[implemented request contract](../user/networking/raw-requests.md) and
+[real request tests](../../tests/test-raw-stream-requests.cpp).

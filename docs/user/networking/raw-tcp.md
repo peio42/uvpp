@@ -6,9 +6,9 @@ copyable nor movable; native `data` belongs to the application. There is no
 `uv::tcp` compatibility alias. Common addresses and constants remain in `uv`:
 `ipv4`, `ipv6`, `socket_address`, `tcp_socket_family`, and `tcp_bind_flag`.
 
-This first network migration covers initialization, socket adoption, bind,
-address queries, existing TCP options, and ordinary/reset close. The inherited
-stream and request submission APIs retain their transitional contracts below.
+The raw TCP surface covers initialization, socket adoption, bind, address queries,
+TCP options, ordinary/reset close, stream subscriptions and request submission.
+Fallible operational submissions return explicit statuses.
 The high-level `tcp_connection` / `tcp_listener` owners keep their independent
 stable storage and existing coroutine/`uv::ops` contracts.
 
@@ -138,7 +138,7 @@ close/reset method is entered; that leaves native state untouched. Operational
 failures are statuses, not converted `std::bad_alloc` or user-callable exceptions.
 Exceptions escaping runtime/static C callbacks terminate at the native boundary.
 
-## Stream and transitional request APIs
+## Stream and request APIs
 
 The handle inherits `uv::raw::stream<raw::tcp, uv_tcp_t>`.
 [`listen`, `accept`, `read_start`, `read_stop` and `blocking`](raw-stream.md)
@@ -146,10 +146,11 @@ return statuses and share runtime/static replacement, stop and close cleanup.
 Read results preserve borrowed buffers, EOF and byte counts. A pending read loan
 can retain its subscription until its final native notification or close completion.
 
-`connect` / `connect_static`, write and shutdown still retain throwing submission
-and separate caller-owned `uv::connect_request`, `uv::write_request` and
-`uv::shutdown_request`. Their completion statuses remain distinct from submission
-exceptions. `write_now_result` retains bytes/would-block/error.
+[Connect/connect_static, write and shutdown](raw-requests.md) return submission
+statuses with separate caller-owned `uv::raw::connect_request`,
+`uv::raw::write_request` and `uv::raw::shutdown_request`. Their completion statuses
+are distinct from immediate submission results; pending requests reject reuse with
+`UV_EBUSY`. `write_now_result` retains bytes/would-block/error.
 
 Requests and borrowed write/read buffers must survive their actual native
 completion, including cancellation caused by close. Clearing handle-owned stream

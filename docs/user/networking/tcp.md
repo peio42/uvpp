@@ -83,5 +83,5 @@ callback state. Raw wrappers keep `data` available to application code.
 
 For caller-owned native storage, [raw TCP](raw-tcp.md) provides explicit TCP setup,
 address queries and close/reset. Its [stream subscriptions](raw-stream.md) return
-explicit statuses; connect/write/shutdown requests remain transitional. These raw
+explicit statuses, as do [connect/write/shutdown requests](raw-requests.md). These raw
 APIs are independent of the high-level owners.

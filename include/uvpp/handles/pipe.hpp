@@ -85,56 +85,59 @@ namespace uv {
       });
     }
 
-    void connect(connect_request &request, std::string_view name, connect_request::callback callback) {
+    void connect(raw::connect_request &request, std::string_view name, raw::connect_request::callback callback) {
 #if UVPP_HAS_PIPE_CONNECT2
-      detail::submit_request(request, std::move(callback), [&] {
-        return uv_pipe_connect2(request.native(), native(), name.data(), name.size(), 0, &pipe::connect_trampoline);
-      });
+      detail::stream_request_submission::submit(request, std::move(callback), [&] {
+        return uv_pipe_connect2(request.native(), native(), name.data(), name.size(), 0, raw::connect_request::trampoline);
+      }).throw_if_error();
 #else
-      request.set_callback(std::move(callback));
       std::string storage{name};
-      uv_pipe_connect(request.native(), native(), storage.c_str(), &pipe::connect_trampoline);
+      detail::stream_request_submission::submit(request, std::move(callback), [&] {
+        uv_pipe_connect(request.native(), native(), storage.c_str(), raw::connect_request::trampoline);
+        return 0;
+      }).throw_if_error();
 #endif
     }
 
 #if UVPP_HAS_PIPE_CONNECT2
-    void connect(connect_request &request, std::string_view name, unsigned int flags,
-                 connect_request::callback callback) {
-      detail::submit_request(request, std::move(callback), [&] {
+    void connect(raw::connect_request &request, std::string_view name, unsigned int flags,
+                 raw::connect_request::callback callback) {
+      detail::stream_request_submission::submit(request, std::move(callback), [&] {
         return uv_pipe_connect2(request.native(), native(), name.data(), name.size(),
-                                flags, &pipe::connect_trampoline);
-      });
+                                flags, raw::connect_request::trampoline);
+      }).throw_if_error();
     }
 
-    void connect(connect_request &request, std::string_view name, pipe_name_flag flag,
-                 connect_request::callback callback) {
+    void connect(raw::connect_request &request, std::string_view name, pipe_name_flag flag,
+                 raw::connect_request::callback callback) {
       connect(request, name, static_cast<unsigned int>(flag), std::move(callback));
     }
 #endif
 
     template<auto Callback>
-    void connect_static(connect_request &request, std::string_view name) {
+    void connect_static(raw::connect_request &request, std::string_view name) {
 #if UVPP_HAS_PIPE_CONNECT2
       connect_static<Callback>(request, name, 0);
 #else
       std::string storage{name};
-      uv_pipe_connect(request.native(), native(), storage.c_str(), [](uv_connect_t *raw, int status) noexcept {
-        detail::invoke_static_callback<Callback>(connect_request::from_native(raw), uv::status::from_native(status));
-      });
+      detail::stream_request_submission::submit_static<Callback>(request, [&] {
+        uv_pipe_connect(request.native(), native(), storage.c_str(), raw::connect_request::trampoline);
+        return 0;
+      }).throw_if_error();
 #endif
     }
 
 #if UVPP_HAS_PIPE_CONNECT2
     template<auto Callback>
-    void connect_static(connect_request &request, std::string_view name, unsigned int flags) {
-      throw_if_error(uv_pipe_connect2(request.native(), native(), name.data(), name.size(), flags,
-        [](uv_connect_t *raw, int status) noexcept {
-          detail::invoke_static_callback<Callback>(connect_request::from_native(raw), uv::status::from_native(status));
-        }));
+    void connect_static(raw::connect_request &request, std::string_view name, unsigned int flags) {
+      detail::stream_request_submission::submit_static<Callback>(request, [&] {
+        return uv_pipe_connect2(request.native(), native(), name.data(), name.size(), flags,
+                               raw::connect_request::trampoline);
+      }).throw_if_error();
     }
 
     template<auto Callback>
-    void connect_static(connect_request &request, std::string_view name, pipe_name_flag flag) {
+    void connect_static(raw::connect_request &request, std::string_view name, pipe_name_flag flag) {
       connect_static<Callback>(request, name, static_cast<unsigned int>(flag));
     }
 #endif
@@ -164,15 +167,15 @@ namespace uv {
     }
 
     template<stream_handle SendHandle>
-    void write_with_handle(write_request &request, std::span<const buffer_view> buffers,
-                           SendHandle &send_handle, write_request::callback callback) {
-      detail::submit_request(request, std::move(callback), [&] {
+    void write_with_handle(raw::write_request &request, std::span<const buffer_view> buffers,
+                           SendHandle &send_handle, raw::write_request::callback callback) {
+      detail::stream_request_submission::submit(request, std::move(callback), [&] {
         return uv_write2(request.native(), native_stream(),
                          reinterpret_cast<const uv_buf_t *>(buffers.data()),
                          detail::checked_buffer_count(buffers.size()),
                          send_handle.native_stream(),
-                         write_request::trampoline);
-      });
+                         raw::write_request::trampoline);
+      }).throw_if_error();
     }
 
     template<stream_handle SendHandle>
@@ -210,9 +213,7 @@ namespace uv {
       }
     }
 
-    static void connect_trampoline(uv_connect_t *raw, int status) noexcept {
-      connect_request::from_native(raw).invoke(status);
-    }
+
   };
 
 }

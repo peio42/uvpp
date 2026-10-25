@@ -47,16 +47,16 @@ int main() {
         return;
       }
 
-      auto *request = new uv::write_request;
+      auto *request = new uv::raw::write_request;
       auto bytes = read.bytes();
 
-      stream.write(*request, bytes, [request, storage](uv::write_request &, uv::status status) {
+      stream.write(*request, bytes, [request, storage](uv::raw::write_request &, uv::status status) {
         if (!status) {
           std::cerr << status.error().message() << '\n';
         }
         delete[] storage.data();
         delete request;
-      });
+      }).throw_if_error();
     }).throw_if_error();
   }).throw_if_error();
 

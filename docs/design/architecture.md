@@ -223,6 +223,11 @@ outstanding buffer loan retains its original allocator/reader through native rea
 or close completion. All close forms install internal completion cleanup before
 user delivery, even without a user close callback. Reset failure leaves existing
 subscriptions untouched. Request callbacks/storage remain independent. Connect,
-write and shutdown retain their throwing transitional submission protocol.
+write and shutdown now use separate `uv::raw` requests and status-oriented
+submission. A shared inline request state rejects pending reuse, commits callback
+selection only after native acceptance and clears pending/selection before user
+completion, with no request access afterwards. Close does not retire request
+state early. Pipe-specific connect/IPC entry points remain throwing adapters over
+this shared lifecycle pending the pipe migration.
 See [raw TCP](../user/networking/raw-tcp.md) and
 [stream subscriptions](../user/networking/raw-stream.md).

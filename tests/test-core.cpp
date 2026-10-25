@@ -221,50 +221,50 @@ TEST(Uvpp2Core, loopCloseIsExplicitAndReportsBusyLoops) {
 
 TEST(Uvpp2Core, requestCallbacksAreOneShot) {
   {
-    uv::write_request request;
+    uv::raw::write_request request;
     auto token = std::make_shared<int>(1);
     std::weak_ptr<int> weak = token;
     bool called = false;
 
-    request.set_callback([token, &called](uv::write_request&, uv::status) {
+    ASSERT_TRUE(uv::detail::stream_request_submission::submit(request, [token, &called](uv::raw::write_request&, uv::status) {
       called = true;
-    });
+    }, []() noexcept { return 0; }));
     token.reset();
     EXPECT_FALSE(weak.expired());
 
-    request.invoke(0);
+    decltype(request)::trampoline(request.native(), 0);
     EXPECT_TRUE(called);
     EXPECT_TRUE(weak.expired());
   }
 
   {
-    uv::connect_request request;
+    uv::raw::connect_request request;
     auto token = std::make_shared<int>(1);
     std::weak_ptr<int> weak = token;
     bool called = false;
 
-    request.set_callback([token, &called](uv::connect_request&, uv::status) {
+    ASSERT_TRUE(uv::detail::stream_request_submission::submit(request, [token, &called](uv::raw::connect_request&, uv::status) {
       called = true;
-    });
+    }, []() noexcept { return 0; }));
     token.reset();
 
-    request.invoke(0);
+    decltype(request)::trampoline(request.native(), 0);
     EXPECT_TRUE(called);
     EXPECT_TRUE(weak.expired());
   }
 
   {
-    uv::shutdown_request request;
+    uv::raw::shutdown_request request;
     auto token = std::make_shared<int>(1);
     std::weak_ptr<int> weak = token;
     bool called = false;
 
-    request.set_callback([token, &called](uv::shutdown_request&, uv::status) {
+    ASSERT_TRUE(uv::detail::stream_request_submission::submit(request, [token, &called](uv::raw::shutdown_request&, uv::status) {
       called = true;
-    });
+    }, []() noexcept { return 0; }));
     token.reset();
 
-    request.invoke(0);
+    decltype(request)::trampoline(request.native(), 0);
     EXPECT_TRUE(called);
     EXPECT_TRUE(weak.expired());
   }

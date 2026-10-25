@@ -76,7 +76,7 @@ A native submission failure is reported by the initiating call; a later failure
 is reported by a completion callback. These remain distinct channels in the low-level callback implementation.
 
 ```cpp
-tcp.connect(req, addr, [](uv::connect_request&, uv::status status) {
+tcp.connect(req, addr, [](uv::raw::connect_request&, uv::status status) {
   if (!status) {
     auto ec = status.error();
     (void)ec;

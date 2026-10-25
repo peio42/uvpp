@@ -168,3 +168,16 @@ allocation, nor claim callback construction is allocation-free.
 Windows-target syntax checks use MinGW headers and named namespace-scope static
 callback targets. Native Windows/MSVC execution remains a CI check; local Linux
 runs and cross-compilation do not substitute for that backend validation.
+
+## Raw stream/TCP requests
+
+`test-raw-stream-requests.cpp` exercises immediate rejection, real native failure,
+async connection refusal, pending guards, runtime/static reuse from completion,
+request identity and application data, scatter/gather payload then EOF, C++
+preparation failures, callback exception boundaries, and callback/payload retention
+through native completion after close. The allocation binary extends its prepared
+subscription check with a prepared heap-backed write callback, real write
+submission and native completion while C++ allocation is disabled. This measures
+wrapper C++ costs, independently of native C metadata allocation and callback
+construction. Pipe-specific entry points retain throwing adaptation over the same
+request lifecycle; their full migration remains a later slice.

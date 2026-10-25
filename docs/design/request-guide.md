@@ -32,7 +32,11 @@ Cancellation requests do not imply completion. No exception may cross C callback
 
 Existing `detail::submit_request` helpers throw on immediate failure. Their
 rollback behavior is useful evidence, but they are not a ready-made implementation
-of the v3 raw result policy. Persistent subscriptions need their own protocol.
+of the v3 raw result policy. Stream/TCP requests now use
+`detail::stream_request_submission` with inline `pending()` state, status return,
+acceptance-only callback commitment and runtime/static pre-delivery extraction.
+Pipe-specific throwing adapters use that same lifecycle. Persistent subscriptions
+need their own protocol.
 
 ## Integration and validation
 

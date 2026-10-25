@@ -490,19 +490,19 @@ TEST(UvppV3Coroutine, tcpConnectionReadSomeStopsAndReleasesSlotsBeforeResumption
   }
   const auto address = uv::ipv4{"127.0.0.1", listener.sockname().value().port()};
   std::unique_ptr<uv::raw::tcp> peer;
-  std::unique_ptr<uv::write_request> reply_request;
+  std::unique_ptr<uv::raw::write_request> reply_request;
   std::string reply{"reply"};
   listener.listen([&](uv::raw::tcp &server, uv::status status) {
     ASSERT_TRUE(status);
     peer = std::make_unique<uv::raw::tcp>(loop);
     ASSERT_TRUE(server.accept(*peer));
-    reply_request = std::make_unique<uv::write_request>();
+    reply_request = std::make_unique<uv::raw::write_request>();
     peer->write(*reply_request, std::as_bytes(std::span{reply.data(), reply.size()}),
-      [&](uv::write_request &, uv::status write_status) {
+      [&](uv::raw::write_request &, uv::status write_status) {
         EXPECT_TRUE(write_status);
         peer->close();
         server.close();
-      });
+      }).throw_if_error();
   }).throw_if_error();
 
   std::string received;
@@ -758,7 +758,7 @@ TEST(UvppV3Coroutine, tcpConnectionPermitsOneReadAndOneWrite) {
   std::array<std::byte, 16> client_buffer{};
   std::string request{"request"};
   std::string response{"response"};
-  uv::write_request response_request;
+  uv::raw::write_request response_request;
   bool peer_received_request = false;
   bool write_completed = false;
   std::string client_received;
@@ -775,7 +775,7 @@ TEST(UvppV3Coroutine, tcpConnectionPermitsOneReadAndOneWrite) {
         peer_received_request = true;
         peer.read_stop().throw_if_error();
         peer.write(response_request, std::as_bytes(std::span{response.data(), response.size()}),
-            [](uv::write_request &, uv::status status) { EXPECT_TRUE(status); });
+            [](uv::raw::write_request &, uv::status status) { EXPECT_TRUE(status); }).throw_if_error();
       }).throw_if_error();
 
   auto reader = [&]() -> uv::co::task<void> {

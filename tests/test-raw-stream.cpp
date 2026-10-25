@@ -33,7 +33,7 @@ protected:
   tcp server{loop};
   tcp client{loop};
   tcp peer{loop};
-  uv::connect_request connect;
+  uv::raw::connect_request connect;
   std::array<char, 32> buffer{};
 
   ~RawStream() override {
@@ -58,10 +58,10 @@ protected:
       EXPECT_TRUE(self.accept(peer));
       accepted = true;
     }).throw_if_error();
-    client.connect(connect, server.sockname().value().to_v4(), [&](uv::connect_request&, uv::status status) {
+    client.connect(connect, server.sockname().value().to_v4(), [&](uv::raw::connect_request&, uv::status status) {
       EXPECT_TRUE(status);
       connected = true;
-    });
+    }).throw_if_error();
     until([&] { return accepted && connected; });
     // The connection is established; no further event should use these locals.
     server.close();
@@ -413,12 +413,12 @@ TEST_F(RawStream, realReadAndEofKeepBorrowedPayloadAndQuiesceBeforeDelivery) {
       self.close();
     } else EXPECT_TRUE(read);
   }));
-  uv::write_request write;
+  uv::raw::write_request write;
   char payload[] = "abc";
   bool written = false, shut = false;
-  peer.write(write, uv::buffer_view{payload, 3}, [&](uv::write_request&, uv::status status) { EXPECT_TRUE(status); written = true; });
-  uv::shutdown_request shutdown;
-  peer.shutdown(shutdown, [&](uv::shutdown_request&, uv::status status) { EXPECT_TRUE(status); shut = true; });
+  peer.write(write, uv::buffer_view{payload, 3}, [&](uv::raw::write_request&, uv::status status) { EXPECT_TRUE(status); written = true; }).throw_if_error();
+  uv::raw::shutdown_request shutdown;
+  peer.shutdown(shutdown, [&](uv::raw::shutdown_request&, uv::status status) { EXPECT_TRUE(status); shut = true; }).throw_if_error();
   until([&] { return got_data && eof && written && shut; });
 }
 

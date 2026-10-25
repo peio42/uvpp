@@ -160,7 +160,7 @@ TEST(NetworkFactoriesAllocation, CppFailuresThrowInBothCreationPolicies) {
 TEST(RawStreamAllocation, preparedSubscriptionsAndRepeatedDeliveryNeedNoCppAllocation) {
   uv::loop loop;
   uv::raw::tcp listener{loop}, client{loop}, peer{loop};
-  uv::connect_request request;
+  uv::raw::connect_request request;
   bool accepted = false, connected = false;
   listener.bind(uv::ipv4{"127.0.0.1", 0}).throw_if_error();
   listener.listen([&](uv::raw::tcp &self, uv::status status) {
@@ -168,10 +168,10 @@ TEST(RawStreamAllocation, preparedSubscriptionsAndRepeatedDeliveryNeedNoCppAlloc
     EXPECT_TRUE(self.accept(peer));
     accepted = true;
   }).throw_if_error();
-  client.connect(request, listener.sockname().value().to_v4(), [&](uv::connect_request&, uv::status status) {
+  client.connect(request, listener.sockname().value().to_v4(), [&](uv::raw::connect_request&, uv::status status) {
     EXPECT_TRUE(status);
     connected = true;
-  });
+  }).throw_if_error();
   const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds{5};
   while (!(accepted && connected) && std::chrono::steady_clock::now() < deadline)
     loop.run(uv::run_mode::nowait);
@@ -188,7 +188,14 @@ TEST(RawStreamAllocation, preparedSubscriptionsAndRepeatedDeliveryNeedNoCppAlloc
     return uv::buffer_view{storage.data(), storage.size()};
   };
   substrate::read_callback reader = [&, capture](uv::raw::tcp&, uv::read_result) { delivered += 1 + capture[0]; };
-  uv::status started, stopped;
+  uv::raw::write_request writing;
+  int write_deliveries = 0;
+  bool write_succeeded = false;
+  uv::raw::write_request::callback written = [&, capture](uv::raw::write_request &request, uv::status status) {
+    write_deliveries += 1 + capture[0];
+    write_succeeded = status.has_value() && !request.pending();
+  };
+  uv::status started, stopped, submitted;
   {
     allocation_failure no_cpp_allocation{0};
     started = client.read_start(std::move(allocator), std::move(reader));
@@ -200,11 +207,18 @@ TEST(RawStreamAllocation, preparedSubscriptionsAndRepeatedDeliveryNeedNoCppAlloc
         native->read_cb(native, 0, &buffer);
       }
       stopped = client.read_stop();
+      submitted = client.write(writing, uv::buffer_view{storage.data(), 1}, std::move(written));
+      const auto completion_deadline = std::chrono::steady_clock::now() + std::chrono::seconds{5};
+      while (writing.pending() && std::chrono::steady_clock::now() < completion_deadline)
+        loop.run(uv::run_mode::nowait);
     }
   }
   EXPECT_TRUE(started);
   EXPECT_TRUE(stopped);
   EXPECT_EQ(delivered, 1000);
+  EXPECT_TRUE(submitted);
+  EXPECT_EQ(write_deliveries, 1);
+  EXPECT_TRUE(write_succeeded);
   listener.close(); client.close(); peer.close();
   loop.run();
   EXPECT_NO_THROW(loop.close());

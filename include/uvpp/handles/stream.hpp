@@ -228,48 +228,75 @@ namespace uv::raw {
       release_callbacks();
     }
 
-    void shutdown(shutdown_request &request, shutdown_request::callback callback) {
-      detail::submit_request(request, std::move(callback), [&] {
-        return uv_shutdown(request.native(), native_stream(), &stream::shutdown_trampoline);
+    status shutdown(shutdown_request &request, shutdown_request::callback callback) noexcept {
+      return detail::stream_request_submission::submit(request, std::move(callback), [&]() noexcept {
+        if (!ready()) return int{UV_EBADF};
+        return uv_shutdown(request.native(), native_stream(), shutdown_request::trampoline);
       });
     }
 
     template<auto Callback>
-    void shutdown_static(shutdown_request &request) {
-      throw_if_error(uv_shutdown(request.native(), native_stream(), [](uv_shutdown_t *raw, int status) noexcept {
-        detail::invoke_static_callback<Callback>(shutdown_request::from_native(raw), uv::status::from_native(status));
-      }));
+      requires std::invocable<decltype(Callback), shutdown_request&, uv::status>
+    status shutdown_static(shutdown_request &request) noexcept {
+      return detail::stream_request_submission::submit_static<Callback>(request, [&]() noexcept {
+        if (!ready()) return int{UV_EBADF};
+        return uv_shutdown(request.native(), native_stream(), shutdown_request::trampoline);
+      });
     }
 
-    void write(write_request &request, std::span<const buffer_view> buffers, write_request::callback callback) {
-      detail::submit_request(request, std::move(callback), [&] {
+    status write(write_request &request, std::span<const buffer_view> buffers, write_request::callback callback) noexcept {
+      return detail::stream_request_submission::submit(request, std::move(callback), [&]() noexcept {
+        if (!ready()) return int{UV_EBADF};
+        if (!valid_buffers(buffers)) return int{UV_EINVAL};
         return uv_write(request.native(), native_stream(), reinterpret_cast<const uv_buf_t *>(buffers.data()),
-                        detail::checked_buffer_count(buffers.size()), write_request::trampoline);
+                        detail::narrow_buffer_count_unchecked(buffers.size()), write_request::trampoline);
       });
     }
 
-    void write(write_request &request, const buffer_view &buf, write_request::callback callback) {
-      write(request, std::span<const buffer_view>{&buf, 1}, std::move(callback));
+    status write(write_request &request, const buffer_view &buf, write_request::callback callback) noexcept {
+      return write(request, std::span<const buffer_view>{&buf, 1}, std::move(callback));
     }
 
-    void write(write_request &request, std::span<const std::byte> bytes, write_request::callback callback) {
-      auto raw = detail::make_native_buffer(const_cast<char *>(reinterpret_cast<const char *>(bytes.data())),
-                                            bytes.size());
-      detail::submit_request(request, std::move(callback), [&] {
-        return uv_write(request.native(), native_stream(), &raw, 1, write_request::trampoline);
+    status write(write_request &request, std::span<const std::byte> bytes, write_request::callback callback) noexcept {
+      return detail::stream_request_submission::submit(request, std::move(callback), [&]() noexcept {
+        if (!ready()) return int{UV_EBADF};
+        if (!detail::buffer_length_fits(bytes.size())) return int{UV_EINVAL};
+        auto buf = detail::make_native_buffer_unchecked(const_cast<char *>(reinterpret_cast<const char *>(bytes.data())), bytes.size());
+        return uv_write(request.native(), native_stream(), &buf, 1, write_request::trampoline);
       });
     }
 
     template<auto Callback>
-    void write_static(write_request &request, std::span<const buffer_view> buffers) {
-      throw_if_error(uv_write(request.native(), native_stream(), reinterpret_cast<const uv_buf_t *>(buffers.data()),
-                     detail::checked_buffer_count(buffers.size()), [](uv_write_t *raw, int status) noexcept {
-        detail::invoke_static_callback<Callback>(write_request::from_native(raw), uv::status::from_native(status));
-      }));
+      requires std::invocable<decltype(Callback), write_request&, uv::status>
+    status write_static(write_request &request, std::span<const buffer_view> buffers) noexcept {
+      return detail::stream_request_submission::submit_static<Callback>(request, [&]() noexcept {
+        if (!ready()) return int{UV_EBADF};
+        if (!valid_buffers(buffers)) return int{UV_EINVAL};
+        return uv_write(request.native(), native_stream(), reinterpret_cast<const uv_buf_t *>(buffers.data()),
+                        detail::narrow_buffer_count_unchecked(buffers.size()), write_request::trampoline);
+      });
+    }
+
+    template<auto Callback>
+      requires std::invocable<decltype(Callback), write_request&, uv::status>
+    status write_static(write_request &request, const buffer_view &buf) noexcept {
+      return write_static<Callback>(request, std::span<const buffer_view>{&buf, 1});
+    }
+
+    template<auto Callback>
+      requires std::invocable<decltype(Callback), write_request&, uv::status>
+    status write_static(write_request &request, std::span<const std::byte> bytes) noexcept {
+      return detail::stream_request_submission::submit_static<Callback>(request, [&]() noexcept {
+        if (!ready()) return int{UV_EBADF};
+        if (!detail::buffer_length_fits(bytes.size())) return int{UV_EINVAL};
+        auto buf = detail::make_native_buffer_unchecked(const_cast<char *>(reinterpret_cast<const char *>(bytes.data())), bytes.size());
+        return uv_write(request.native(), native_stream(), &buf, 1, write_request::trampoline);
+      });
     }
 
     write_now_result write_now(std::span<const buffer_view> buffers) noexcept {
-      if (!detail::buffer_count_fits(buffers.size())) {
+      if (!ready()) return write_now_result{UV_EBADF};
+      if (!valid_buffers(buffers)) {
         return write_now_result{UV_EINVAL};
       }
       return write_now_result{uv_try_write(native_stream(),
@@ -282,6 +309,7 @@ namespace uv::raw {
     }
 
     write_now_result write_now(std::span<const std::byte> bytes) noexcept {
+      if (!ready()) return write_now_result{UV_EBADF};
       if (!detail::buffer_length_fits(bytes.size())) {
         return write_now_result{UV_EINVAL};
       }
@@ -394,8 +422,11 @@ namespace uv::raw {
       base.read_subscription_.restore(std::move(pending));
     }
 
-    static void shutdown_trampoline(uv_shutdown_t *raw, int status) noexcept {
-      shutdown_request::from_native(raw).invoke(status);
+    static bool valid_buffers(std::span<const buffer_view> buffers) noexcept {
+      if (buffers.empty() || !detail::buffer_count_fits(buffers.size())) return false;
+      for (const auto &buffer : buffers)
+        if (buffer.size() != 0 && buffer.data() == nullptr) return false;
+      return true;
     }
 
     read_slot read_subscription_{};
