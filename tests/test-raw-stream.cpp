@@ -235,6 +235,82 @@ TEST_F(RawStream, readReplacementFromCallbackRetainsMutableStateAndReleasesRetir
   EXPECT_FALSE(client.active());
 }
 
+class RawStreamNativeLoan : public RawStream, public ::testing::WithParamInterface<bool> {};
+TEST_P(RawStreamNativeLoan, reconfigurationKeepsDeliveredBufferAliveUntilReaderReturns) {
+  pair();
+  const bool replace = GetParam();
+  auto owned = std::make_shared<std::array<char, 8>>();
+  std::weak_ptr<std::array<char, 8>> weak = owned;
+  const auto *loan_address = owned->data();
+  int allocations = 0, old_deliveries = 0, new_deliveries = 0;
+  bool reconfigured = false, received_second = false;
+
+  const auto next_reader = [&](tcp &self, uv::read_result read) {
+    ++new_deliveries;
+    ASSERT_TRUE(read);
+    if (read.count() == 0) return;
+    EXPECT_EQ(read.count(), 1);
+    EXPECT_EQ(read.storage().data(), buffer.data());
+    EXPECT_EQ(read.storage()[0], 'b');
+    EXPECT_TRUE(weak.expired());
+    EXPECT_TRUE(self.read_stop());
+    received_second = true;
+  };
+  ASSERT_TRUE(client.read_start(
+    [owned, &allocations](tcp&, std::size_t) {
+      ++allocations;
+      return uv::buffer_view{owned->data(), owned->size()};
+    },
+    [&](tcp &self, uv::read_result read) {
+      ++old_deliveries;
+      ASSERT_TRUE(read);
+      if (read.count() == 0) return;
+      EXPECT_EQ(read.count(), 1);
+      EXPECT_EQ(read.storage().data(), loan_address);
+      if (replace) EXPECT_TRUE(self.read_start(allocator(), next_reader));
+      else EXPECT_TRUE(self.read_stop());
+
+      // Neither this reader nor the test owns the buffer. Retiring the active
+      // subscription must keep its allocator's capture alive through delivery.
+      ASSERT_FALSE(weak.expired());
+      EXPECT_EQ(read.storage()[0], 'a');
+      EXPECT_EQ(read.bytes().size(), 1u);
+      EXPECT_EQ(self.active(), replace);
+      reconfigured = true;
+    }));
+  owned.reset();
+
+  // Real socket I/O and libuv dispatch only: no direct callback invocation.
+  char first = 'a';
+  const auto first_write = peer.write_now(uv::buffer_view{&first, 1});
+  ASSERT_TRUE(first_write.ok());
+  ASSERT_EQ(first_write.bytes_written(), 1u);
+  until([&] { return reconfigured; });
+  ASSERT_TRUE(reconfigured);
+  EXPECT_GT(allocations, 0);
+  EXPECT_TRUE(weak.expired());
+  const auto retired_deliveries = old_deliveries;
+
+  char second = 'b';
+  const auto second_write = peer.write_now(uv::buffer_view{&second, 1});
+  ASSERT_TRUE(second_write.ok());
+  ASSERT_EQ(second_write.bytes_written(), 1u);
+  if (!replace) {
+    loop.run(uv::run_mode::nowait);
+    EXPECT_FALSE(client.active());
+    EXPECT_EQ(old_deliveries, retired_deliveries);
+    EXPECT_EQ(new_deliveries, 0);
+    ASSERT_TRUE(client.read_start(allocator(), next_reader));
+  }
+  until([&] { return received_second; });
+  EXPECT_TRUE(received_second);
+  EXPECT_EQ(old_deliveries, retired_deliveries);
+  EXPECT_GE(new_deliveries, 1);
+  EXPECT_FALSE(client.active());
+}
+INSTANTIATE_TEST_SUITE_P(RealTcp, RawStreamNativeLoan, ::testing::Values(false, true),
+  [](const ::testing::TestParamInfo<bool> &info) { return info.param ? "Replace" : "Stop"; });
+
 TEST_F(RawStream, rejectedReadReplacementPreservesCurrentSubscription) {
   pair();
   int calls = 0;

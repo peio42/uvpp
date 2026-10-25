@@ -149,6 +149,15 @@ quiescence; it does not reproduce a Windows AcceptEx failure. Real loopback TCP
 reads and shutdown cover borrowed payload and EOF. Callback preparation exceptions
 remain distinct from native failures, and callback exceptions terminate.
 
+The `RealTcp/RawStreamNativeLoan` cases use real loopback socket writes and libuv
+allocation/read dispatch, without calling native callback pointers directly. The
+allocator alone owns its buffer. Each reader stops or replaces its subscription,
+then accesses that same buffer, verifying retention through reader return and
+release afterwards. A second byte checks delivery exclusively to the replacement
+or, after explicit rearming, to the new reader. These cases exercise a delivered
+loan during reader execution; they do not force interleaving between native
+allocation and read delivery, which is not a portable loop-thread scheduling point.
+
 The isolated allocation binary (`udp-allocation.cpp`, also used for network-owner
 allocation tests) prepares heap-backed stream callables before disabling C++
 allocation. Starting, delivering 1,000 allocation/read callback pairs and stopping
