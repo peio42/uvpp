@@ -59,10 +59,10 @@ TEST(UvppV3Coroutine, pipeConnectionStreamsWithBorrowedBuffersAndScopedCleanup) 
   bool late_view_rejected = false;
 
   pair.peer->read_start(
-      [&](uv::pipe &, std::size_t) {
+      [&](uv::raw::pipe &, std::size_t) {
         return uv::buffer_view{server_buffer.data(), server_buffer.size()};
       },
-      [&](uv::pipe &stream, uv::read_result result) {
+      [&](uv::raw::pipe &stream, uv::read_result result) {
         if (result.eof()) {
           return;
         }
@@ -284,10 +284,10 @@ TEST(UvppV3Coroutine, pipeConnectionPermitsOneReadAndOneWrite) {
   std::string client_received;
 
   pair.peer->read_start(
-      [&](uv::pipe &, std::size_t) {
+      [&](uv::raw::pipe &, std::size_t) {
         return uv::buffer_view{peer_buffer.data(), peer_buffer.size()};
       },
-      [&](uv::pipe &peer, uv::read_result result) {
+      [&](uv::raw::pipe &peer, uv::read_result result) {
         ASSERT_TRUE(result);
         EXPECT_EQ(result.count(), request.size());
         EXPECT_EQ((std::string_view{peer_buffer.data(),

@@ -101,9 +101,9 @@ inline bool local_pipe_is_permitted() {
   const auto path = v3_pipe_path() + "-probe";
   std::filesystem::remove(path);
   uv::loop loop;
-  uv::pipe probe(loop);
+  uv::raw::pipe probe(loop);
   try {
-    probe.bind(path);
+    probe.bind(path).throw_if_error();
   } catch (const uv::error &error) {
     probe.close();
     loop.run();
@@ -123,8 +123,8 @@ inline bool local_pipe_is_permitted() {
 
 struct connected_pipe_pair {
   uv::loop loop;
-  uv::pipe listener{loop};
-  std::unique_ptr<uv::pipe> peer;
+  uv::raw::pipe listener{loop};
+  std::unique_ptr<uv::raw::pipe> peer;
   std::optional<uv::pipe_connection> client;
   std::optional<uv::co::spawn_handle<>> connect_execution;
   std::string path{v3_pipe_path()};
@@ -132,10 +132,10 @@ struct connected_pipe_pair {
   connected_pipe_pair() { std::filesystem::remove(path); }
 
   void connect() {
-    listener.bind(path);
-    listener.listen([&](uv::pipe &server, uv::status status) {
+    listener.bind(path).throw_if_error();
+    listener.listen([&](uv::raw::pipe &server, uv::status status) {
       EXPECT_TRUE(status);
-      peer = std::make_unique<uv::pipe>(loop);
+      peer = std::make_unique<uv::raw::pipe>(loop);
       EXPECT_TRUE(server.accept(*peer));
     }).throw_if_error();
 

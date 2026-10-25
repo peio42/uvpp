@@ -422,6 +422,7 @@ namespace uv::raw {
       base.read_subscription_.restore(std::move(pending));
     }
 
+  protected:
     static bool valid_buffers(std::span<const buffer_view> buffers) noexcept {
       if (buffers.empty() || !detail::buffer_count_fits(buffers.size())) return false;
       for (const auto &buffer : buffers)
@@ -429,6 +430,7 @@ namespace uv::raw {
       return true;
     }
 
+  private:
     read_slot read_subscription_{};
     typename read_slot::delivery pending_read_{};
     bool reading_ = false;

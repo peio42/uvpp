@@ -207,8 +207,8 @@ Normal close is void, while reset close can fail before initiation. Reset runtim
 callback installation is committed only after native success; failure retains
 existing stream slots and releases the rejected close callback.
 
-The stream substrate is now `uv::raw::stream`, also consumed by the still-legacy
-pipe/TTY family wrappers. Listen/read start/stop/accept/blocking use statuses;
+The stream substrate is now `uv::raw::stream`, also consumed by `uv::raw::pipe` and the still-legacy
+TTY family wrapper. Listen/read start/stop/accept/blocking use statuses;
 read outcomes keep signed counts, EOF and borrowed buffers. Runtime/static
 subscription selection is committed after successful native start. Read replacement
 stops the old source first: restart failure after successful stop leaves it stopped.
@@ -227,7 +227,22 @@ write and shutdown now use separate `uv::raw` requests and status-oriented
 submission. A shared inline request state rejects pending reuse, commits callback
 selection only after native acceptance and clears pending/selection before user
 completion, with no request access afterwards. Close does not retire request
-state early. Pipe-specific connect/IPC entry points remain throwing adapters over
-this shared lifecycle pending the pipe migration.
+state early. Pipe-specific connect/IPC entry points now return statuses over
+this shared lifecycle.
 See [raw TCP](../user/networking/raw-tcp.md) and
 [stream subscriptions](../user/networking/raw-stream.md).
+
+## Raw pipe migration
+
+`uv::raw::pipe` combines the initializable-handle guards with the raw stream
+substrate, without a legacy alias or changes to high-level owner storage. Native
+Unix/Windows pipe init has no fallible post-registration step, so it needs no poll
+rollback or extra lifetime allocation. Bind/open/chmod/connect/IPC submissions
+return statuses. Pending-instance configuration adapts native void behavior;
+pending counts/types remain native observations. Name queries return
+`result<string>`, with separate C++ allocation and exact native byte lengths,
+including Linux abstract-name NUL bytes. Legacy terminated-name copies remain
+fallible C++ preparation; modern length-aware APIs retain capability gates.
+IPC runtime/static submissions use the shared request protocol and typed immediate
+writes retain partial/would-block outcomes. Exported native storage/payload remains
+borrowed through completion. See [the raw pipe contract](../user/networking/raw-pipe.md).

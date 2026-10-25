@@ -85,11 +85,10 @@ submission and real completion with C++ allocation disabled.
 would-block and errors. It uses no request and does not flatten these outcomes into
 `status`. Stream reads retain their own borrowed result and subscription protocol.
 
-## Pipe migration boundary
+## Pipe requests
 
-`uv::pipe` uses these same raw requests. Its inherited write/shutdown methods now
-return statuses. Pipe-specific connect/connect_static and IPC `write_with_handle`
-retain their throwing entry points until the pipe family migration. They adapt the
-shared pending/completion protocol and cannot overwrite an in-flight request.
-Their pipe-name preparation can allocate independently; other pipe setup, typed
-IPC outcomes and namespace migration remain the next slice.
+[`uv::raw::pipe`](raw-pipe.md) uses these same requests for inherited write/shutdown,
+pipe connect/connect_static and IPC write/write_with_handle_static. All return
+submission statuses and share the pending/completion protocol. Legacy pipe-name
+preparation can allocate independently; void native connect reports errors at
+completion. Pipe and TCP handles remain separate from their caller-owned requests.

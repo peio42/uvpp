@@ -6,6 +6,8 @@
 #include "gtest/gtest.h"
 #include "uvpp/handles/udp.hpp"
 #include "uvpp/handles/tcp.hpp"
+#include "uvpp/handles/pipe.hpp"
+#include "platform-support.hpp"
 #include "uvpp/net/tcp_listener.hpp"
 #include "uvpp/net/pipe_listener.hpp"
 #include "uvpp/net/udp_socket.hpp"
@@ -222,4 +224,43 @@ TEST(RawStreamAllocation, preparedSubscriptionsAndRepeatedDeliveryNeedNoCppAlloc
   listener.close(); client.close(); peer.close();
   loop.run();
   EXPECT_NO_THROW(loop.close());
+}
+
+TEST(RawPipeAllocation, nativeResultsAndCppNameAllocationFailuresRemainSeparate) {
+  uv::loop loop;
+  uv::raw::pipe handle{loop};
+  const auto path = uvpp::test::pipe_path("raw-name-allocation");
+  std::error_code ignored;
+  std::filesystem::remove(path, ignored);
+  ASSERT_TRUE(handle.bind(path));
+  const auto *native = handle.native();
+  bool allocation_failed = false;
+  {
+    allocation_failure injection{0};
+    try { (void)handle.sockname(); }
+    catch (const std::bad_alloc&) { allocation_failed = true; }
+  }
+  EXPECT_TRUE(allocation_failed);
+  EXPECT_EQ(handle.native(), native);
+  EXPECT_TRUE(handle.initialized());
+  EXPECT_FALSE(handle.closing());
+  EXPECT_EQ(handle.sockname().value(), path);
+#if !UVPP_HAS_PIPE_CONNECT2
+  uv::raw::pipe client{loop};
+  uv::raw::connect_request request;
+  uv::raw::connect_request::callback callback = [](uv::raw::connect_request&, uv::status) {};
+  bool preparation_failed = false;
+  {
+    allocation_failure injection{0};
+    try { (void)client.connect(request, path, std::move(callback)); }
+    catch (const std::bad_alloc&) { preparation_failed = true; }
+  }
+  EXPECT_TRUE(preparation_failed);
+  EXPECT_FALSE(request.pending());
+  client.close();
+#endif
+  handle.close();
+  loop.run();
+  EXPECT_NO_THROW(loop.close());
+  std::filesystem::remove(path, ignored);
 }

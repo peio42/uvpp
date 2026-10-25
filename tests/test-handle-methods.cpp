@@ -51,12 +51,12 @@ TEST(Uvpp2HandleMethods, exposesPipePathAndPendingState) {
   std::filesystem::remove(path);
 
   uv::loop loop;
-  uv::pipe pipe(loop);
+  uv::raw::pipe pipe(loop);
 
-  pipe.bind(path.string());
-  pipe.pending_instances(1);
+  pipe.bind(path.string()).throw_if_error();
+  pipe.pending_instances(1).throw_if_error();
 
-  EXPECT_EQ(pipe.sockname(), path.string());
+  EXPECT_EQ(pipe.sockname().value(), path.string());
   EXPECT_EQ(pipe.pending_count(), 0);
   EXPECT_EQ(pipe.pending_type(), uv::handle_type::unknown);
 

@@ -133,10 +133,10 @@ TEST_F(RawStream, acceptValidatesClientsAndPreservesNativeWouldBlock) {
   uv::loop other_loop;
   tcp foreign{other_loop};
   EXPECT_EQ(server.accept(foreign).error(), uv::make_error_code(UV_EINVAL));
-  uv::pipe wrong_type{loop};
+  uv::raw::pipe wrong_type{loop};
   EXPECT_EQ(server.accept(wrong_type).error(), uv::make_error_code(UV_EINVAL));
   bool pipe_closed = false;
-  wrong_type.close([&](uv::pipe&) { pipe_closed = true; });
+  wrong_type.close([&](uv::raw::pipe&) { pipe_closed = true; });
   until([&] { return pipe_closed; });
   foreign.close();
   other_loop.run();

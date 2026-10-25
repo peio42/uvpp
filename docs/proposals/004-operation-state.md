@@ -323,8 +323,20 @@ connect return submission statuses. Pending reuse is `UV_EBUSY`; native rejectio
 retains no new callback and produces no completion. Runtime/static selection is
 extracted and pending cleared before delivery, allowing reentrant reuse without
 old completion clobbering it. Handle close retains request/payload lifetimes until
-native completion. Typed immediate write/read outcomes remain distinct. Pipe's
-specific connect/IPC interfaces remain throwing adapters over the shared request
-state until its family migration. See the
+native completion. Typed immediate write/read outcomes remain distinct. Pipe-specific connect/IPC interfaces now return statuses over the shared request
+state; see the pipe progress section below. See the
 [implemented request contract](../user/networking/raw-requests.md) and
 [real request tests](../../tests/test-raw-stream-requests.cpp).
+
+## Raw pipe progress
+
+The caller-owned pipe wrapper is now `uv::raw::pipe`, with explicit status init,
+throwing loop constructors, native-loop initialization tracking, common stream
+close cleanup, status bind/open/configuration/connect and runtime/static IPC
+submission. Name queries retain string payloads as results and preserve native
+binary-name lengths; C++ allocations and legacy name copies retain exception
+contracts. Counts/types and immediate write progress remain typed observations.
+Raw request pending/reuse/completion and borrowed payload/exported-handle lifetimes
+are shared with stream/TCP. High-level pipe owners are unchanged. UDP remains the
+next network family. See [implemented pipe behavior](../user/networking/raw-pipe.md)
+and [raw pipe tests](../../tests/test-raw-pipe.cpp).

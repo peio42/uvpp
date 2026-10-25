@@ -5,7 +5,7 @@
 #include "uvpp/uv.hpp"
 
 static_assert(uv::stream_handle<uv::raw::tcp>);
-static_assert(uv::stream_handle<uv::pipe>);
+static_assert(uv::stream_handle<uv::raw::pipe>);
 static_assert(uv::stream_handle<uv::tty>);
 static_assert(!uv::stream_handle<uv::raw::timer>);
 
@@ -18,7 +18,7 @@ TEST(Uvpp2Layout, reconstructsHandlesFromNativePointers) {
   static_assert(std::is_standard_layout_v<uv::raw::fs_event::native_storage>);
   static_assert(std::is_standard_layout_v<uv::fs_poll::native_storage>);
   static_assert(std::is_standard_layout_v<uv::raw::idle::native_storage>);
-  static_assert(std::is_standard_layout_v<uv::pipe::native_storage>);
+  static_assert(std::is_standard_layout_v<uv::raw::pipe::native_storage>);
   static_assert(std::is_standard_layout_v<uv::raw::poll::native_storage>);
   static_assert(std::is_standard_layout_v<uv::raw::prepare::native_storage>);
   static_assert(std::is_standard_layout_v<uv::raw::signal::native_storage>);
@@ -33,7 +33,7 @@ TEST(Uvpp2Layout, reconstructsHandlesFromNativePointers) {
   uv::raw::fs_event fs_event(loop);
   uv::fs_poll fs_poll(loop);
   uv::raw::idle idle(loop);
-  uv::pipe pipe(loop);
+  uv::raw::pipe pipe(loop);
 #ifdef _WIN32
   uv_os_sock_t fds[2]{};
   ASSERT_EQ(uv_socketpair(SOCK_STREAM, 0, fds, 0, 0), 0);
@@ -59,8 +59,8 @@ TEST(Uvpp2Layout, reconstructsHandlesFromNativePointers) {
   EXPECT_EQ(&fs_poll, &uv::fs_poll::from_native(fs_poll.native_handle()));
   EXPECT_EQ(&idle, &uv::raw::idle::from_native(idle.native()));
   EXPECT_EQ(&idle, &uv::raw::idle::from_native(idle.native_handle()));
-  EXPECT_EQ(&pipe, &uv::pipe::from_native(pipe.native()));
-  EXPECT_EQ(&pipe, &uv::pipe::from_native(pipe.native_handle()));
+  EXPECT_EQ(&pipe, &uv::raw::pipe::from_native(pipe.native()));
+  EXPECT_EQ(&pipe, &uv::raw::pipe::from_native(pipe.native_handle()));
   EXPECT_EQ(&poll, &uv::raw::poll::from_native(poll.native()));
   EXPECT_EQ(&poll, &uv::raw::poll::from_native(poll.native_handle()));
   EXPECT_EQ(&prepare, &uv::raw::prepare::from_native(prepare.native()));

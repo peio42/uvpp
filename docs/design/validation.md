@@ -179,8 +179,8 @@ through native completion after close. The allocation binary extends its prepare
 subscription check with a prepared heap-backed write callback, real write
 submission and native completion while C++ allocation is disabled. This measures
 wrapper C++ costs, independently of native C metadata allocation and callback
-construction. Pipe-specific entry points retain throwing adaptation over the same
-request lifecycle; their full migration remains a later slice.
+construction. Pipe-specific entry points now use status-oriented adaptation over the same
+request lifecycle; their migration is covered below.
 
 The `CallbackModes/RawStreamNativeRejection` cases first complete a real write and
 shutdown, then submit valid operations on the still-initialized, non-closing TCP
@@ -192,3 +192,18 @@ and after polling the loop. Rejected captures are released, completion counters
 stay unchanged, and both requests are reused on a second connection in the opposite
 callback mode. This is a semantic snapshot for these native rejection branches,
 not a bytewise comparison or a general rollback promise for native private fields.
+
+## Raw pipe migration
+
+`test-raw-pipe.cpp` covers default-state guards, explicit/throwing initialization,
+repeat init including closing/closed handles, application data/address stability,
+native configuration and name results, descriptor adoption using portable `uv_pipe`,
+real connect and read/write, missing-endpoint completion, pending/rejection guards,
+and runtime/static IPC export/import of a TCP handle from a second loop on the
+same thread, with request reuse. Linux
+length-aware tests preserve abstract names including trailing NUL bytes. Accepted
+endpoint names are compared to native queries, avoiding Unix-only naming assumptions.
+The isolated allocation binary checks C++ name-query allocation failure separately
+from native results, and exercises legacy name-copy failure when connect2 is absent.
+Local Linux execution and Windows-target syntax checks complement native Windows
+CI; they do not replace it.

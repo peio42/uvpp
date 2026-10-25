@@ -222,7 +222,7 @@ TEST(Uvpp2ProcessOptions, acceptsExplicitStdioEntries) {
 
 TEST(Uvpp2ProcessOptions, buildsPipeStdioEntries) {
   uv::loop loop;
-  uv::pipe output(loop);
+  uv::raw::pipe output(loop);
 
   auto options = uv::raw::process_options::make("tool")
     .empty_environment()

@@ -5,7 +5,7 @@
 
 namespace {
 
-uv::buffer_view allocate(uv::pipe &, std::size_t suggested) {
+uv::buffer_view allocate(uv::raw::pipe &, std::size_t suggested) {
   auto *data = new char[suggested];
   return uv::buffer_view{data, suggested};
 }
@@ -14,7 +14,7 @@ uv::buffer_view allocate(uv::pipe &, std::size_t suggested) {
 
 int main() {
   uv::loop loop;
-  uv::pipe stdout_pipe(loop);
+  uv::raw::pipe stdout_pipe(loop);
 
   auto options = uv::raw::process_options::make("/bin/sh")
     .args({"-c", "printf 'hello from child process\\n'"})
@@ -28,7 +28,7 @@ int main() {
     process.close();
   });
 
-  stdout_pipe.read_start(allocate, [](uv::pipe &stream, uv::read_result read) {
+  stdout_pipe.read_start(allocate, [](uv::raw::pipe &stream, uv::read_result read) {
     auto storage = read.storage();
 
     if (read.eof()) {

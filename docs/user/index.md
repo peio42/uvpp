@@ -23,6 +23,7 @@ as available below are experimental and may change before release.
 - [TCP](networking/tcp.md): connect, accept, stream I/O, and listener limits.
 - [UDP](networking/udp.md): datagram send/receive and truncation.
 - [Pipe](networking/pipe.md): local streams and TCP handle passing over IPC.
+- [Raw pipe](networking/raw-pipe.md): explicit initialization, name queries and IPC requests.
 - [DNS](networking/dns.md): coroutine `getaddrinfo` resolution and result surfaces.
 
 ## Availability

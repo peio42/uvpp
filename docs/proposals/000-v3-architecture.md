@@ -348,7 +348,7 @@ original buffer owner and reader across replacement/stop through native completi
 Terminal reads stop/release active slots before delivery. All normal/reset close
 forms retire pending loans at native completion before user close callbacks.
 Connect/write/shutdown request migration is implemented in the progress section
-below. Pipe and UDP family-specific setup/operations remain later slices.
+below, followed by the implemented pipe slice. UDP remains a later slice.
 High-level network owners remain independent. See
 [the stream contract](../user/networking/raw-stream.md) and
 [stream validation](../../tests/test-raw-stream.cpp).
@@ -361,8 +361,20 @@ connect return submission statuses. Pending reuse is `UV_EBUSY`; native rejectio
 retains no new callback and produces no completion. Runtime/static selection is
 extracted and pending cleared before delivery, allowing reentrant reuse without
 old completion clobbering it. Handle close retains request/payload lifetimes until
-native completion. Typed immediate write/read outcomes remain distinct. Pipe's
-specific connect/IPC interfaces remain throwing adapters over the shared request
-state until its family migration. See the
+native completion. Typed immediate write/read outcomes remain distinct. Pipe-specific connect/IPC interfaces now return statuses over the shared request
+state; see the pipe progress section below. See the
 [implemented request contract](../user/networking/raw-requests.md) and
 [real request tests](../../tests/test-raw-stream-requests.cpp).
+
+## Raw pipe progress
+
+The caller-owned pipe wrapper is now `uv::raw::pipe`, with explicit status init,
+throwing loop constructors, native-loop initialization tracking, common stream
+close cleanup, status bind/open/configuration/connect and runtime/static IPC
+submission. Name queries retain string payloads as results and preserve native
+binary-name lengths; C++ allocations and legacy name copies retain exception
+contracts. Counts/types and immediate write progress remain typed observations.
+Raw request pending/reuse/completion and borrowed payload/exported-handle lifetimes
+are shared with stream/TCP. High-level pipe owners are unchanged. UDP remains the
+next network family. See [implemented pipe behavior](../user/networking/raw-pipe.md)
+and [raw pipe tests](../../tests/test-raw-pipe.cpp).
