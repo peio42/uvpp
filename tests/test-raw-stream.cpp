@@ -524,11 +524,14 @@ TEST_P(RawStreamClose, outstandingLoanSurvivesUntilNativeCloseCompletion) {
   until([&] { return weak.expired(); });
   EXPECT_EQ(state.closes, GetParam() % 3 == 0 ? 0 : 1);
 }
-INSTANTIATE_TEST_SUITE_P(NativeCloseForms, RawStreamClose, ::testing::Values(0, 1, 2
+// Keep directives outside macro arguments: the traditional MSVC preprocessor
+// otherwise passes a literal '#' into Google Test's generated declarations.
 #if UVPP_HAS_TCP_CLOSE_RESET
-  , 3, 4, 5
+constexpr std::array native_close_forms{0, 1, 2, 3, 4, 5};
+#else
+constexpr std::array native_close_forms{0, 1, 2};
 #endif
-));
+INSTANTIATE_TEST_SUITE_P(NativeCloseForms, RawStreamClose, ::testing::ValuesIn(native_close_forms));
 
 TEST_F(RawStream, callbackExceptionsTerminateAtNativeBoundary) {
   pair();

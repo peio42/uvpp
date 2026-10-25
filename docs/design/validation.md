@@ -201,9 +201,51 @@ native configuration and name results, descriptor adoption using portable `uv_pi
 real connect and read/write, missing-endpoint completion, pending/rejection guards,
 and runtime/static IPC export/import of a TCP handle from a second loop on the
 same thread, with request reuse. Linux
-length-aware tests preserve abstract names including trailing NUL bytes. Accepted
+length-aware tests cover the initial abstract namespace NUL with bind2/connect2
+(libuv 1.46+). Additional embedded/trailing NUL bytes are tested as successful
+names with libuv 1.51+, and as native `UV_EINVAL` rejections with upstream
+1.46–1.50. Accepted
 endpoint names are compared to native queries, avoiding Unix-only naming assumptions.
 The isolated allocation binary checks C++ name-query allocation failure separately
 from native results, and exercises legacy name-copy failure when connect2 is absent.
 Local Linux execution and Windows-target syntax checks complement native Windows
 CI; they do not replace it.
+
+## CI portability follow-up: death tests, abstract names and MSVC
+
+The shared test main defaults Google Test death tests to `threadsafe` before
+`InitGoogleTest`, preserving explicit command-line overrides. This executes death
+bodies in a fresh process rather than a fork-only child inheriting libuv/sanitizer
+threads; fork warnings are not suppressed. Both test binaries use this main.
+
+The abstract pipe-name test originally gated all binary names on bind2/connect2
+availability (1.46). Upstream 1.48 skips only the first NUL during native name
+validation, so the trailing NUL caused `UV_EINVAL`. The native change allowing
+additional NULs arrived in 1.51. Coverage now separates the initial marker from
+additional embedded/trailing NULs and explicitly checks older native rejection
+without retaining callbacks or pending state. See the
+[1.48 implementation](https://github.com/libuv/libuv/blob/v1.48.0/src/unix/pipe.c)
+and [1.51 changelog](https://github.com/libuv/libuv/blob/v1.51.0/ChangeLog).
+
+The raw stream close-forms generator now selects a namespace-scope constexpr
+array outside `INSTANTIATE_TEST_SUITE_P`, then passes it through `ValuesIn`.
+Traditional MSVC preprocessing rejected the directives previously embedded in
+macro arguments; the three/six native close variants remain unchanged. An audit
+of test macro invocations found no other embedded conditional directives.
+The affected pipe/stream cases pass against a locally built upstream libuv 1.48
+archive (40 cases), covering the same native name-validation behavior as Ubuntu
+CI rather than compiling old headers against a newer library. Windows-target
+syntax checks complement the required native MSVC CI rerun.
+
+## macOS connection-refusal fixture
+
+The raw request refusal case now records an ephemeral destination address, binds
+the client to a distinct local source port while that destination is reserved,
+and waits for native destination close completion before connecting. Keeping the
+server bound without listening did not produce prompt refusal in the reported
+macOS run. The revised scenario matches the existing coroutine refusal fixture
+and still checks native submission/completion boundaries and `UV_ECONNREFUSED`.
+If the completion deadline expires, it closes the client and drains the pending
+request while the callback observer is alive, then leaves the original timeout
+failure intact instead of inspecting the observer's default success value.
+Local Linux verification complements the native macOS CI rerun.

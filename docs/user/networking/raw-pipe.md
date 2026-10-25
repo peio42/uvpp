@@ -63,7 +63,12 @@ arbitrary native side effects.
 
 With `UVPP_HAS_PIPE_BIND2` / `UVPP_HAS_PIPE_CONNECT2` (libuv 1.46+), length-aware
 bind/connect overloads accept `unsigned int` flags or `pipe_name_flag`, including
-`no_truncate`. These operations preserve native support for Linux abstract names.
+`no_truncate`. On Linux these APIs support an abstract namespace marker (initial
+NUL) from libuv 1.46. Additional embedded or trailing NUL bytes require libuv 1.51+
+(`UVPP_HAS_PIPE_ABSTRACT_NUL_NAMES`); upstream 1.46–1.50 reject those names with
+`UV_EINVAL`. The [libuv 1.51 changelog](https://github.com/libuv/libuv/blob/v1.51.0/ChangeLog)
+records this behavior change. The wrapper preserves the native result rather than
+requiring a newer libuv or altering the endpoint name.
 Native flags/length/path errors remain statuses. Empty names are rejected with
 `UV_EINVAL` before submission. On older libuv, the default bind/connect form copies
 the name into a temporary terminated string; this preparation can allocate/throw,

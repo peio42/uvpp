@@ -829,3 +829,15 @@ these lifecycle/option cases, covering both methods before init and during close
 positive enable/disable, and zero/negative/overflow delay rejection. Full GCC/Clang
 suites each pass 548 tests with two existing TTY skips, UDP allocation cases and
 example builds; the 16 targeted TCP cases pass under ASan/UBSan with leak detection.
+
+## CI portability follow-up
+
+The shared test executable main now defaults death tests to Google Test's
+threadsafe re-execution mode, with explicit command-line overrides still honored.
+Raw stream close parameterization keeps conditional directives outside macro
+arguments for traditional MSVC preprocessing. Linux abstract pipe names have
+separate coverage for the initial namespace marker (bind2/connect2, 1.46+) and
+additional NUL bytes (1.51+); older native versions explicitly exercise rejection.
+The capability macro records the latter native version boundary rather than
+raising the minimum libuv requirement. See
+[implemented validation](../design/validation.md#ci-portability-follow-up-death-tests-abstract-names-and-msvc).

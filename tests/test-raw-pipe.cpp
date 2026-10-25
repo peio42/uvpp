@@ -314,13 +314,43 @@ TEST_P(RawPipeExport, nativeTransferRetainsPayloadAndSupportsRuntimeStaticReques
 INSTANTIATE_TEST_SUITE_P(CallbackModes, RawPipeExport, ::testing::Values(false, true));
 
 #if defined(__linux__) && UVPP_HAS_PIPE_BIND2 && UVPP_HAS_PIPE_CONNECT2
+TEST_F(RawPipe, abstractNamesPreserveInitialNulByte) {
+  path = std::string(1, '\0') + "uvpp-" + std::to_string(uv_os_getpid()) + "-raw-abstract";
+  pair();
+  EXPECT_EQ(server.sockname().value(), path);
+  EXPECT_EQ(client.peername().value(), path);
+}
+
+#if UVPP_HAS_PIPE_ABSTRACT_NUL_NAMES
 TEST_F(RawPipe, abstractNamesPreserveEmbeddedAndTrailingNulBytes) {
   path = std::string(1, '\0') + "uvpp-" + std::to_string(uv_os_getpid()) + "-raw-abstract";
+  path.append("\0inside", 7);
   path.push_back('\0');
   pair();
   EXPECT_EQ(server.sockname().value(), path);
   EXPECT_EQ(client.peername().value(), path);
 }
+#else
+TEST_F(RawPipe, olderNativeAbstractNamesRejectAdditionalNulBytesWithoutSubmission) {
+  path = std::string(1, '\0') + "uvpp-" + std::to_string(uv_os_getpid()) + "-raw-abstract";
+  path.append("\0inside", 7);
+  path.push_back('\0');
+  ASSERT_TRUE(server.init(loop));
+  ASSERT_TRUE(client.init(loop));
+  EXPECT_EQ(server.bind(path).error(), uv::make_error_code(UV_EINVAL));
+  auto token = std::make_shared<int>(0);
+  std::weak_ptr<int> weak = token;
+  EXPECT_EQ(client.connect(connecting, path, [token](uv::raw::connect_request&, uv::status) { ADD_FAILURE(); }).error(),
+            uv::make_error_code(UV_EINVAL));
+  EXPECT_EQ(client.connect_static<record<uv::raw::connect_request>>(connecting, path).error(),
+            uv::make_error_code(UV_EINVAL));
+  token.reset();
+  EXPECT_TRUE(weak.expired());
+  EXPECT_FALSE(connecting.pending());
+  EXPECT_FALSE(server.active());
+  EXPECT_FALSE(client.active());
+}
+#endif
 #endif
 
 struct throwing_connect {

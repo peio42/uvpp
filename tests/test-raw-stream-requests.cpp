@@ -335,13 +335,35 @@ TEST_F(RawStreamRequests, shutdownBusyAndReentrantReuseAcrossStreamsReleaseSlotB
 }
 
 TEST_F(RawStreamRequests, refusedConnectReportsNativeFailureAtItsActualBoundary) {
-  server.bind(uv::ipv4{"127.0.0.1", 0}).throw_if_error(); // Bound but not listening.
+  server.bind(uv::ipv4{"127.0.0.1", 0}).throw_if_error();
+  const auto target = address();
+  // Reserve a distinct source port before releasing the destination, so the
+  // client cannot pick that same port for its local endpoint afterwards.
+  ASSERT_TRUE(client.bind(uv::ipv4{"127.0.0.1", 0}));
+  ASSERT_NE(client.sockname().value().port(), target.port());
+  bool server_closed = false;
+  server.close([&](tcp&) { server_closed = true; });
+  loop.run();
+  ASSERT_TRUE(server_closed);
+
+  // A bound-but-not-listening socket need not reject promptly on every backend.
+  // Connect only after native close has released the destination socket.
   probe completed;
   connecting.user_data(completed);
-  const auto submitted = client.connect_static<observe<connect_request>>(connecting, address());
+  const auto submitted = client.connect_static<observe<connect_request>>(connecting, target);
   if (submitted) {
     EXPECT_TRUE(connecting.pending());
     until([&] { return completed.calls == 1; });
+    if (connecting.pending()) {
+      // until() has already reported the timeout. Drain cancellation while the
+      // observer is still alive, rather than reading its default success status
+      // or leaving its address for the fixture destructor to dereference.
+      client.close();
+      loop.run();
+      ASSERT_FALSE(connecting.pending());
+      return;
+    }
+    ASSERT_EQ(completed.calls, 1);
     EXPECT_FALSE(completed.outcome);
     EXPECT_EQ(completed.outcome.error(), uv::make_error_code(UV_ECONNREFUSED));
   } else {
