@@ -123,12 +123,12 @@ namespace uv::raw {
 
     poll(loop &l, int fd) : poll(l.view(), fd) {}
 
-    poll(loop_view l, int fd) { init(l, fd).value(); }
+    poll(loop_view l, int fd) { init(l, fd).throw_if_error(); }
 
     poll(loop &l, uv_os_sock_t socket, socket_poll_t tag) : poll(l.view(), socket, tag) {}
 
     poll(loop_view l, uv_os_sock_t socket, socket_poll_t tag) {
-      init(l, socket, tag).value();
+      init(l, socket, tag).throw_if_error();
     }
 
     status init(loop &l, int fd) noexcept { return init(l.view(), fd); }

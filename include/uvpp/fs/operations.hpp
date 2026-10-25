@@ -1484,7 +1484,7 @@ namespace uv::fs {
         auto submitted = submit();
         if (!submitted) {
           state->request.cleanup();
-          submitted.value();
+          submitted.throw_if_error();
         }
       } catch (...) {
         delete state;

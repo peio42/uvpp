@@ -306,7 +306,7 @@ public:
     requires std::invocable<std::decay_t<F> &>
   void post(F &&callable) const {
     auto posted = post_result(std::forward<F>(callable));
-    posted.value();
+    posted.throw_if_error();
   }
 
   template<class F>

@@ -22,7 +22,7 @@ namespace uv::raw {
     explicit signal(loop &l) : signal(loop_view{l.native()}) {}
 
     explicit signal(loop_view l) {
-      init(l).value();
+      init(l).throw_if_error();
     }
 
     status init(loop &l) noexcept { return init(l.view()); }

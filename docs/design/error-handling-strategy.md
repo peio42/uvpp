@@ -87,9 +87,15 @@ tcp.connect(req, addr, [](uv::connect_request&, uv::status status) {
 `uv::result<T>` stores either one `T` or one `uv::error_code`; `uv::result<void>`
 stores success or an operational error. `uv::status` is its alias when the
 declaration names an error-only completion. Both expose `has_value()`, explicit
-`operator bool()`, `value()`, and `error()`. `value()` throws `uv::error` on an
+`operator bool()`, `throw_if_error()`, `value()`, and `error()`. `value()` throws `uv::error` on an
 error result; `error()` is empty for success. `result<T>` has the usual lvalue and
 rvalue accessors and supports move-only `T` without an allocation.
+`void throw_if_error() const` checks the same operational error without extracting
+or consuming the payload, including on const objects and temporaries. Both void
+`value()` and all four typed `value()` overloads delegate their error check to it.
+Throwing raw constructors and error-only facades use this explicit check; payload
+extraction keeps `value()`. This member does not change the value-returning free
+`uv::throw_if_error(native_status)` helper or result storage/layout.
 
 `uv::status` is the semantic alias for `uv::result<void>`. Public APIs should
 prefer `status` when the operation carries no success payload; `result<void>`

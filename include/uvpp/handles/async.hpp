@@ -24,13 +24,13 @@ namespace uv::raw {
     explicit async(loop &l) : async(l.view()) {}
 
     explicit async(loop_view l) {
-      init(l).value();
+      init(l).throw_if_error();
     }
 
     async(loop &l, callback cb) : async(l.view(), std::move(cb)) {}
 
     async(loop_view l, callback cb) {
-      init(l, std::move(cb)).value();
+      init(l, std::move(cb)).throw_if_error();
     }
 
     template<auto Callback>
@@ -40,7 +40,7 @@ namespace uv::raw {
     template<auto Callback>
       requires std::invocable<decltype(Callback), async&>
     async(loop_view l, static_callback<Callback> tag) {
-      init(l, tag).value();
+      init(l, tag).throw_if_error();
     }
 
     status init(loop &l) noexcept { return init(l.view()); }

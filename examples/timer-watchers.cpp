@@ -17,11 +17,11 @@ int main() {
 
   prepare.start([&](uv::raw::prepare &) {
     ++prepare_count;
-  }).value();
+  }).throw_if_error();
 
   check.start([&](uv::raw::check &) {
     ++check_count;
-  }).value();
+  }).throw_if_error();
 
   timer.start(100ms, 100ms, [&](uv::raw::timer &self) {
     ++ticks;
@@ -30,15 +30,15 @@ int main() {
               << " check=" << check_count << '\n';
 
     if (ticks == 5) {
-      self.stop().value();
-      prepare.stop().value();
-      check.stop().value();
+      self.stop().throw_if_error();
+      prepare.stop().throw_if_error();
+      check.stop().throw_if_error();
 
       self.close();
       prepare.close();
       check.close();
     }
-  }).value();
+  }).throw_if_error();
 
   loop.run();
   loop.close();

@@ -18,7 +18,7 @@ namespace uv::raw {
     explicit prepare(loop &l) : prepare(loop_view{l.native()}) {}
 
     explicit prepare(loop_view l) {
-      init(l).value();
+      init(l).throw_if_error();
     }
 
     status init(loop &l) noexcept { return init(l.view()); }

@@ -255,7 +255,7 @@ public:
     return true;
   }
 
-  void await_resume() { await_resume_result().value(); }
+  void await_resume() { await_resume_result().throw_if_error(); }
 
 private:
   template<class> friend class uv::detail::network_result_awaiter;

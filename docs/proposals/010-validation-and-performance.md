@@ -739,3 +739,24 @@ TTY skips, both separate UDP allocation cases, and example builds. Workflow YAML
 parses successfully. These are not native Windows/MSVC executions: the new native
 jobs still require CI confirmation. The 1.44.2 tag is source-audited only because
 the current loop wrapper requires metrics APIs introduced in 1.45.0.
+
+## Common result explicit error check validation
+
+The core result tests add three cases for `throw_if_error() const -> void` on
+both result forms. They verify const/lvalue/rvalue checks do not consume move-only
+values, in-place immovable values need no move/copy, nonzero error-code success
+payloads are not mistaken for result errors, void success remains unchanged, and
+failure preserves the native code/category and agrees with `value()`. Compile-time
+checks retain all four typed `value()` reference categories.
+
+Migrated raw constructors and other error-only throwing facades/examples now use
+`throw_if_error()`; payload extraction keeps `value()`. Existing lifecycle and
+await-policy tests provide regression coverage. The 34 focused core/timer/async
+initialization cases pass under ASan/UBSan with leak detection, and core tests
+compile under Clang `-Wall -Wextra -Werror`.
+
+Full local `make test-all` passes 532 tests per GCC/Clang compiler with two existing
+TTY skips, both separate UDP allocation cases passing, and all example builds.
+The updated posting and timer examples also build with both compilers after their
+error-only checks are switched to the new spelling. Native Windows/macOS runs
+remain CI validation.

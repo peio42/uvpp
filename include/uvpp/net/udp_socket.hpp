@@ -259,7 +259,7 @@ public:
       if (status_ < 0) { state_->send_active = false; continuation_ = {}; }
       return status_ >= 0;
     }
-    void await_resume() { await_resume_result().value(); }
+    void await_resume() { await_resume_result().throw_if_error(); }
   private:
     template<class> friend class uv::detail::network_result_awaiter;
     status await_resume_result() { return status::from_native(status_); }

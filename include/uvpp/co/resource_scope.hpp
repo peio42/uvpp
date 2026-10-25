@@ -449,7 +449,7 @@ private:
       access->owner = nullptr;
       file.reset();
       released_ = true;
-      closed.value();
+      closed.throw_if_error();
     }
 
     std::unique_ptr<uv::fs::file> file{};

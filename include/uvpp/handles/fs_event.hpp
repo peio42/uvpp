@@ -79,7 +79,7 @@ namespace uv::raw {
     explicit fs_event(loop &l) : fs_event(l.view()) {}
 
     explicit fs_event(loop_view l) {
-      init(l).value();
+      init(l).throw_if_error();
     }
 
     status init(loop &l) noexcept { return init(l.view()); }

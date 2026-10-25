@@ -3,6 +3,7 @@
 #include <limits>
 #include <system_error>
 #include <memory>
+#include <utility>
 
 #include <uv.h>
 
@@ -35,6 +36,27 @@ static_assert(!accepted_status<foreign_status>);
 static_assert(accepted_status<uv_errno_t>);
 static_assert(std::same_as<decltype(uv::throw_if_error(UV_EBADF)), int>);
 static_assert(std::same_as<decltype(uv::throw_if_error(uv_errno_t{})), int>);
+
+struct immovable_payload {
+  explicit immovable_payload(int value) : number{value} {}
+  immovable_payload(const immovable_payload&) = delete;
+  immovable_payload(immovable_payload&&) = delete;
+  int number;
+};
+
+template<class Result>
+void expect_unchanged_result_error(const Result &outcome, uv::error_code code) {
+  try {
+    outcome.throw_if_error();
+    FAIL() << "Error result must throw";
+  } catch (const uv::error &error) {
+    EXPECT_EQ(error.code(), static_cast<std::error_code>(code));
+    EXPECT_EQ(&error.code().category(), &uv::category());
+  }
+  EXPECT_FALSE(outcome.has_value());
+  EXPECT_EQ(outcome.error(), code);
+  EXPECT_THROW((void)outcome.value(), uv::error);
+}
 
 void leak_opendir_result_for_death_test() {
   uv::raw::fs::opendir_result result{0, reinterpret_cast<void *>(1)};
@@ -128,6 +150,59 @@ TEST(Uvpp2Core, valueResultSupportsMoveOnlyValues) {
   uv::result<uv::error_code> code_value{std::in_place, uv::make_error_code(UV_EINVAL)};
   EXPECT_TRUE(code_value);
   EXPECT_EQ(code_value.value(), uv::make_error_code(UV_EINVAL));
+}
+
+TEST(Uvpp2Core, throwIfErrorObservesSuccessWithoutConsumingPayload) {
+  uv::result<std::unique_ptr<int>> outcome{std::make_unique<int>(42)};
+  using result = decltype(outcome);
+  static_assert(std::same_as<decltype(outcome.throw_if_error()), void>);
+  static_assert(std::same_as<decltype(std::as_const(outcome).throw_if_error()), void>);
+  static_assert(std::same_as<decltype(std::declval<result&>().value()), std::unique_ptr<int>&>);
+  static_assert(std::same_as<decltype(std::declval<const result&>().value()), const std::unique_ptr<int>&>);
+  static_assert(std::same_as<decltype(std::declval<result&&>().value()), std::unique_ptr<int>&&>);
+  static_assert(std::same_as<decltype(std::declval<const result&&>().value()), const std::unique_ptr<int>&&>);
+  auto *payload = outcome.value().get();
+  EXPECT_NO_THROW(outcome.throw_if_error());
+  EXPECT_NO_THROW(std::as_const(outcome).throw_if_error());
+  EXPECT_NO_THROW(std::move(outcome).throw_if_error());
+  EXPECT_NO_THROW(std::move(std::as_const(outcome)).throw_if_error());
+  ASSERT_TRUE(outcome);
+  EXPECT_EQ(outcome.value().get(), payload);
+  EXPECT_EQ(*outcome.value(), 42);
+  auto consumed = std::move(outcome).value();
+  EXPECT_EQ(consumed.get(), payload);
+
+  const uv::result<immovable_payload> immovable{std::in_place, 7};
+  EXPECT_NO_THROW(immovable.throw_if_error());
+  EXPECT_EQ(immovable.value().number, 7);
+  const uv::result<uv::error_code> error_as_payload{std::in_place, uv::make_error_code(UV_EINVAL)};
+  EXPECT_NO_THROW(error_as_payload.throw_if_error());
+  EXPECT_EQ(error_as_payload.value(), uv::make_error_code(UV_EINVAL));
+}
+
+TEST(Uvpp2Core, throwIfErrorOnStatusReturnsVoidWithoutChangingSuccess) {
+  const uv::status outcome;
+  static_assert(std::same_as<decltype(outcome.throw_if_error()), void>);
+  static_assert(std::same_as<decltype(outcome.value()), void>);
+  EXPECT_NO_THROW(outcome.throw_if_error());
+  EXPECT_NO_THROW(std::move(outcome).throw_if_error());
+  EXPECT_NO_THROW(outcome.value());
+  EXPECT_TRUE(outcome.has_value());
+  EXPECT_FALSE(outcome.error());
+}
+
+TEST(Uvpp2Core, throwIfErrorPreservesFailureAndMatchesValueException) {
+  for (const int native : {UV_EINVAL, UV_ECANCELED, UV_EIO}) {
+    const auto code = uv::make_error_code(native);
+    const uv::result<std::unique_ptr<int>> value_result{code};
+    const uv::status void_result{code};
+    expect_unchanged_result_error(value_result, code);
+    expect_unchanged_result_error(void_result, code);
+    EXPECT_THROW(std::move(value_result).throw_if_error(), uv::error);
+    EXPECT_THROW(std::move(void_result).throw_if_error(), uv::error);
+    EXPECT_EQ(value_result.error(), code);
+    EXPECT_EQ(void_result.error(), code);
+  }
 }
 
 TEST(Uvpp2Core, loopCloseIsExplicitAndReportsBusyLoops) {

@@ -26,7 +26,7 @@ namespace uv::raw {
     explicit timer(loop &l) : timer(loop_view{l.native()}) {}
 
     explicit timer(loop_view l) {
-      init(l).value();
+      init(l).throw_if_error();
     }
 
     status init(loop &l) noexcept { return init(l.view()); }

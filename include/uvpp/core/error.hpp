@@ -108,23 +108,29 @@ namespace uv {
     bool has_value() const noexcept { return storage_.index() == 0; }
     explicit operator bool() const noexcept { return has_value(); }
 
+    void throw_if_error() const {
+      if (!has_value()) {
+        throw uv::error{error()};
+      }
+    }
+
     T &value() & {
-      throw_if_error_value();
+      throw_if_error();
       return std::get<0>(storage_);
     }
 
     const T &value() const & {
-      throw_if_error_value();
+      throw_if_error();
       return std::get<0>(storage_);
     }
 
     T &&value() && {
-      throw_if_error_value();
+      throw_if_error();
       return std::move(std::get<0>(storage_));
     }
 
     const T &&value() const && {
-      throw_if_error_value();
+      throw_if_error();
       return std::move(std::get<0>(storage_));
     }
 
@@ -133,12 +139,6 @@ namespace uv {
     }
 
   private:
-    void throw_if_error_value() const {
-      if (!has_value()) {
-        throw uv::error{std::get<1>(storage_)};
-      }
-    }
-
     std::variant<T, error_code> storage_;
   };
 
@@ -156,11 +156,13 @@ namespace uv {
     bool has_value() const noexcept { return !error_; }
     explicit operator bool() const noexcept { return has_value(); }
 
-    void value() const {
+    void throw_if_error() const {
       if (error_) {
         throw uv::error{error_};
       }
     }
+
+    void value() const { throw_if_error(); }
 
     error_code error() const noexcept { return error_; }
 

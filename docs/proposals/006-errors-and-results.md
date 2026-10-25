@@ -100,7 +100,11 @@ if (result) {
 `has_value()` is equivalent to the explicit boolean conversion. `value()` has
 `&`, `const &`, `&&`, and `const &&` overloads for value results. It throws
 `uv::error` with the stored code when called on an error result; the `void`
-specialization does the same. `error()` is non-throwing and returns an empty
+specialization does the same. Both forms implement `void throw_if_error() const`
+with the same error behavior but no success payload extraction or return value.
+It preserves the result even on an rvalue and supports const/move-only/immovable
+payloads. All `value()` overloads share that error check and retain their reference
+qualifiers. `error()` is non-throwing and returns an empty
 `uv::error_code` for success. There are no `ok()`, `status()`, `canceled()`, or
 `error_code()` synonyms on the common result type.
 
@@ -162,8 +166,8 @@ Under `uv::ops`, native operational failures do not throw during setup,
 submission, or completion: they become the operation's result. Exceptions that
 remain are `std::bad_alloc`, exceptions from user-provided construction, move, or
 callable code, other documented C++ preparation failures, and the explicit
-`value()` access on an error result. The ergonomic facade unwraps the same
-operational error at the await expression.
+`value()` or `throw_if_error()` access on an error result. The ergonomic facade
+unwraps the same operational error at the await expression.
 
 Keep the existing low-level callback termination policy documented until an explicit
 replacement is accepted. No exception escapes a libuv C callback. Coroutine promises
@@ -472,3 +476,15 @@ propagation before uvpp rollback. They cover retry and both throwing constructor
 loop forms. CI adds pinned 1.45.0/static and 1.53.0/shared jobs for both queue
 representations. These are implemented tests/jobs, not claims of local native
 Windows execution. Broader vendor/custom-provider failures remain outside the audit.
+
+## Explicit result error check progress
+
+`result<T>` and `result<void>` now expose `throw_if_error() const -> void`, with
+shared error checking from their `value()` accessors. Error propagation without
+payload extraction uses the member in migrated raw constructors, filesystem
+submission cleanup, posting, write/send awaits, and resource-scope cleanup. The
+free native-status helper remains unchanged. The core tests cover const/rvalue
+observations without consuming move-only/immovable payloads, nonzero error-code
+success payloads, status success, and stored error/category preservation for both
+result forms. See [the user contract](../user/errors.md#explicit-results) and
+[core tests](../../tests/test-core.cpp).

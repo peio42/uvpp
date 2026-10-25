@@ -25,8 +25,24 @@ A task-scope join waits for all children before rethrowing the first child failu
 `uv::result<T>` holds a value or `uv::error_code`; `uv::status` aliases
 `uv::result<void>`. Boolean conversion and `has_value()` indicate success.
 `value()` throws `uv::error` for an error result; `error()` returns an empty code
-on success. Values can be move-only. `error_code::native()`, `name()`, and
+on success. Both result forms also expose `void throw_if_error() const`: it raises
+the same operational error without returning, copying, moving, or consuming a
+success value. It can be called on const results and temporaries. `value()`
+delegates its error check to this method and retains its existing reference/value
+category behavior. Values can be move-only. `error_code::native()`, `name()`, and
 `message()` expose libuv diagnostics; conversion to `std::error_code` is explicit.
+
+Use `.throw_if_error()` when only error propagation is needed, and `.value()`
+when extracting a success payload:
+
+```cpp
+uv::loop loop;
+uv::raw::timer timer;
+timer.init(loop).throw_if_error();
+timer.close();
+loop.run();
+loop.close();
+```
 
 Network owners also provide synchronous creation pairs:
 
@@ -147,5 +163,10 @@ directly: `uv::throw_if_error(UV_EINVAL)`. It delegates to the signed integral
 helper. Unsigned values, other enum types, and floating-point values are not
 accepted.
 
+The free helper accepts native integer/enum statuses and preserves successful
+counts. The member `result.throw_if_error()` instead observes a common result and
+returns `void`, including for `result<T>`; an error-code value stored as a success
+payload does not itself cause an exception.
+
 The explicit-result operations in `uv::ops` continue to return errors rather
-than invoking this throwing helper for native operational failures.
+than invoking these throwing helpers for native operational failures.

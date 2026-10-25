@@ -27,5 +27,5 @@ int main() {
   loop.run(); // drains every accepted post and completes native close
   loop.close();
   if (preparation_failure) std::rethrow_exception(preparation_failure);
-  for (const auto &result : submitted) result.value();
+  for (const auto &result : submitted) result.throw_if_error();
 }
