@@ -25,7 +25,7 @@ TEST(Uvpp2Layout, reconstructsHandlesFromNativePointers) {
   static_assert(std::is_standard_layout_v<uv::raw::timer::native_storage>);
   static_assert(std::is_standard_layout_v<uv::raw::tcp::native_storage>);
   static_assert(std::is_standard_layout_v<uv::tty::native_storage>);
-  static_assert(std::is_standard_layout_v<uv::udp::native_storage>);
+  static_assert(std::is_standard_layout_v<uv::raw::udp::native_storage>);
 
   uv::loop loop;
   uv::raw::async async(loop);
@@ -47,7 +47,7 @@ TEST(Uvpp2Layout, reconstructsHandlesFromNativePointers) {
   uv::raw::signal signal(loop);
   uv::raw::timer timer(loop);
   uv::raw::tcp tcp(loop);
-  uv::udp udp(loop);
+  uv::raw::udp udp(loop);
 
   EXPECT_EQ(&async, &uv::raw::async::from_native(async.native()));
   EXPECT_EQ(&async, &uv::raw::async::from_native(async.native_handle()));
@@ -71,8 +71,8 @@ TEST(Uvpp2Layout, reconstructsHandlesFromNativePointers) {
   EXPECT_EQ(&timer, &uv::raw::timer::from_native(timer.native_handle()));
   EXPECT_EQ(&tcp, &uv::raw::tcp::from_native(tcp.native()));
   EXPECT_EQ(&tcp, &uv::raw::tcp::from_native(tcp.native_handle()));
-  EXPECT_EQ(&udp, &uv::udp::from_native(udp.native()));
-  EXPECT_EQ(&udp, &uv::udp::from_native(udp.native_handle()));
+  EXPECT_EQ(&udp, &uv::raw::udp::from_native(udp.native()));
+  EXPECT_EQ(&udp, &uv::raw::udp::from_native(udp.native_handle()));
 
   async.close();
   check.close();

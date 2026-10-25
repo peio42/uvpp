@@ -246,3 +246,21 @@ fallible C++ preparation; modern length-aware APIs retain capability gates.
 IPC runtime/static submissions use the shared request protocol and typed immediate
 writes retain partial/would-block outcomes. Exported native storage/payload remains
 borrowed through completion. See [the raw pipe contract](../user/networking/raw-pipe.md).
+
+## Raw UDP socket migration
+
+`uv::raw::udp` now uses the common initializable-handle guards over its existing
+inline native storage. Init/default/eager family/recvmmsg forms share status
+initialization and throwing constructor unwrapping. Unix fails eager socket
+creation before registration. Reviewed Windows 1.45/1.48/1.53 native paths remove
+their failed registration and close newly created sockets; uvpp clears native
+storage, preserving application data and resetting the stale loop sentinel without
+a second unlink or native close. No added native-lifetime allocation is needed.
+Socket operations return statuses and address/descriptor/buffer queries retain
+results. Multicast string copies keep C++ exceptions separate from native errors;
+embedded NUL inputs are rejected before submission. Numeric/bool options have
+native status/noexcept contracts. Duplicate close is inert, while receive slots
+and UDP send request machinery retain their transitional protocols until the next
+slice. Typed receive/immediate/batch values stay in `uv`; batch friendship names
+the new raw handle explicitly. High-level socket storage is unchanged. See
+[the raw UDP contract](../user/networking/raw-udp.md).

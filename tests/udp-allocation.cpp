@@ -264,3 +264,41 @@ TEST(RawPipeAllocation, nativeResultsAndCppNameAllocationFailuresRemainSeparate)
   EXPECT_NO_THROW(loop.close());
   std::filesystem::remove(path, ignored);
 }
+
+TEST(RawUdpAllocation, multicastPreparationFailuresRemainCppExceptions) {
+  uv::loop loop;
+  uv::raw::udp handle{loop};
+  ASSERT_TRUE(handle.bind(uv::ipv4{"127.0.0.1", 0}));
+  const auto port = handle.sockname().value().port();
+  auto *native = handle.native();
+  int marker = 42;
+  handle.user_data(marker);
+  const std::string long_address(128, 'x');
+#if UVPP_HAS_UDP_SOURCE_MEMBERSHIP
+  constexpr int operations = 3;
+#else
+  constexpr int operations = 2;
+#endif
+  for (int operation = 0; operation < operations; ++operation) {
+    bool failed = false;
+    {
+      allocation_failure injection{0};
+      try {
+        if (operation == 0) (void)handle.set_membership(long_address, uv::membership::join);
+        if (operation == 1) (void)handle.set_multicast_interface(long_address);
+#if UVPP_HAS_UDP_SOURCE_MEMBERSHIP
+        if (operation == 2) (void)handle.set_source_membership("239.255.42.99", long_address, uv::membership::join);
+#endif
+      } catch (const std::bad_alloc&) { failed = true; }
+    }
+    EXPECT_TRUE(failed);
+    EXPECT_TRUE(handle.initialized());
+    EXPECT_FALSE(handle.closing());
+    EXPECT_EQ(handle.native(), native);
+    EXPECT_EQ(handle.user_data<int>(), &marker);
+    EXPECT_EQ(handle.sockname().value().port(), port);
+  }
+  EXPECT_EQ(handle.set_membership(long_address, uv::membership::join).error(), uv::make_error_code(UV_EINVAL));
+  handle.close(); loop.run();
+  EXPECT_NO_THROW(loop.close());
+}

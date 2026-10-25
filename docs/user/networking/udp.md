@@ -53,3 +53,10 @@ guarantee in this slice.
 to uvpp; callers must not overwrite it, replace uvpp-owned callbacks, or
 independently close the handle. Moving the owner preserves this storage and its
 callback state. Raw wrappers keep `data` available to application code.
+
+## Raw socket operations
+
+[`uv::raw::udp`](raw-udp.md) provides caller-owned native storage with explicit
+initialization, status-oriented bind/open/options/multicast and typed address
+queries. Its send/receive callback and request protocols remain transitional in
+this first socket slice. These raw APIs are independent of `uv::udp_socket` owners.

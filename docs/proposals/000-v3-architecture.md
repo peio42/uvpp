@@ -348,7 +348,7 @@ original buffer owner and reader across replacement/stop through native completi
 Terminal reads stop/release active slots before delivery. All normal/reset close
 forms retire pending loans at native completion before user close callbacks.
 Connect/write/shutdown request migration is implemented in the progress section
-below, followed by the implemented pipe slice. UDP remains a later slice.
+below, followed by the implemented pipe slice. UDP socket operations are implemented below; send/receive migration remains deferred.
 High-level network owners remain independent. See
 [the stream contract](../user/networking/raw-stream.md) and
 [stream validation](../../tests/test-raw-stream.cpp).
@@ -375,6 +375,19 @@ submission. Name queries retain string payloads as results and preserve native
 binary-name lengths; C++ allocations and legacy name copies retain exception
 contracts. Counts/types and immediate write progress remain typed observations.
 Raw request pending/reuse/completion and borrowed payload/exported-handle lifetimes
-are shared with stream/TCP. High-level pipe owners are unchanged. UDP remains the
-next network family. See [implemented pipe behavior](../user/networking/raw-pipe.md)
+are shared with stream/TCP. High-level pipe owners are unchanged. The [UDP socket slice](../user/networking/raw-udp.md) is now implemented;
+its send/receive/request protocols remain the next UDP step. See [implemented pipe behavior](../user/networking/raw-pipe.md)
 and [raw pipe tests](../../tests/test-raw-pipe.cpp).
+
+## Raw UDP socket slice
+
+Initialization and socket operations now live on `uv::raw::udp`: default/status
+init and throwing constructors, open/bind/peer association, native options,
+multicast/source membership and typed address queries. Native failure leaves
+retryable init storage with application data preserved; Windows native cleanup
+already removes late-failure registrations, so uvpp only resets the stale sentinel.
+Multicast C++ string allocation remains throwing independently of native statuses.
+Send/receive/request and terminal callback-slot migration is deliberately deferred;
+existing richer receive/immediate/batch outcomes remain intact. See
+[implemented socket behavior](../user/networking/raw-udp.md) and
+[UDP socket tests](../../tests/test-raw-udp.cpp).

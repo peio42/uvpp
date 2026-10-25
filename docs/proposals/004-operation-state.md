@@ -337,6 +337,6 @@ submission. Name queries retain string payloads as results and preserve native
 binary-name lengths; C++ allocations and legacy name copies retain exception
 contracts. Counts/types and immediate write progress remain typed observations.
 Raw request pending/reuse/completion and borrowed payload/exported-handle lifetimes
-are shared with stream/TCP. High-level pipe owners are unchanged. UDP remains the
-next network family. See [implemented pipe behavior](../user/networking/raw-pipe.md)
+are shared with stream/TCP. High-level pipe owners are unchanged. The [UDP socket slice](../user/networking/raw-udp.md) is now implemented;
+its send/receive/request protocols remain the next UDP step. See [implemented pipe behavior](../user/networking/raw-pipe.md)
 and [raw pipe tests](../../tests/test-raw-pipe.cpp).

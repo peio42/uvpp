@@ -69,18 +69,18 @@ TEST(Uvpp2HandleMethods, exposesPipePathAndPendingState) {
 
 TEST(Uvpp2HandleMethods, exposesUdpConnectedPeerAndQueueState) {
   uv::loop loop;
-  uv::udp udp(loop);
+  uv::raw::udp udp(loop);
 
-  udp.bind(uv::ipv4{"127.0.0.1", 0});
-  udp.connect(uv::ipv4{"127.0.0.1", 9});
+  udp.bind(uv::ipv4{"127.0.0.1", 0}).throw_if_error();
+  udp.connect(uv::ipv4{"127.0.0.1", 9}).throw_if_error();
 
-  auto udp_peer = udp.peername();
+  auto udp_peer = udp.peername().value();
   EXPECT_EQ(udp_peer.port(), 9);
 
   EXPECT_EQ(udp.send_queue_size(), 0u);
   EXPECT_EQ(udp.send_queue_count(), 0u);
 
-  EXPECT_NO_THROW(udp.disconnect());
+  EXPECT_TRUE(udp.disconnect());
 
   udp.close();
   loop.run();

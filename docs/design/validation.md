@@ -249,3 +249,20 @@ If the completion deadline expires, it closes the client and drains the pending
 request while the callback observer is alive, then leaves the original timeout
 failure intact instead of inspecting the observer's default success value.
 Local Linux verification complements the native macOS CI rerun.
+
+## Raw UDP socket slice
+
+`test-raw-udp.cpp` covers default guards, native identity/data and repeated init,
+constructor/status equivalence, invalid-family/flag retry, IPv6 where available,
+socket adoption, typed local/peer addresses and disconnect, numeric/bool options,
+embedded-NUL rejection and multicast/source-membership parity against direct native
+operations on an equivalent socket. Membership failures remain backend outcomes,
+not an assumption that multicast is enabled in every CI environment. A re-executed
+Unix descriptor-exhaustion case verifies actual native init failure without leaked
+registration and successful retry. Windows init failure cleanup is source-audited
+at 1.45/1.48/1.53; the Unix exhaustion test does not exercise that backend branch.
+The allocation binary separately injects C++ string-copy failure for group,
+interface and source preparation and checks native address, binding and data
+preservation. Native Windows/macOS execution remains a CI gate alongside local
+Linux suites and Windows-target syntax checks. Full UDP receive/send slot,
+request-reuse and buffer-loan validation remains in the next slice.

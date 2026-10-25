@@ -17,13 +17,15 @@
 #include "uvpp/core/error.hpp"
 #include "uvpp/core/loop.hpp"
 #include "uvpp/core/version.hpp"
-#include "uvpp/handles/handle.hpp"
+#include "uvpp/detail/initializable_handle.hpp"
 #include "uvpp/net/address.hpp"
 #include "uvpp/core/buffer.hpp"
 #include "uvpp/net/socket_address.hpp"
 #include "uvpp/requests/udp_send.hpp"
 
 namespace uv {
+
+  namespace raw { class udp; }
 
   class udp_receive_result {
   public:
@@ -212,8 +214,6 @@ namespace uv {
     const sockaddr * const *addresses_;
   };
 
-  class udp;
-
   class udp_send_batch {
   public:
     udp_send_batch() = default;
@@ -349,7 +349,7 @@ namespace uv {
     }
 
   private:
-    friend class udp;
+    friend class raw::udp;
 
     void swap(udp_send_batch &other) noexcept {
       raw_buffers_.swap(other.raw_buffers_);
@@ -442,99 +442,128 @@ namespace uv {
   };
 #endif
 
-  class udp final : public basic_handle<udp, uv_udp_t> {
+}
+
+namespace uv::raw {
+
+  class udp final : public detail::initializable_handle<udp, uv_udp_t, basic_handle<udp, uv_udp_t>> {
+    using base = detail::initializable_handle<udp, uv_udp_t, basic_handle<udp, uv_udp_t>>;
   public:
     using allocate_callback = std::function<buffer_view(udp&, std::size_t)>;
     using receive_callback = std::function<void(udp&, udp_receive_result)>;
 
-    explicit udp(loop &l) {
-      throw_if_error(uv_udp_init(l.native(), native()));
-    }
+    udp() noexcept = default;
+    explicit udp(loop &l) : udp(l.view()) {}
+    explicit udp(loop_view l) { init(l).throw_if_error(); }
 
-    explicit udp(loop_view l) {
-      throw_if_error(uv_udp_init(l.native(), native()));
+    status init(loop &l) noexcept { return init(l.view()); }
+    status init(loop_view l) noexcept {
+      if (initialized()) return status::from_native(UV_EALREADY);
+      return finish_init(uv_udp_init(l.native(), native()));
     }
 
 #if UVPP_HAS_UDP_INIT_EX
-    udp(loop &l, udp_socket_family family) {
-      throw_if_error(uv_udp_init_ex(l.native(), native(), static_cast<unsigned int>(family)));
-    }
+    udp(loop &l, udp_socket_family family) : udp(l.view(), family) {}
+    udp(loop_view l, udp_socket_family family) { init(l, family).throw_if_error(); }
 
-    udp(loop_view l, udp_socket_family family) {
-      throw_if_error(uv_udp_init_ex(l.native(), native(), static_cast<unsigned int>(family)));
+    status init(loop &l, udp_socket_family family) noexcept { return init(l.view(), family); }
+    status init(loop_view l, udp_socket_family family) noexcept {
+      if (initialized()) return status::from_native(UV_EALREADY);
+      return finish_init(uv_udp_init_ex(l.native(), native(), static_cast<unsigned int>(family)));
     }
 #endif
 
 #if UVPP_HAS_UDP_INIT_EX && UVPP_HAS_UDP_RECVMMSG_FLAG
-    udp(loop &l, udp_socket_family family, udp_init_flag flag) {
-      throw_if_error(uv_udp_init_ex(l.native(), native(), family | flag));
-    }
+    udp(loop &l, udp_socket_family family, udp_init_flag flag) : udp(l.view(), family, flag) {}
+    udp(loop_view l, udp_socket_family family, udp_init_flag flag) { init(l, family, flag).throw_if_error(); }
 
-    udp(loop_view l, udp_socket_family family, udp_init_flag flag) {
-      throw_if_error(uv_udp_init_ex(l.native(), native(), family | flag));
-    }
-#endif
-
-    void open(uv_os_sock_t socket) {
-      throw_if_error(uv_udp_open(native(), socket));
-    }
-
-    void bind(const ipv4 &addr, unsigned int flags = 0) {
-      throw_if_error(uv_udp_bind(native(), addr.native_sockaddr(), flags));
-    }
-
-    void bind(const ipv6 &addr, unsigned int flags = 0) {
-      throw_if_error(uv_udp_bind(native(), addr.native_sockaddr(), flags));
-    }
-
-    void bind(const ipv4 &addr, udp_bind_flag flag) {
-      bind(addr, static_cast<unsigned int>(flag));
-    }
-
-    void bind(const ipv6 &addr, udp_bind_flag flag) {
-      bind(addr, static_cast<unsigned int>(flag));
-    }
-
-#if UVPP_HAS_UDP_CONNECT
-    void connect(const ipv4 &addr) {
-      throw_if_error(uv_udp_connect(native(), addr.native_sockaddr()));
-    }
-
-    void connect(const ipv6 &addr) {
-      throw_if_error(uv_udp_connect(native(), addr.native_sockaddr()));
-    }
-
-    void disconnect() {
-      throw_if_error(uv_udp_connect(native(), nullptr));
+    status init(loop &l, udp_socket_family family, udp_init_flag flag) noexcept { return init(l.view(), family, flag); }
+    status init(loop_view l, udp_socket_family family, udp_init_flag flag) noexcept {
+      if (initialized()) return status::from_native(UV_EALREADY);
+      return finish_init(uv_udp_init_ex(l.native(), native(), family | flag));
     }
 #endif
 
-    socket_address sockname() {
+    void close() noexcept { if (ready()) base::close(); }
+
+    void close(close_callback callback) noexcept {
+      if (ready()) base::close(std::move(callback));
+    }
+
+    template<auto Callback>
+      requires std::invocable<decltype(Callback), udp&>
+    void close_static() noexcept {
+      if (ready()) base::template close_static<Callback>();
+    }
+
+    status open(uv_os_sock_t socket) noexcept {
+      if (!ready()) return status::from_native(UV_EBADF);
+      return status::from_native(uv_udp_open(native(), socket));
+    }
+
+    status bind(const ipv4 &addr, unsigned int flags = 0) noexcept {
+      if (!ready()) return status::from_native(UV_EBADF);
+      return status::from_native(uv_udp_bind(native(), addr.native_sockaddr(), flags));
+    }
+
+    status bind(const ipv6 &addr, unsigned int flags = 0) noexcept {
+      if (!ready()) return status::from_native(UV_EBADF);
+      return status::from_native(uv_udp_bind(native(), addr.native_sockaddr(), flags));
+    }
+
+    status bind(const ipv4 &addr, udp_bind_flag flag) noexcept { return bind(addr, static_cast<unsigned int>(flag)); }
+    status bind(const ipv6 &addr, udp_bind_flag flag) noexcept { return bind(addr, static_cast<unsigned int>(flag)); }
+
+#if UVPP_HAS_UDP_CONNECT
+    status connect(const ipv4 &addr) noexcept {
+      if (!ready()) return status::from_native(UV_EBADF);
+      return status::from_native(uv_udp_connect(native(), addr.native_sockaddr()));
+    }
+
+    status connect(const ipv6 &addr) noexcept {
+      if (!ready()) return status::from_native(UV_EBADF);
+      return status::from_native(uv_udp_connect(native(), addr.native_sockaddr()));
+    }
+
+    status disconnect() noexcept {
+      if (!ready()) return status::from_native(UV_EBADF);
+      return status::from_native(uv_udp_connect(native(), nullptr));
+    }
+#endif
+
+    result<socket_address> sockname() const noexcept {
+      if (!ready()) return result<socket_address>{make_error_code(UV_EBADF)};
       socket_address addr;
-      throw_if_error(uv_udp_getsockname(native(), addr.native(), addr.native_len()));
-      return addr;
+      const auto code = uv_udp_getsockname(native(), addr.native(), addr.native_len());
+      if (code < 0) return result<socket_address>{make_error_code(code)};
+      return result<socket_address>{addr};
     }
 
 #if UVPP_HAS_UDP_CONNECT
-    socket_address peername() {
+    result<socket_address> peername() const noexcept {
+      if (!ready()) return result<socket_address>{make_error_code(UV_EBADF)};
       socket_address addr;
-      throw_if_error(uv_udp_getpeername(native(), addr.native(), addr.native_len()));
-      return addr;
+      const auto code = uv_udp_getpeername(native(), addr.native(), addr.native_len());
+      if (code < 0) return result<socket_address>{make_error_code(code)};
+      return result<socket_address>{addr};
     }
 #endif
 
     void receive_start(allocate_callback allocator, receive_callback receiver) {
+      require_ready();
       allocate_callback_.replace(std::move(allocator));
       receive_callback_.replace(std::move(receiver));
       throw_if_error(uv_udp_recv_start(native(), &udp::alloc_trampoline, &udp::receive_trampoline));
     }
 
     void receive_stop() {
+      require_ready();
       throw_if_error(uv_udp_recv_stop(native()));
     }
 
     void send(udp_send_request &request, std::span<const buffer_view> buffers, const sockaddr *addr,
               udp_send_request::callback callback) {
+      require_ready();
       detail::submit_request(request, std::move(callback), [&] {
         return uv_udp_send(request.native(), native(), reinterpret_cast<const uv_buf_t *>(buffers.data()),
                            detail::checked_buffer_count(buffers.size()), addr, &udp::send_trampoline);
@@ -568,6 +597,7 @@ namespace uv {
 
     void send(udp_send_request &request, std::span<const std::byte> bytes, const sockaddr *addr,
               udp_send_request::callback callback) {
+      require_ready();
       auto raw = detail::make_native_buffer(const_cast<char *>(reinterpret_cast<const char *>(bytes.data())),
                                             bytes.size());
       detail::submit_request(request, std::move(callback), [&] {
@@ -587,6 +617,7 @@ namespace uv {
 
     template<auto Callback>
     void send_static(udp_send_request &request, std::span<const buffer_view> buffers, const sockaddr *addr) {
+      require_ready();
       throw_if_error(uv_udp_send(request.native(), native(), reinterpret_cast<const uv_buf_t *>(buffers.data()),
                                  detail::checked_buffer_count(buffers.size()), addr, [](uv_udp_send_t *raw, int status) noexcept {
         detail::invoke_static_callback<Callback>(udp_send_request::from_native(raw), uv::status::from_native(status));
@@ -604,6 +635,7 @@ namespace uv {
     }
 
     send_now_result send_now(std::span<const buffer_view> buffers, const sockaddr *addr) noexcept {
+      if (!ready()) return send_now_result{UV_EBADF};
       if (!detail::buffer_count_fits(buffers.size())) {
         return send_now_result{UV_EINVAL};
       }
@@ -620,6 +652,7 @@ namespace uv {
     }
 
     send_now_result send_now(std::span<const buffer_view> buffers) noexcept {
+      if (!ready()) return send_now_result{UV_EBADF};
       if (!detail::buffer_count_fits(buffers.size())) {
         return send_now_result{UV_EINVAL};
       }
@@ -632,6 +665,7 @@ namespace uv {
     }
 
     send_now_result send_now(std::span<const std::byte> bytes, const sockaddr *addr) noexcept {
+      if (!ready()) return send_now_result{UV_EBADF};
       if (!detail::buffer_length_fits(bytes.size())) {
         return send_now_result{UV_EINVAL};
       }
@@ -654,6 +688,7 @@ namespace uv {
 
 #if UVPP_HAS_UDP_TRY_SEND2
     send_many_now_result send_many_now(udp_send_many_view batch) noexcept {
+      if (!ready()) return send_many_now_result{UV_EBADF};
       return send_many_now_result{uv_udp_try_send2(native(), batch.count(), batch.buffers(),
                                                    batch.buffer_counts(), batch.addresses(), 0)};
     }
@@ -669,76 +704,105 @@ namespace uv {
 #endif
 
     std::size_t send_queue_size() const noexcept {
-      return uv_udp_get_send_queue_size(native());
+      return initialized() ? uv_udp_get_send_queue_size(native()) : 0;
     }
 
     std::size_t send_queue_count() const noexcept {
-      return uv_udp_get_send_queue_count(native());
+      return initialized() ? uv_udp_get_send_queue_count(native()) : 0;
     }
 
-    void set_membership(std::string_view multicast_addr, std::string_view interface_addr, membership m) {
+    status set_membership(std::string_view multicast_addr, std::string_view interface_addr, membership m) {
+      if (!ready()) return status::from_native(UV_EBADF);
+      if (!native_text(multicast_addr) || !native_text(interface_addr)) return status::from_native(UV_EINVAL);
       std::string multicast{multicast_addr};
-      std::string interface{interface_addr};
-      throw_if_error(uv_udp_set_membership(native(), multicast.c_str(), interface.c_str(),
-                                           static_cast<uv_membership>(m)));
+      std::string interface_name{interface_addr};
+      return status::from_native(uv_udp_set_membership(native(), multicast.c_str(), interface_name.c_str(),
+                                                       static_cast<uv_membership>(m)));
     }
 
-    void set_membership(std::string_view multicast_addr, membership m) {
+    status set_membership(std::string_view multicast_addr, membership m) {
+      if (!ready()) return status::from_native(UV_EBADF);
+      if (!native_text(multicast_addr)) return status::from_native(UV_EINVAL);
       std::string multicast{multicast_addr};
-      throw_if_error(uv_udp_set_membership(native(), multicast.c_str(), nullptr, static_cast<uv_membership>(m)));
+      return status::from_native(uv_udp_set_membership(native(), multicast.c_str(), nullptr, static_cast<uv_membership>(m)));
     }
 
 #if UVPP_HAS_UDP_SOURCE_MEMBERSHIP
-    void set_source_membership(std::string_view multicast_addr, std::string_view interface_addr,
-                               std::string_view source_addr, membership m) {
+    status set_source_membership(std::string_view multicast_addr, std::string_view interface_addr,
+                                 std::string_view source_addr, membership m) {
+      if (!ready()) return status::from_native(UV_EBADF);
+      if (!native_text(multicast_addr) || !native_text(interface_addr) || !native_text(source_addr))
+        return status::from_native(UV_EINVAL);
       std::string multicast{multicast_addr};
-      std::string interface{interface_addr};
+      std::string interface_name{interface_addr};
       std::string source{source_addr};
-      throw_if_error(uv_udp_set_source_membership(native(), multicast.c_str(), interface.c_str(),
-                                                  source.c_str(), static_cast<uv_membership>(m)));
+      return status::from_native(uv_udp_set_source_membership(native(), multicast.c_str(), interface_name.c_str(),
+                                                              source.c_str(), static_cast<uv_membership>(m)));
     }
 
-    void set_source_membership(std::string_view multicast_addr, std::string_view source_addr,
-                               membership m) {
+    status set_source_membership(std::string_view multicast_addr, std::string_view source_addr, membership m) {
+      if (!ready()) return status::from_native(UV_EBADF);
+      if (!native_text(multicast_addr) || !native_text(source_addr)) return status::from_native(UV_EINVAL);
       std::string multicast{multicast_addr};
       std::string source{source_addr};
-      throw_if_error(uv_udp_set_source_membership(native(), multicast.c_str(), nullptr,
-                                                  source.c_str(), static_cast<uv_membership>(m)));
+      return status::from_native(uv_udp_set_source_membership(native(), multicast.c_str(), nullptr,
+                                                              source.c_str(), static_cast<uv_membership>(m)));
     }
 #endif
 
 #if UVPP_HAS_UDP_USING_RECVMMSG
-    bool using_recvmmsg() const noexcept {
-      return uv_udp_using_recvmmsg(native()) != 0;
-    }
+    bool using_recvmmsg() const noexcept { return initialized() && uv_udp_using_recvmmsg(native()) != 0; }
 #endif
 
-    void set_multicast_loop(bool enable) {
-      throw_if_error(uv_udp_set_multicast_loop(native(), enable ? 1 : 0));
+    status set_multicast_loop(bool enable) noexcept {
+      if (!ready()) return status::from_native(UV_EBADF);
+      return status::from_native(uv_udp_set_multicast_loop(native(), enable ? 1 : 0));
     }
 
-    void set_multicast_ttl(int ttl) {
-      throw_if_error(uv_udp_set_multicast_ttl(native(), ttl));
+    status set_multicast_ttl(int ttl) noexcept {
+      if (!ready()) return status::from_native(UV_EBADF);
+      return status::from_native(uv_udp_set_multicast_ttl(native(), ttl));
     }
 
-    void set_multicast_interface(std::string_view interface_addr) {
-      std::string interface{interface_addr};
-      throw_if_error(uv_udp_set_multicast_interface(native(), interface.c_str()));
+    status set_multicast_interface(std::string_view interface_addr) {
+      if (!ready()) return status::from_native(UV_EBADF);
+      if (!native_text(interface_addr)) return status::from_native(UV_EINVAL);
+      std::string interface_name{interface_addr};
+      return status::from_native(uv_udp_set_multicast_interface(native(), interface_name.c_str()));
     }
 
-    void set_multicast_interface() {
-      throw_if_error(uv_udp_set_multicast_interface(native(), nullptr));
+    status set_multicast_interface() noexcept {
+      if (!ready()) return status::from_native(UV_EBADF);
+      return status::from_native(uv_udp_set_multicast_interface(native(), nullptr));
     }
 
-    void set_broadcast(bool enable) {
-      throw_if_error(uv_udp_set_broadcast(native(), enable ? 1 : 0));
+    status set_broadcast(bool enable) noexcept {
+      if (!ready()) return status::from_native(UV_EBADF);
+      return status::from_native(uv_udp_set_broadcast(native(), enable ? 1 : 0));
     }
 
-    void set_ttl(int ttl) {
-      throw_if_error(uv_udp_set_ttl(native(), ttl));
+    status set_ttl(int ttl) noexcept {
+      if (!ready()) return status::from_native(UV_EBADF);
+      return status::from_native(uv_udp_set_ttl(native(), ttl));
     }
 
   private:
+    bool ready() const noexcept { return initialized() && !closing(); }
+    void require_ready() const { if (!ready()) status::from_native(UV_EBADF).throw_if_error(); }
+    static bool native_text(std::string_view value) noexcept { return value.find('\0') == std::string_view::npos; }
+
+    status finish_init(int code) noexcept {
+      if (code < 0) {
+        // Unix fails before registration; Windows already removes a failed
+        // registration and closes any new socket. Reset its stale loop sentinel
+        // while preserving application data, without unlinking a second time.
+        auto *data = native()->data;
+        *native() = {};
+        native()->data = data;
+      }
+      return status::from_native(code);
+    }
+
     static void alloc_trampoline(uv_handle_t *raw, size_t suggested_size, uv_buf_t *buf) noexcept {
       auto &self = udp::from_native(raw);
 

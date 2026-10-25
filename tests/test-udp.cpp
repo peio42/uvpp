@@ -9,7 +9,7 @@
 
 namespace {
 
-uv::buffer_view udp_alloc(uv::udp &, std::size_t) {
+uv::buffer_view udp_alloc(uv::raw::udp &, std::size_t) {
   static std::array<char, 1024> storage{};
   return uv::buffer_view{storage.data(), storage.size()};
 }
@@ -18,8 +18,8 @@ uv::buffer_view udp_alloc(uv::udp &, std::size_t) {
 
 TEST(Uvpp2Udp, sendsAndReceivesDatagrams) {
   uv::loop loop;
-  uv::udp server(loop);
-  uv::udp client(loop);
+  uv::raw::udp server(loop);
+  uv::raw::udp client(loop);
   uv::udp_send_request client_send_req;
   uv::udp_send_request server_send_req;
 
@@ -35,10 +35,10 @@ TEST(Uvpp2Udp, sendsAndReceivesDatagrams) {
   bool server_closed = false;
   bool client_closed = false;
 
-  server.bind(uv::ipv4{"127.0.0.1", 0});
-  client.bind(uv::ipv4{"127.0.0.1", 0}, uv::udp_bind_flag::reuse_address);
+  server.bind(uv::ipv4{"127.0.0.1", 0}).throw_if_error();
+  client.bind(uv::ipv4{"127.0.0.1", 0}, uv::udp_bind_flag::reuse_address).throw_if_error();
 
-  server.receive_start(udp_alloc, [&](uv::udp &udp, uv::udp_receive_result received) {
+  server.receive_start(udp_alloc, [&](uv::raw::udp &udp, uv::udp_receive_result received) {
     if (received.empty_event()) {
       return;
     }
@@ -63,7 +63,7 @@ TEST(Uvpp2Udp, sendsAndReceivesDatagrams) {
     });
   });
 
-  client.receive_start(udp_alloc, [&](uv::udp &udp, uv::udp_receive_result received) {
+  client.receive_start(udp_alloc, [&](uv::raw::udp &udp, uv::udp_receive_result received) {
     if (received.empty_event()) {
       return;
     }
@@ -75,15 +75,15 @@ TEST(Uvpp2Udp, sendsAndReceivesDatagrams) {
     EXPECT_EQ(std::memcmp(bytes.data(), "pong", 4), 0);
     client_read = true;
 
-    udp.close([&](uv::udp &) {
+    udp.close([&](uv::raw::udp &) {
       client_closed = true;
     });
-    server.close([&](uv::udp &) {
+    server.close([&](uv::raw::udp &) {
       server_closed = true;
     });
   });
 
-  auto bound_addr = server.sockname();
+  auto bound_addr = server.sockname().value();
   uv::ipv4 destination{"127.0.0.1", bound_addr.port()};
 
   static char payload[] = "ping";
@@ -119,18 +119,18 @@ void on_static_udp_send(uv::udp_send_request &, uv::status status) {
 
 TEST(Uvpp2Udp, runsStaticSendCallback) {
   uv::loop loop;
-  uv::udp server(loop);
-  uv::udp client(loop);
+  uv::raw::udp server(loop);
+  uv::raw::udp client(loop);
   uv::udp_send_request send_req;
   bool server_read = false;
   bool server_closed = false;
   bool client_closed = false;
   static_udp_send_done = false;
 
-  server.bind(uv::ipv4{"127.0.0.1", 0});
-  client.bind(uv::ipv4{"127.0.0.1", 0});
+  server.bind(uv::ipv4{"127.0.0.1", 0}).throw_if_error();
+  client.bind(uv::ipv4{"127.0.0.1", 0}).throw_if_error();
 
-  server.receive_start(udp_alloc, [&](uv::udp &, uv::udp_receive_result received) {
+  server.receive_start(udp_alloc, [&](uv::raw::udp &, uv::udp_receive_result received) {
     if (received.empty_event()) {
       return;
     }
@@ -138,15 +138,15 @@ TEST(Uvpp2Udp, runsStaticSendCallback) {
     ASSERT_TRUE(received);
     ASSERT_TRUE(received.ok());
     server_read = true;
-    server.close([&](uv::udp &) {
+    server.close([&](uv::raw::udp &) {
       server_closed = true;
     });
-    client.close([&](uv::udp &) {
+    client.close([&](uv::raw::udp &) {
       client_closed = true;
     });
   });
 
-  auto bound_addr2 = server.sockname();
+  auto bound_addr2 = server.sockname().value();
   uv::ipv4 destination{"127.0.0.1", bound_addr2.port()};
 
   static char payload[] = "ping";
@@ -165,17 +165,17 @@ TEST(Uvpp2Udp, runsStaticSendCallback) {
 
 TEST(Uvpp2Udp, sendNowSendsBytes) {
   uv::loop loop;
-  uv::udp server(loop);
-  uv::udp client(loop);
+  uv::raw::udp server(loop);
+  uv::raw::udp client(loop);
 
   bool server_read = false;
   bool server_closed = false;
   bool client_closed = false;
 
-  server.bind(uv::ipv4{"127.0.0.1", 0});
-  client.bind(uv::ipv4{"127.0.0.1", 0});
+  server.bind(uv::ipv4{"127.0.0.1", 0}).throw_if_error();
+  client.bind(uv::ipv4{"127.0.0.1", 0}).throw_if_error();
 
-  server.receive_start(udp_alloc, [&](uv::udp &, uv::udp_receive_result received) {
+  server.receive_start(udp_alloc, [&](uv::raw::udp &, uv::udp_receive_result received) {
     if (received.empty_event()) {
       return;
     }
@@ -185,16 +185,16 @@ TEST(Uvpp2Udp, sendNowSendsBytes) {
     ASSERT_EQ(bytes.size(), 4u);
     EXPECT_EQ(std::memcmp(bytes.data(), "ping", 4), 0);
     server_read = true;
-    server.close([&](uv::udp &) {
+    server.close([&](uv::raw::udp &) {
       server_closed = true;
     });
-    client.close([&](uv::udp &) {
+    client.close([&](uv::raw::udp &) {
       client_closed = true;
     });
   });
 
   std::array payload{'p', 'i', 'n', 'g'};
-  auto bound = server.sockname();
+  auto bound = server.sockname().value();
   auto result = client.send_now(std::as_bytes(std::span{payload}), uv::ipv4{"127.0.0.1", bound.port()});
 
   ASSERT_TRUE(result.ok());
@@ -214,7 +214,7 @@ TEST(Uvpp2Udp, sendNowSendsBytes) {
 
 TEST(Uvpp2Udp, sendNowReportsImmediateErrorWithoutThrowing) {
   uv::loop loop;
-  uv::udp udp(loop);
+  uv::raw::udp udp(loop);
   std::array payload{'f', 'a', 'i', 'l'};
 
   auto result = udp.send_now(std::as_bytes(std::span{payload}));
@@ -233,17 +233,17 @@ TEST(Uvpp2Udp, sendNowReportsImmediateErrorWithoutThrowing) {
 #if UVPP_HAS_UDP_TRY_SEND2
 TEST(Uvpp2Udp, sendManyNowSendsMultipleDatagrams) {
   uv::loop loop;
-  uv::udp server(loop);
-  uv::udp client(loop);
+  uv::raw::udp server(loop);
+  uv::raw::udp client(loop);
 
   int datagrams_read = 0;
   bool server_closed = false;
   bool client_closed = false;
 
-  server.bind(uv::ipv4{"127.0.0.1", 0});
-  client.bind(uv::ipv4{"127.0.0.1", 0});
+  server.bind(uv::ipv4{"127.0.0.1", 0}).throw_if_error();
+  client.bind(uv::ipv4{"127.0.0.1", 0}).throw_if_error();
 
-  server.receive_start(udp_alloc, [&](uv::udp &, uv::udp_receive_result received) {
+  server.receive_start(udp_alloc, [&](uv::raw::udp &, uv::udp_receive_result received) {
     if (received.empty_event()) {
       return;
     }
@@ -260,16 +260,16 @@ TEST(Uvpp2Udp, sendManyNowSendsMultipleDatagrams) {
 
     ++datagrams_read;
     if (datagrams_read == 2) {
-      server.close([&](uv::udp &) {
+      server.close([&](uv::raw::udp &) {
         server_closed = true;
       });
-      client.close([&](uv::udp &) {
+      client.close([&](uv::raw::udp &) {
         client_closed = true;
       });
     }
   });
 
-  auto bound = server.sockname();
+  auto bound = server.sockname().value();
   uv::ipv4 destination{"127.0.0.1", bound.port()};
 
   std::array first{'o', 'n', 'e', '!'};
@@ -503,17 +503,17 @@ TEST(Uvpp2Udp, sendBatchClearAllowsReuse) {
 
 TEST(Uvpp2Udp, sendBatchBuildsManySendMetadata) {
   uv::loop loop;
-  uv::udp server(loop);
-  uv::udp client(loop);
+  uv::raw::udp server(loop);
+  uv::raw::udp client(loop);
 
   int datagrams_read = 0;
   bool server_closed = false;
   bool client_closed = false;
 
-  server.bind(uv::ipv4{"127.0.0.1", 0});
-  client.bind(uv::ipv4{"127.0.0.1", 0});
+  server.bind(uv::ipv4{"127.0.0.1", 0}).throw_if_error();
+  client.bind(uv::ipv4{"127.0.0.1", 0}).throw_if_error();
 
-  server.receive_start(udp_alloc, [&](uv::udp &, uv::udp_receive_result received) {
+  server.receive_start(udp_alloc, [&](uv::raw::udp &, uv::udp_receive_result received) {
     if (received.empty_event()) {
       return;
     }
@@ -530,16 +530,16 @@ TEST(Uvpp2Udp, sendBatchBuildsManySendMetadata) {
 
     ++datagrams_read;
     if (datagrams_read == 2) {
-      server.close([&](uv::udp &) {
+      server.close([&](uv::raw::udp &) {
         server_closed = true;
       });
-      client.close([&](uv::udp &) {
+      client.close([&](uv::raw::udp &) {
         client_closed = true;
       });
     }
   });
 
-  auto bound = server.sockname();
+  auto bound = server.sockname().value();
   uv::ipv4 destination{"127.0.0.1", bound.port()};
 
   std::array first{'o', 'n', 'e', '!'};
@@ -582,10 +582,10 @@ TEST(Uvpp2Udp, sendBatchBuildsManySendMetadata) {
 #if UVPP_HAS_UDP_USING_RECVMMSG
 TEST(Uvpp2Udp, initializesWithSocketFamilyAndRecvmmsgFlag) {
   uv::loop loop;
-  uv::udp udp(loop, uv::udp_socket_family::ipv4, uv::udp_init_flag::recvmmsg);
+  uv::raw::udp udp(loop, uv::udp_socket_family::ipv4, uv::udp_init_flag::recvmmsg);
 
-  udp.bind(uv::ipv4{"127.0.0.1", 0});
-  auto bound = udp.sockname();
+  udp.bind(uv::ipv4{"127.0.0.1", 0}).throw_if_error();
+  auto bound = udp.sockname().value();
   EXPECT_GT(bound.port(), 0);
   (void)udp.using_recvmmsg();
 
@@ -598,10 +598,10 @@ TEST(Uvpp2Udp, initializesWithSocketFamilyAndRecvmmsgFlag) {
 #if UVPP_HAS_UDP_SOURCE_MEMBERSHIP
 TEST(Uvpp2Udp, sourceMembershipReportsInvalidAddresses) {
   uv::loop loop;
-  uv::udp udp(loop, uv::udp_socket_family::ipv4);
+  uv::raw::udp udp(loop, uv::udp_socket_family::ipv4);
 
-  EXPECT_THROW(udp.set_source_membership("not-a-multicast-address", "not-a-source-address",
-                                         uv::membership::join), uv::error);
+  EXPECT_FALSE(udp.set_source_membership("not-a-multicast-address", "not-a-source-address",
+                                         uv::membership::join));
 
   udp.close();
   loop.run();
@@ -611,13 +611,13 @@ TEST(Uvpp2Udp, sourceMembershipReportsInvalidAddresses) {
 
 TEST(Uvpp2Udp, appliesSocketOptions) {
   uv::loop loop;
-  uv::udp udp(loop);
+  uv::raw::udp udp(loop);
 
-  udp.bind(uv::ipv4{"127.0.0.1", 0});
-  udp.set_broadcast(true);
-  udp.set_ttl(64);
-  udp.set_multicast_loop(true);
-  udp.set_multicast_ttl(1);
+  udp.bind(uv::ipv4{"127.0.0.1", 0}).throw_if_error();
+  udp.set_broadcast(true).throw_if_error();
+  udp.set_ttl(64).throw_if_error();
+  udp.set_multicast_loop(true).throw_if_error();
+  udp.set_multicast_ttl(1).throw_if_error();
 
   udp.close();
   loop.run();
@@ -626,7 +626,7 @@ TEST(Uvpp2Udp, appliesSocketOptions) {
 
 TEST(Uvpp2Udp, immediateSendFailureClearsCallback) {
   uv::loop loop;
-  uv::udp udp(loop);
+  uv::raw::udp udp(loop);
   uv::udp_send_request request;
   std::array payload{'f', 'a', 'i', 'l'};
   auto token = std::make_shared<int>(1);

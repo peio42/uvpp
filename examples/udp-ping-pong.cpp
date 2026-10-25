@@ -8,7 +8,7 @@
 
 namespace {
 
-uv::buffer_view allocate(uv::udp &, std::size_t suggested) {
+uv::buffer_view allocate(uv::raw::udp &, std::size_t suggested) {
   auto *data = new char[suggested];
   return uv::buffer_view{data, suggested};
 }
@@ -44,13 +44,13 @@ void copy_address(sockaddr_storage &storage, const sockaddr *address) {
 
 int main() {
   uv::loop loop;
-  uv::udp server(loop);
-  uv::udp client(loop);
+  uv::raw::udp server(loop);
+  uv::raw::udp client(loop);
 
-  server.bind(uv::ipv4{"127.0.0.1", 0});
-  auto server_address = server.sockname().to_v4();
+  server.bind(uv::ipv4{"127.0.0.1", 0}).throw_if_error();
+  auto server_address = server.sockname().value().to_v4();
 
-  client.receive_start(allocate, [&](uv::udp &handle, uv::udp_receive_result packet) {
+  client.receive_start(allocate, [&](uv::raw::udp &handle, uv::udp_receive_result packet) {
     auto storage = packet.storage();
 
     if (packet.empty_event()) {
@@ -72,7 +72,7 @@ int main() {
     handle.close();
   });
 
-  server.receive_start(allocate, [&](uv::udp &handle, uv::udp_receive_result packet) {
+  server.receive_start(allocate, [&](uv::raw::udp &handle, uv::udp_receive_result packet) {
     auto storage = packet.storage();
 
     if (packet.empty_event()) {
