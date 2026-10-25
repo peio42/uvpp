@@ -7,7 +7,7 @@
 
 #include "uvpp/core/error.hpp"
 #include "uvpp/core/loop.hpp"
-#include "uvpp/detail/raw_watcher.hpp"
+#include "uvpp/detail/initializable_raw_watcher.hpp"
 
 namespace uv {
   using signal_number = int;
@@ -15,12 +15,21 @@ namespace uv {
 
 namespace uv::raw {
 
-  class signal final : public ::uv::detail::raw_watcher_handle<signal, uv_signal_t, signal_number> {
+  class signal final : public ::uv::detail::initializable_raw_watcher_handle<signal, uv_signal_t, signal_number> {
   public:
+    signal() noexcept = default;
+
     explicit signal(loop &l) : signal(loop_view{l.native()}) {}
 
     explicit signal(loop_view l) {
-      throw_if_error(uv_signal_init(l.native(), native()));
+      init(l).value();
+    }
+
+    status init(loop &l) noexcept { return init(l.view()); }
+
+    status init(loop_view l) noexcept {
+      if (initialized()) return status::from_native(UV_EALREADY);
+      return status::from_native(uv_signal_init(l.native(), native()));
     }
 
     status start(signal_number signum, callback cb) {
@@ -30,7 +39,7 @@ namespace uv::raw {
     template<auto Callback>
       requires std::invocable<decltype(Callback), signal&, signal_number>
     status start_static(signal_number signum) noexcept {
-      if (closing()) return status::from_native(UV_EBADF);
+      if (!initialized() || closing()) return status::from_native(UV_EBADF);
       auto result = commit_start(uv_signal_start(native(), [](uv_signal_t *raw, int received) noexcept {
         ::uv::detail::invoke_static_callback<Callback>(signal::from_native(raw), received);
       }, signum));
@@ -47,7 +56,7 @@ namespace uv::raw {
     status start_oneshot_static(signal_number signum) noexcept {
       // Use a persistent native source and stop before user delivery. Native
       // one-shot dispatch can stop a subscription rearmed inside the callback.
-      if (closing()) return status::from_native(UV_EBADF);
+      if (!initialized() || closing()) return status::from_native(UV_EBADF);
       auto result = commit_start(uv_signal_start(native(), [](uv_signal_t *raw, int received) noexcept {
         auto &self = signal::from_native(raw);
         if (!self.stop()) std::terminate();
@@ -58,13 +67,13 @@ namespace uv::raw {
     }
 
     status stop() noexcept {
-      if (closing()) return status::from_native(UV_EBADF);
+      if (!initialized() || closing()) return status::from_native(UV_EBADF);
       return commit_stop(uv_signal_stop(native()));
     }
 
   private:
     status start_impl(signal_number signum, callback cb, bool oneshot) noexcept {
-      if (closing()) return status::from_native(UV_EBADF);
+      if (!initialized() || closing()) return status::from_native(UV_EBADF);
       auto result = commit_start(uv_signal_start(native(), &signal::signal_trampoline, signum), std::move(cb));
       if (result) oneshot_ = oneshot;
       return result;

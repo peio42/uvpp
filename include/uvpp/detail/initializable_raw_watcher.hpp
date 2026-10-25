@@ -6,9 +6,9 @@ namespace uv::detail {
 
   // Opt-in lifecycle guards for raw watchers supporting explicit initialization.
   // Native init and subscription operations remain in the concrete handle.
-  template<class Derived, class Native>
-  class initializable_raw_watcher_handle : public raw_watcher_handle<Derived, Native> {
-    using base = raw_watcher_handle<Derived, Native>;
+  template<class Derived, class Native, class... Args>
+  class initializable_raw_watcher_handle : public raw_watcher_handle<Derived, Native, Args...> {
+    using base = raw_watcher_handle<Derived, Native, Args...>;
 
   public:
     using typename base::close_callback;

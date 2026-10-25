@@ -12,7 +12,7 @@
 #include "uvpp/core/callback.hpp"
 #include "uvpp/core/error.hpp"
 #include "uvpp/core/loop.hpp"
-#include "uvpp/detail/raw_watcher.hpp"
+#include "uvpp/detail/initializable_raw_watcher.hpp"
 
 namespace uv::raw {
 
@@ -72,18 +72,25 @@ namespace uv::raw {
     int status_ = 0;
   };
 
-  class fs_event final : public ::uv::detail::raw_watcher_handle<fs_event, uv_fs_event_t, fs_event_result> {
+  class fs_event final : public ::uv::detail::initializable_raw_watcher_handle<fs_event, uv_fs_event_t, fs_event_result> {
   public:
-    explicit fs_event(loop &l) {
-      throw_if_error(uv_fs_event_init(l.native(), native()));
-    }
+    fs_event() noexcept = default;
+
+    explicit fs_event(loop &l) : fs_event(l.view()) {}
 
     explicit fs_event(loop_view l) {
-      throw_if_error(uv_fs_event_init(l.native(), native()));
+      init(l).value();
+    }
+
+    status init(loop &l) noexcept { return init(l.view()); }
+
+    status init(loop_view l) noexcept {
+      if (initialized()) return status::from_native(UV_EALREADY);
+      return status::from_native(uv_fs_event_init(l.native(), native()));
     }
 
     status start(std::string_view path, unsigned int flags, callback cb) {
-      if (closing()) return status::from_native(UV_EBADF);
+      if (!initialized() || closing()) return status::from_native(UV_EBADF);
       if (path.find('\0') != std::string_view::npos) return status::from_native(UV_EINVAL);
       std::string storage{path};
       return commit_start(uv_fs_event_start(native(), &fs_event::event_trampoline, storage.c_str(), flags),
@@ -101,7 +108,7 @@ namespace uv::raw {
     template<auto Callback>
       requires std::invocable<decltype(Callback), fs_event&, fs_event_result>
     status start_static(std::string_view path, unsigned int flags = 0) {
-      if (closing()) return status::from_native(UV_EBADF);
+      if (!initialized() || closing()) return status::from_native(UV_EBADF);
       if (path.find('\0') != std::string_view::npos) return status::from_native(UV_EINVAL);
       std::string storage{path};
       return commit_start(uv_fs_event_start(native(), [](uv_fs_event_t *raw, const char *filename, int events, int status) noexcept {
@@ -118,12 +125,12 @@ namespace uv::raw {
     }
 
     status stop() noexcept {
-      if (closing()) return status::from_native(UV_EBADF);
+      if (!initialized() || closing()) return status::from_native(UV_EBADF);
       return commit_stop(uv_fs_event_stop(native()));
     }
 
     result<std::string> path() {
-      if (closing()) return result<std::string>{make_error_code(UV_EBADF)};
+      if (!initialized() || closing()) return result<std::string>{make_error_code(UV_EBADF)};
       return get_path([this](char *buffer, std::size_t *size) {
         return uv_fs_event_getpath(native(), buffer, size);
       });

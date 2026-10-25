@@ -315,7 +315,7 @@ Raw timer supports default construction, a native-loop-pointer `initialized()`
 observation, and explicit status-returning `init(loop&/loop_view)` alongside the
 throwing constructors. Before-init operations are guarded without additional
 state storage; successful initialization cannot be repeated, including after
-close. Idle/prepare/check also implement this lifecycle through shared internal
-guards; their start/stop and callback replacement protocol remains unchanged.
+close. Signal/fs-event/idle/prepare/check also implement this lifecycle through
+shared internal guards; their start/stop and callback replacement protocol remains unchanged.
 Other raw families retain constructor initialization pending their own migration. See [the implemented timer contract](../user/raw-watchers.md#explicit-initialization)
 and [error-policy progress](006-errors-and-results.md#raw-timer-explicit-initialization-progress).

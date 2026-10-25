@@ -60,6 +60,23 @@ queries on a given handle type, remain results. Common loop/value and borrowed
 
 ## Signal
 
+`signal() noexcept` creates uninitialized storage. `init(loop&)` and
+`init(loop_view)` return `status` without throwing; loop-taking constructors
+unwrap the same result. Initialization follows the
+[common lifecycle](#explicit-initialization): native `loop` is the sentinel,
+repeat initialization reports `UV_EALREADY` even after close, and views require
+successful init. Before init, all persistent/one-shot runtime/static starts and
+stop return `UV_EBADF`; common observations, ref/unref, queries, and close use the
+same pre-init rules as timer. Init does not subscribe to a signal.
+
+Native initialization failures are returned unchanged and leave the wrapper
+uninitialized, with no close required; a retry is permitted. In libuv's Unix
+implementation, fallible loop-side preparation precedes native handle
+registration. Such preparation can retain loop-owned infrastructure; it does not
+create an initialized wrapper handle. A valid initialized loop is required.
+After successful init, close is required even when a later start fails. Callback preparation can still throw
+before a runtime start is entered.
+
 ```cpp
 uv::loop loop;
 uv::raw::signal interrupt{loop};
@@ -115,13 +132,26 @@ stops polling and releases the runtime callback. Both dispatch forms return a
 
 ## Filesystem events
 
+`fs_event() noexcept`, `init(loop&) noexcept -> status`, and
+`init(loop_view) noexcept -> status` provide the same
+[explicit initialization lifecycle](#explicit-initialization). Loop-taking
+constructors unwrap that status. Init registers an inactive handle without
+watching a path. Repeat init returns `UV_EALREADY` and leaves the current path,
+activity, and callable unchanged. Before init, all start/stop variants and
+`path()` report `UV_EBADF`; close is inert and no close callback is retained or
+invoked. Common queries/observations/ref operations share timer's pre-init rules.
+A valid initialized loop is required. Initialization and queries remain loop-thread
+operations, and `initialized()` is not synchronization. Successful init requires
+close completion before releasing storage, even if every start fails.
+
 `uv::raw::fs_event` starts on a path with optional `raw::fs_event_flag` flags.
 Runtime and static overloads share the same contract. Paths containing embedded
-NUL report `UV_EINVAL` before native start. Path preparation precedes native
+NUL report `UV_EINVAL` on an initialized, non-closing handle before native start. Path preparation precedes native
 submission and callback installation.
 
 `path()` returns `result<std::string>`: its success value owns a copy, while native
-query failures are explicit errors. This query allocates a temporary buffer and
+query failures are explicit errors. Uninitialized/closing checks precede buffer
+allocation. Otherwise this query allocates a temporary buffer and
 may resize it before materializing its string; allocation exceptions still throw.
 
 `raw::fs_event_result::filename()` borrows native memory only during callback
@@ -199,8 +229,9 @@ handle views after successful initialization; their operations do not perform th
 wrapper's checks. Do not overwrite native `loop`, reinitialize native storage, or
 bypass the wrapper's lifetime protocol. All initialization and observations follow
 loop-thread affinity; `initialized()` provides no cross-thread synchronization.
-The same lifecycle and common-operation rules apply to raw idle, prepare, and
-check handles; timer duration/reconfiguration methods remain timer-specific.
+The same lifecycle and common-operation rules apply to raw signal, fs-event,
+idle, prepare, and check handles; timer duration/reconfiguration methods remain
+timer-specific.
 
 ### Subscriptions and durations
 

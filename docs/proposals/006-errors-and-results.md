@@ -320,7 +320,8 @@ cleanup, directory ownership rollback, and callback release/reuse are covered in
 `uv::raw::{signal,poll,fs_event}` operations now report native start/stop failures
 as `status`; common native getters use `result<T>` and setters use `status`.
 Fs-event `path()` returns `result<std::string>` with C++ allocation still throwing.
-Initialization remains separately documented throwing setup. Raw poll/fs-event
+Signal/fs-event support explicit initialization as recorded below; poll retains
+throwing constructor setup. Raw poll/fs-event
 completion results normalize successful `raw_status()` to zero and expose direct
 `error_code()`. High-level source waits and their `uv::ops` facades are unchanged.
 See [the implemented contract](../user/raw-watchers.md).
@@ -370,7 +371,7 @@ successful initialization. No added state, allocation, or native-data reservatio
 is needed. Lifecycle and callback-release coverage lives in
 [`test-raw-timer-init.cpp`](../../tests/test-raw-timer-init.cpp).
 
-This is also implemented for idle/prepare/check (see below). Other raw handle
+This is also implemented for signal/fs-event/idle/prepare/check (see below). Other raw handle
 families retain their current construction contracts; their failure/rollback paths need individual review
 before extending this protocol. Libuv timer init has no native failure path on a
 valid loop, so tests do not claim injected native-init failure coverage.
@@ -391,3 +392,25 @@ currently succeeds unconditionally on a valid loop in both Unix and Windows
 backends; no synthetic init-failure contract is introduced. See the
 [implemented user contract](../user/raw-watchers.md#idle-prepare-and-check) and
 [portable typed tests](../../tests/test-raw-phase-init.cpp).
+
+## Raw signal and fs-event explicit initialization progress
+
+Raw signal/fs-event now provide default construction, status-returning
+`init(loop&/loop_view) noexcept`, and native-loop-pointer `initialized()` through
+the common initialization helper. Loop-taking constructors unwrap that result.
+All start/stop variants, including signal one-shot/static paths, reject pre-init
+use with `UV_EBADF`; fs-event `path()` checks before allocating a query buffer.
+Repeat init returns `UV_EALREADY` without mutating native subscriptions, path,
+callback slots, or signal one-shot mode. Inert pre-init close/ref and false
+observations match the timer/phase contract. Native addresses and application
+`data` remain unchanged; the helper forwards notification arguments without
+adding state or operation allocations.
+
+Unix signal init can report fallible loop preparation before native handle
+registration. Such failure leaves `initialized()` false and permits retry without
+closing the wrapper; any retained loop-owned infrastructure remains the loop's
+responsibility. Tests cover pre-init rejection, successful init, failed starts,
+repeated init, reentrant one-shot rearming, and close completion; native-init
+fault injection remains a separate validation gate. Poll/async are not migrated
+by this change. See [the user contract](../user/raw-watchers.md) and
+[portable initialization tests](../../tests/test-raw-subscription-init.cpp).

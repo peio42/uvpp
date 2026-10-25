@@ -622,3 +622,34 @@ per compiler with two existing TTY skips, both separate UDP allocation cases pas
 and all examples build. The new typed tests and timer initialization tests also
 compile with Clang `-Wall -Wextra -Werror`. No native Windows/macOS execution was
 performed locally.
+
+## Raw signal/fs-event explicit initialization validation
+
+[`test-raw-subscription-init.cpp`](../../tests/test-raw-subscription-init.cpp)
+adds eight typed lifecycle cases per signal/fs-event handle and one reentrant
+signal one-shot case (17 cases). Coverage includes no native registration before
+init, all start/stop and native-query pre-init rejections, fs-event path/flag
+variants, callback capture release, inert close variants, stable native identity
+and application data, repeated init preserving an active subscription/path/loop,
+initialized observations through close completion, throwing loop/view constructors,
+and recovery from failed starts after successful initialization. The one-shot
+case rejects init inside delivery and rearms another terminal subscription.
+
+The tests use C++ filesystem facilities and portable registered native callback
+dispatch rather than platform-specific signal delivery or event timing. Static
+targets are namespace-scope function templates/functions for MSVC portability.
+The common helper now forwards notification argument types without changing slot
+storage or adding initialization state. Regression validation includes existing
+watcher, timer/phase, native-layout, and initialization cases.
+
+The targeted ASan/UBSan run with leak detection passes 89 tests with one existing
+TTY skip. The new tests compile under Clang `-Wall -Wextra -Werror`. Native signal
+init failure injection remains open: the verified Unix failure path precedes handle
+registration, while ordinary initialized loops may already own the needed signal
+infrastructure. Native Windows/macOS execution remains a CI gate.
+
+Full local `make test-all` validation passes with GCC and Clang: 502 tests pass
+per compiler with two existing TTY skips, both separate UDP allocation cases pass,
+and all examples build. The final incremental run after bracing GoogleTest
+assertions in constexpr branches emits no warnings; the new tests also pass GCC
+`-Wall -Wextra -Werror` syntax validation.

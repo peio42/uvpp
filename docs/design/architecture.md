@@ -119,7 +119,15 @@ The raw wrappers `uv::raw::{signal,poll,fs_event}` use explicit start/stop statu
 and query results. Shared subscription bookkeeping commits callbacks after
 successful start, preserves an old callable only while its native source remains
 active, and releases terminal slots before user delivery. High-level source
-ownership and pending-event policies remain separate; see [raw watchers](../user/raw-watchers.md).
+ownership and pending-event policies remain separate. Raw signal and fs-event
+also support default construction and status-returning `init(loop/loop_view)`
+through the shared `initializable_raw_watcher_handle`, now parameterized by
+notification payloads. Native `loop` tracks initialization without added state;
+pre-init operations (including fs-event `path`) return `UV_EBADF`, observations
+are false, and close/ref operations are inert. Repeat init reports `UV_EALREADY`
+through and after close. Signal native init failure precedes handle registration
+and leaves the sentinel unset, allowing retry without handle close; any retained
+loop infrastructure belongs to the loop. See [raw watchers](../user/raw-watchers.md).
 
 
 ## Raw timers and loop phases
@@ -132,7 +140,7 @@ loop-taking constructors unwrap that status. The shared internal
 and native-query guards without adding storage or changing callback ownership.
 The native `loop` pointer is the initialization sentinel, with no additional state
 field. It remains set after close, preventing reinitialization. All four guard operations before initialization;
-signal/poll/fs-event/async retain their existing constructor setup. Start/stop
+Poll and async retain their existing constructor setup. Start/stop
 and timer `again`/`set_repeat` return `status`, with shared explicit native-query
 results. Terminal one-shot timer delivery extracts its callable before invocation,
 while repeated events retain the callable.

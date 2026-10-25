@@ -203,9 +203,16 @@ allocation can still throw; raw filesystem submission is not generally `noexcept
 operational errors. Poll/fs-event callback errors are typed terminal outcomes:
 stop the native source, release its callback slot, then deliver. Rejected starts
 never install the new callback; an old callback survives only while its source
-remains active. Constructors retain throwing initialization. Native descriptor
+remains active. Signal/fs-event default construction is `noexcept` and
+`init(loop&/loop_view) noexcept` returns native status; loop-taking constructors
+unwrap the same result. The native loop pointer is the initialization sentinel,
+with repeat init returning `UV_EALREADY` even during/after close. Pre-init starts,
+stops, and queries return `UV_EBADF`; observations are false and close/ref/unref
+are inert. Signal native init failures leave the wrapper unregistered and permit
+retry without close. Poll retains constructor-only initialization. Native descriptor
 and buffer-size queries return results; fs-event `path()` returns
-`result<std::string>` and may throw on C++ allocation. See
+`result<std::string>` and may throw on C++ allocation after checking initialization
+and closing. See
 [raw watchers](../user/raw-watchers.md) for the complete implemented contract.
 
 

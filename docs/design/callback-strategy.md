@@ -166,3 +166,9 @@ selection unchanged. Native init remains throwing setup. Close quiesces native
 delivery before clearing selection and captures, and raw storage survives native
 close completion. No public producer endpoint or concurrent-close guard is added.
 See [the user contract](../user/async.md).
+
+Raw signal and fs-event share the explicit-initialization guards used by timer
+and loop-phase watchers. The internal initialization helper forwards each family's
+notification argument types to the existing raw watcher slot; it adds no callback
+storage or dispatch layer. Rejected pre-init starts release their prepared callable
+without entering native start or changing signal one-shot bookkeeping.

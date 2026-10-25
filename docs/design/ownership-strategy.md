@@ -62,13 +62,15 @@ completion, even an error completion, the descriptor identity is terminal and
 cannot be retried safely. Direct destruction diagnoses an unclosed file rather
 than starting unobserved request cleanup.
 
-Raw timer/idle/prepare/check may be default-constructed without a native
+Raw signal/fs-event/timer/idle/prepare/check may be default-constructed without a native
 registration. Their native `loop` pointers track successful initialization and
 remain set after close; reinitialization is rejected. Before init, destruction needs no native cleanup
 and close is inert (no close callback delivery). After successful init, the
 normal explicit-close/storage-retention obligations apply even without a start.
 Only use borrowed views after initialization. This contract currently applies to
-raw timer/idle/prepare/check; other raw handles retain constructor initialization.
+raw signal/fs-event/timer/idle/prepare/check; other raw handles retain constructor
+initialization. Signal native init failure precedes handle registration and leaves
+no handle to close; loop-side infrastructure, if any, is retained by the loop.
 
 ## Tasks, views, and bytes
 
