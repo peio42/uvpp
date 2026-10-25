@@ -3,6 +3,7 @@
 #include <memory>
 #include <stdexcept>
 #include <thread>
+#include <tuple>
 #include <type_traits>
 
 #include "gtest/gtest.h"
@@ -137,6 +138,107 @@ TEST_F(RawStreamRequests, nativeSubmissionFailureReleasesCallbackAndRequestCanBe
   EXPECT_TRUE(write.outcome);
   EXPECT_TRUE(shutdown.outcome);
 }
+
+template<class Request>
+auto request_state(Request &request) {
+  return std::tuple{request.native(), request.native_request(), request.native()->data,
+                    request.pending(), request.type(), request.native()->handle,
+                    request.native()->cb};
+}
+
+auto stream_state(tcp &handle) {
+  return std::tuple{handle.native(), handle.native_handle(), handle.native_stream(),
+                    handle.native()->data, handle.native()->loop, handle.initialized(),
+                    handle.closing(), handle.active(), handle.has_ref(), handle.readable(),
+                    handle.writable(), handle.write_queue_size(), uv_loop_alive(handle.native()->loop)};
+}
+
+class RawStreamNativeRejection : public RawStreamRequests, public ::testing::WithParamInterface<bool> {};
+TEST_P(RawStreamNativeRejection, completedRequestsAndStreamRetainStateAfterNativeRejection) {
+  pair();
+  const bool use_static = GetParam();
+  probe written, shutdown;
+  writing.user_data(written);
+  shutting.user_data(shutdown);
+  int marker = 42;
+  client.user_data(marker);
+  const uv::buffer_view payload{storage.data(), 1};
+
+  // Seed meaningful native request fields with real completed operations.
+  ASSERT_TRUE(client.write(writing, payload, observe<write_request>));
+  ASSERT_TRUE(client.shutdown(shutting, observe<shutdown_request>));
+  until([&] { return written.calls == 1 && shutdown.calls == 1; });
+  ASSERT_TRUE(written.outcome);
+  ASSERT_TRUE(shutdown.outcome);
+  ASSERT_FALSE(writing.pending());
+  ASSERT_FALSE(shutting.pending());
+  ASSERT_TRUE(client.initialized());
+  ASSERT_FALSE(client.closing());
+  ASSERT_FALSE(client.writable());
+  EXPECT_EQ(writing.type(), uv::request_type::write);
+  EXPECT_EQ(shutting.type(), uv::request_type::shutdown);
+  EXPECT_EQ(writing.native()->handle, client.native_stream());
+  EXPECT_EQ(shutting.native()->handle, client.native_stream());
+
+  auto token = std::make_shared<int>(0);
+  std::weak_ptr<int> rejected_capture = token;
+  int rejected_deliveries = 0;
+  const auto write_before = request_state(writing);
+  const auto stream_before_write = stream_state(client);
+  const auto write_rejection = use_static
+    ? client.write_static<observe<write_request>>(writing, payload)
+    : client.write(writing, payload, [&, token](write_request&, uv::status) { ++rejected_deliveries; });
+  // Valid callback/buffer, idle request, initialized non-closing handle: no
+  // wrapper guard returns EPIPE. This rejection comes from uv_write itself.
+  EXPECT_EQ(write_rejection.error(), uv::make_error_code(UV_EPIPE));
+  EXPECT_EQ(request_state(writing), write_before);
+  EXPECT_EQ(stream_state(client), stream_before_write);
+
+  const auto shutdown_before = request_state(shutting);
+  const auto stream_before_shutdown = stream_state(client);
+  const auto shutdown_rejection = use_static
+    ? client.shutdown_static<observe<shutdown_request>>(shutting)
+    : client.shutdown(shutting, [&, token](shutdown_request&, uv::status) { ++rejected_deliveries; });
+  // ENOTCONN likewise comes from uv_shutdown, after uvpp's guards have passed.
+  EXPECT_EQ(shutdown_rejection.error(), uv::make_error_code(UV_ENOTCONN));
+  EXPECT_EQ(request_state(shutting), shutdown_before);
+  EXPECT_EQ(stream_state(client), stream_before_shutdown);
+  token.reset();
+  EXPECT_TRUE(rejected_capture.expired());
+
+  loop.run(uv::run_mode::nowait);
+  EXPECT_EQ(written.calls, 1);
+  EXPECT_EQ(shutdown.calls, 1);
+  EXPECT_EQ(rejected_deliveries, 0);
+  EXPECT_EQ(request_state(writing), write_before);
+  EXPECT_EQ(request_state(shutting), shutdown_before);
+  EXPECT_EQ(stream_state(client), stream_before_shutdown);
+
+  // Reuse both requests on another healthy stream, switching callback mode.
+  probe connected_again;
+  connecting.user_data(connected_again);
+  ASSERT_TRUE(client2.connect_static<observe<connect_request>>(connecting, address()));
+  until([&] { return connected_again.calls == 1 && accepted == 2; });
+  ASSERT_TRUE(connected_again.outcome);
+  const auto reused_write = use_static
+    ? client2.write(writing, payload, observe<write_request>)
+    : client2.write_static<observe<write_request>>(writing, payload);
+  ASSERT_TRUE(reused_write);
+  const auto reused_shutdown = use_static
+    ? client2.shutdown(shutting, observe<shutdown_request>)
+    : client2.shutdown_static<observe<shutdown_request>>(shutting);
+  ASSERT_TRUE(reused_shutdown);
+  until([&] { return written.calls == 2 && shutdown.calls == 2; });
+  EXPECT_TRUE(written.outcome);
+  EXPECT_TRUE(shutdown.outcome);
+  EXPECT_FALSE(writing.pending());
+  EXPECT_FALSE(shutting.pending());
+  EXPECT_EQ(writing.user_data<probe>(), &written);
+  EXPECT_EQ(shutting.user_data<probe>(), &shutdown);
+  EXPECT_EQ(rejected_deliveries, 0);
+}
+INSTANTIATE_TEST_SUITE_P(CallbackModes, RawStreamNativeRejection, ::testing::Values(false, true),
+  [](const ::testing::TestParamInfo<bool> &info) { return info.param ? "Static" : "Runtime"; });
 
 TEST_F(RawStreamRequests, busyWritePreservesOriginalCallbackNativeStorageAndApplicationData) {
   pair();

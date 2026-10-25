@@ -181,3 +181,14 @@ submission and native completion while C++ allocation is disabled. This measures
 wrapper C++ costs, independently of native C metadata allocation and callback
 construction. Pipe-specific entry points retain throwing adaptation over the same
 request lifecycle; their full migration remains a later slice.
+
+The `CallbackModes/RawStreamNativeRejection` cases first complete a real write and
+shutdown, then submit valid operations on the still-initialized, non-closing TCP
+stream whose write side is shut down. `UV_EPIPE` and `UV_ENOTCONN` distinguish
+native `uv_write` / `uv_shutdown` rejection from uvpp guards. Runtime/static cases
+compare pending state, request type, native addresses, application data, native
+request handle/callback pointers and stream observations before/after each rejection
+and after polling the loop. Rejected captures are released, completion counters
+stay unchanged, and both requests are reused on a second connection in the opposite
+callback mode. This is a semantic snapshot for these native rejection branches,
+not a bytewise comparison or a general rollback promise for native private fields.
