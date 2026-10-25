@@ -579,3 +579,21 @@ TSan coverage, and measured allocation/performance budgets remain gates. These
 local results do not establish native platform execution or race-safe send/close
 admission; the raw lifetime precondition is explicit in
 [the user contract](../user/async.md).
+
+## Raw timer explicit initialization validation
+
+[`test-raw-timer-init.cpp`](../../tests/test-raw-timer-init.cpp) adds seven portable
+cases for default construction without loop registration, rejection and callable
+release before init, inert pre-init runtime/static close, stable native storage
+and application data across init, repeated init preserving an active subscription
+and its original loop, initialization remaining observable through close completion,
+and the existing loop/view constructors sharing the same initialized contract.
+Namespace-scope static callback targets preserve the established MSVC test pattern.
+
+The 16 focused initialization/timer cases pass locally. Full GCC and Clang
+`make test-all` runs each pass 464 tests with two existing TTY skips, plus both
+separate UDP allocation cases and example builds. The 35 raw timer/phase cases
+also pass under ASan/UBSan with leak detection. Native timer initialization
+currently has no failing path on a valid loop, so this coverage does not simulate
+native init failures or justify extending rollback assumptions to other families.
+Native Windows/macOS execution remains a CI gate.

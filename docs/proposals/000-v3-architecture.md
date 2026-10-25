@@ -308,3 +308,13 @@ High-level `loop_posting` retains its independent synchronized native protocol.
 See [the implemented user contract](../user/async.md) and
 [raw async tests](../../tests/test-raw-async.cpp). Broader native platform,
 allocation-failure, and performance gates remain open.
+
+### Raw timer explicit initialization
+
+Raw timer supports default construction, a native-loop-pointer `initialized()`
+observation, and explicit status-returning `init(loop&/loop_view)` alongside the
+throwing constructors. Before-init operations are guarded without additional
+state storage; successful initialization cannot be repeated, including after
+close. Other raw families retain constructor initialization pending their own
+migration. See [the implemented timer contract](../user/raw-watchers.md#explicit-initialization)
+and [error-policy progress](006-errors-and-results.md#raw-timer-explicit-initialization-progress).

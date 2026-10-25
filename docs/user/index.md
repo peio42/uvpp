@@ -51,6 +51,7 @@ and validation gates are tracked in [proposals](../proposals/index.md).
 
 [Raw watchers](raw-watchers.md) documents caller-owned signal, descriptor-readiness,
 filesystem-event, timer, and loop-phase callbacks, explicit statuses, and lifetimes.
+Raw timer also supports [explicit initialization](raw-watchers.md#explicit-initialization).
 
 [Raw async notifications](async.md) explains coalescing, cross-thread send, callback
 replacement, and producer quiescence before close.

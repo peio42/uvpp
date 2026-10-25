@@ -357,3 +357,20 @@ High-level `loop_posting` retains its independent synchronized native protocol.
 See [the implemented user contract](../user/async.md) and
 [raw async tests](../../tests/test-raw-async.cpp). Broader native platform,
 allocation-failure, and performance gates remain open.
+
+## Raw timer explicit initialization progress
+
+Raw timer now offers `timer() noexcept`, `initialized()`, and
+`init(loop&/loop_view) noexcept -> status`. Loop-taking constructors unwrap that
+same result. Initialization is tracked solely through the native `loop` pointer;
+it remains set through/after close, and repeat initialization returns
+`UV_EALREADY`. Before init, operational methods return `UV_EBADF`, bool/duration
+observations return false/zero, and ref/unref/close are inert. Views require
+successful initialization. No added state, allocation, or native-data reservation
+is needed. Lifecycle and callback-release coverage lives in
+[`test-raw-timer-init.cpp`](../../tests/test-raw-timer-init.cpp).
+
+This is implemented for timer only. Other raw handle families retain their current
+construction contracts; their failure/rollback paths need individual review
+before extending this protocol. Libuv timer init has no native failure path on a
+valid loop, so tests do not claim injected native-init failure coverage.

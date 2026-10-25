@@ -46,8 +46,8 @@ Close quiesces native delivery and releases the subscription callable before
 returning; its close callback runs later. Retain wrapper storage until then.
 Exceptions escaping runtime or static user callbacks terminate at the C boundary.
 
-Construction remains throwing initialization: native init failures raise
-`uv::error`. Preparing a runtime `std::function` or a filesystem path may allocate
+Constructors taking a loop perform throwing initialization: native init failures
+raise `uv::error`. Preparing a runtime `std::function` or a filesystem path may allocate
 and throw C++ exceptions before native start. There is no hidden uvpp operation
 allocation, lock, queue, or coroutine state. libuv may allocate its own native
 subscription storage; no measured allocation-free guarantee is made.
@@ -153,6 +153,56 @@ loop.run();
 loop.close();
 ```
 
+### Explicit initialization
+
+A timer may also be default-constructed without registering a native handle.
+`init(loop&)` and `init(loop_view)` are `noexcept` and return `uv::status`:
+
+```cpp
+uv::loop loop;
+uv::raw::timer timer;
+auto initialized = timer.init(loop);
+if (initialized) {
+  auto started = timer.start(10ms, [](uv::raw::timer& self) { self.close(); });
+  if (!started) timer.close();
+}
+loop.run(); // Retain timer storage through any native close completion.
+loop.close();
+```
+
+`timer{loop}` and `timer{loop.view()}` unwrap the same initialization status and
+throw `uv::error` on failure. A valid, initialized loop is required for `init()`
+and these constructors. Native timer initialization currently always succeeds
+with a valid loop; there is no artificial native failure path.
+
+`initialized()` observes `native_handle()->loop != nullptr`. It is false before
+initialization and remains true during and after close completion. A second
+`init()`, including with a different loop or after close, returns `UV_EALREADY`
+without changing native state or callbacks. Storage reuse after close is not
+supported. No separate state field or allocation is added. Application-owned
+`data` and native addresses are preserved by initialization.
+
+Before initialization:
+
+- `start`, `start_static`, `stop`, `again`, `set_repeat`, descriptor and buffer-size
+  operations return `UV_EBADF`; rejected runtime callbacks are not retained.
+- `active()`, `closing()`, and `has_ref()` return false; `repeat()` and `due_in()`
+  return zero.
+- `ref()`, `unref()`, and all close variants have no effect. Close callbacks are
+  neither retained nor invoked; the object can still be initialized afterward.
+- Destruction requires no asynchronous cleanup. After successful initialization,
+  explicit close and storage retention through completion are required even if
+  no start succeeds.
+
+Native access exposes storage, not proof of initialization. Only use borrowed
+handle views after successful initialization; their operations do not perform the
+wrapper's checks. Do not overwrite native `loop`, reinitialize native storage, or
+bypass the wrapper's lifetime protocol. All initialization and observations follow
+loop-thread affinity; `initialized()` provides no cross-thread synchronization.
+These explicit-initialization contracts currently apply to raw timer only.
+
+### Subscriptions and durations
+
 A repeating timer retains its callback between firings. Libuv rearms it before
 user delivery; the wrapper uses actual native activity at delivery to distinguish
 persistent events from terminal one-shot completion. Terminal delivery extracts
@@ -200,10 +250,10 @@ have no operational failure channel and do not check `closing()`. They observe
 native state while the initialized handle's storage remains valid, including
 during closing. The associated loop must also remain alive for these queries.
 These observations do not imply that the timer remains active or can be restarted;
-the mutating methods still reject closing handles with `UV_EBADF`.
-Construction remains throwing initialization;
-callback preparation may allocate before `start` runs. Raw timeout rounding and
-lifetime rules do not change the separate high-level `uv::co::sleep_for` contract.
+start/stop and timer reconfiguration still reject closing handles with `UV_EBADF`.
+Loop-taking constructors remain throwing conveniences over `init()`;
+callback preparation may allocate before `start` runs, even for an uninitialized
+timer. Raw timeout rounding and lifetime rules do not change the separate high-level `uv::co::sleep_for` contract.
 
 ## Idle, prepare, and check
 

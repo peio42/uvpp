@@ -18,13 +18,74 @@
 namespace uv::raw {
 
   class timer final : public ::uv::detail::raw_watcher_handle<timer, uv_timer_t> {
+    using base = ::uv::detail::raw_watcher_handle<timer, uv_timer_t>;
+
   public:
     using duration = std::chrono::duration<std::uint64_t, std::milli>;
+
+    timer() noexcept = default;
 
     explicit timer(loop &l) : timer(loop_view{l.native()}) {}
 
     explicit timer(loop_view l) {
-      throw_if_error(uv_timer_init(l.native(), native()));
+      init(l).value();
+    }
+
+    // The native loop pointer records successful initialization, including
+    // during/after close. It is never reset; native storage reuse is unsupported.
+    bool initialized() const noexcept {
+      return native_handle()->loop != nullptr;
+    }
+
+    status init(loop &l) noexcept { return init(l.view()); }
+
+    status init(loop_view l) noexcept {
+      if (initialized()) return status::from_native(UV_EALREADY);
+      return status::from_native(uv_timer_init(l.native(), native()));
+    }
+
+    bool active() const noexcept { return initialized() && base::active(); }
+    bool closing() const noexcept { return initialized() && base::closing(); }
+    bool has_ref() const noexcept { return initialized() && base::has_ref(); }
+
+    void ref() noexcept { if (initialized()) base::ref(); }
+    void unref() noexcept { if (initialized()) base::unref(); }
+
+    void close() noexcept { if (initialized()) base::close(); }
+
+    void close(close_callback cb) noexcept {
+      if (initialized()) base::close(std::move(cb));
+    }
+
+    template<auto Callback>
+      requires std::invocable<decltype(Callback), timer&>
+    void close_static() noexcept {
+      if (initialized()) base::template close_static<Callback>();
+    }
+
+    result<uv_os_fd_t> fileno() const noexcept {
+      if (!initialized()) return result<uv_os_fd_t>{make_error_code(UV_EBADF)};
+      return base::fileno();
+    }
+
+    result<int> send_buffer_size() const noexcept {
+      if (!initialized()) return result<int>{make_error_code(UV_EBADF)};
+      return base::send_buffer_size();
+    }
+
+    status send_buffer_size(int size) noexcept {
+      if (!initialized()) return status::from_native(UV_EBADF);
+      return base::send_buffer_size(size);
+    }
+
+    result<int> receive_buffer_size() const noexcept {
+      if (!initialized()) return result<int>{make_error_code(UV_EBADF)};
+      return base::receive_buffer_size();
+    }
+
+    status receive_buffer_size(int size) noexcept {
+      if (!initialized()) return status::from_native(UV_EBADF);
+      return base::receive_buffer_size(size);
     }
 
     template<class Rep, class Period, class RepeatRep, class RepeatPeriod>
@@ -33,7 +94,7 @@ namespace uv::raw {
     status start(std::chrono::duration<Rep, Period> timeout,
                  std::chrono::duration<RepeatRep, RepeatPeriod> repeat,
                  callback cb) {
-      if (closing()) return status::from_native(UV_EBADF);
+      if (!initialized() || closing()) return status::from_native(UV_EBADF);
       auto timeout_ms = millis(timeout);
       if (!timeout_ms) return status{timeout_ms.error()};
       auto repeat_ms = millis(repeat);
@@ -55,7 +116,7 @@ namespace uv::raw {
                (std::integral<RepeatRep> || std::floating_point<RepeatRep>)
     status start_static(std::chrono::duration<Rep, Period> timeout,
                         std::chrono::duration<RepeatRep, RepeatPeriod> repeat = std::chrono::milliseconds{0}) noexcept {
-      if (closing()) return status::from_native(UV_EBADF);
+      if (!initialized() || closing()) return status::from_native(UV_EBADF);
       auto timeout_ms = millis(timeout);
       if (!timeout_ms) return status{timeout_ms.error()};
       auto repeat_ms = millis(repeat);
@@ -66,12 +127,12 @@ namespace uv::raw {
     }
 
     status stop() noexcept {
-      if (closing()) return status::from_native(UV_EBADF);
+      if (!initialized() || closing()) return status::from_native(UV_EBADF);
       return commit_stop(uv_timer_stop(native()));
     }
 
     status again() noexcept {
-      if (closing()) return status::from_native(UV_EBADF);
+      if (!initialized() || closing()) return status::from_native(UV_EBADF);
       // Stop and one-shot completion release the subscription callable. Only
       // an active subscription can reuse it; use start to install a fresh one.
       if (!active()) return status::from_native(UV_EINVAL);
@@ -81,7 +142,7 @@ namespace uv::raw {
     template<class Rep, class Period>
       requires (std::integral<Rep> || std::floating_point<Rep>)
     status set_repeat(std::chrono::duration<Rep, Period> interval) noexcept {
-      if (closing()) return status::from_native(UV_EBADF);
+      if (!initialized() || closing()) return status::from_native(UV_EBADF);
       auto value = millis(interval);
       if (!value) return status{value.error()};
       uv_timer_set_repeat(native(), value.value());
@@ -89,12 +150,12 @@ namespace uv::raw {
     }
 
     duration repeat() const noexcept {
-      return duration{uv_timer_get_repeat(native())};
+      return initialized() ? duration{uv_timer_get_repeat(native())} : duration::zero();
     }
 
 #if UVPP_HAS_TIMER_GET_DUE_IN
     duration due_in() const noexcept {
-      return duration{uv_timer_get_due_in(native())};
+      return initialized() ? duration{uv_timer_get_due_in(native())} : duration::zero();
     }
 #endif
 
