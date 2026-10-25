@@ -134,7 +134,9 @@ An init failure leaves no wrapper registration in the loop and preserves native
 address/application `data`, so the object can be retried or destroyed without
 close. On Windows, uvpp synchronously rolls back libuv's possible partial handle
 registration before reporting the error. It does not run the loop or allocate
-cleanup state. Native init may already have changed the external socket's
+cleanup state. This depends on the private libuv registration layout and audited
+failure ordering; see [audited versions, backends, and alternatives](../design/raw-poll-init-rollback.md).
+Native init may already have changed the external socket's
 nonblocking mode; those external changes and loop-owned infrastructure are not
 rolled back.
 

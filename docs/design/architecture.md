@@ -177,26 +177,14 @@ and shared loop rules are unchanged. `loop_posting` keeps its independent native
 storage, mutex admission, queue, and producer endpoints. See
 [raw async notifications](../user/async.md).
 
-### Raw poll initialization rollback
+## Raw poll initialization rollback
 
-Raw poll uses the same explicit initialization helper, with descriptor/socket
-loop and loop-view overloads. `detail::finish_poll_init` handles native errors
-before returning a status or throwing from a constructor. On Unix native errors
-precede registration. Windows libuv 1.x may instead fail `SO_PROTOCOL_INFOW`
-after `uv__handle_init`, before poll requests or handle-owned resources exist.
-The audited [libuv 1.51 backend](https://github.com/libuv/libuv/blob/v1.51.0/src/win/poll.c#L384-L447)
-returns there with only the common handle registration committed.
-That path synchronously removes the inactive, uncommitted registration from
-`handle_queue`, then clears native storage while preserving application `data`.
-This is an isolated dependency on libuv's internal registration queue; both the
-historical pointer-array and current named-structure representations are handled.
-There is no native relocation, nested loop, asynchronous failed-constructor
-cleanup, or added allocation/state field. Any libuv loop-owned peer sockets remain
-owned by the loop. Descriptor nonblocking side effects are not reversed.
+Raw poll synchronously rolls back an inactive registration if native Windows
+initialization fails after registration but before any request or poll-owned
+resource exists. This preserves immediately destructible/retryable failed init
+and throwing constructors without driving the loop or adding cleanup allocation.
+It requires an isolated dependency on libuv's private registration queue.
 
-This rollback is only valid before native init has committed and before any poll
-request starts. Reinitialization after a successful public init is always rejected.
-The native rollback assumptions must be reviewed if the libuv backend changes.
-Tests model the late failure using a genuine inactive native registration between
-neighboring handles, then verify loop integrity, retry, and close. This supplements
-ordinary invalid-socket failures; it does not inject Windows `getsockopt` itself.
+The [rollback audit](raw-poll-init-rollback.md) records public-API alternatives,
+exact official tags reviewed, both queue layouts, backend/failure prerequisites,
+and the native Windows Winsock fault-injection tests and pinned CI jobs.

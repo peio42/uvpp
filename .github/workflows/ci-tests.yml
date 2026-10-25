@@ -129,3 +129,50 @@ jobs:
 
       - name: Build and run sanitizer tests
         run: make test-asan-ubsan GTEST_ARGS=--gtest_brief=1
+
+  windows-poll-native:
+    runs-on: windows-2022
+    name: Windows / poll late init / libuv ${{ matrix.libuv }} / ${{ matrix.linkage }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - libuv: 1.45.0
+            linkage: static
+            target: uv_a
+          - libuv: 1.53.0
+            linkage: shared
+            target: uv
+    steps:
+      - name: Check out uvpp
+        uses: actions/checkout@v6
+      - name: Check out audited libuv
+        uses: actions/checkout@v6
+        with:
+          repository: libuv/libuv
+          ref: v${{ matrix.libuv }}
+          path: .ci/libuv
+      - name: Install Google Test
+        run: vcpkg install gtest:x64-windows
+      - name: Configure native fault-injection tests
+        run: >-
+          cmake -S tests/windows-poll-native -B build/poll-native
+          -G "Visual Studio 17 2022" -A x64
+          -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake"
+          -DVCPKG_TARGET_TRIPLET=x64-windows
+          -DUVPP_NATIVE_LIBUV_SOURCE="${{ github.workspace }}/.ci/libuv"
+          -DUVPP_NATIVE_LIBUV_TARGET=${{ matrix.target }}
+      - name: Build native fault-injection tests
+        run: cmake --build build/poll-native --config Debug --parallel 2
+      - name: Exercise real libuv post-registration failure
+        run: ctest --test-dir build/poll-native -C Debug --output-on-failure --timeout 60
+      - name: Upload native test diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: poll-native-${{ matrix.libuv }}-${{ matrix.linkage }}
+          path: |
+            build/poll-native/Testing/Temporary/
+            build/poll-native/poll-native.xml
+          if-no-files-found: ignore

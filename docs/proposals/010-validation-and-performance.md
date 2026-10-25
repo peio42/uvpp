@@ -710,3 +710,32 @@ The new tests compile with Clang `-Wall -Wextra -Werror`.
 Full local `make test-all` passes 529 tests with GCC and 529 with Clang, with two
 existing TTY skips per compiler, both separate UDP allocation cases passing, and
 all examples built. No native Windows/macOS execution was performed locally.
+
+## Native Windows poll late-failure validation
+
+The previously open native post-registration fault path now has two Windows
+cases in [`test-raw-poll-windows.cpp`](../../tests/test-raw-poll-windows.cpp).
+They patch only the real native module's `getsockopt` import, observe the poll
+registration through `uv_walk` inside its `SO_PROTOCOL_INFOW` call, return a
+Winsock error, and let real libuv propagate that failure to the wrapper. They
+verify status init rollback/retry and both loop-taking throwing constructors.
+This is a real native-init execution with Winsock-call fault injection, rather
+than the portable test's synthetic failure at the rollback boundary.
+
+[`raw-poll-init-rollback.md`](../design/raw-poll-init-rollback.md) records the exact
+thirteen official source tags audited, backend scope and assumptions, API
+alternatives, and the transition from pointer-array queues to named queues in
+1.46.0. The Windows CI workflow now includes 1.45.0/static and 1.53.0/shared native
+jobs using a standalone validation project; the normal installed-libuv Windows
+suite also contains the two cases. Failures to install the fault injector fail
+the tests instead of skipping them. XML records runtime/header versions.
+
+Local validation: both Windows header sets (1.45.0 and 1.53.0) pass Clang/MinGW
+cross-target syntax checks with `-Wall -Wextra -Werror`. Linux binaries linked
+against each of those actual source-built libuv versions pass all 16 poll cases,
+including the registration-boundary rollback and retry test, covering both native
+queue representations. Full GCC/Clang suites each pass 529 tests with two existing
+TTY skips, both separate UDP allocation cases, and example builds. Workflow YAML
+parses successfully. These are not native Windows/MSVC executions: the new native
+jobs still require CI confirmation. The 1.44.2 tag is source-audited only because
+the current loop wrapper requires metrics APIs introduced in 1.45.0.

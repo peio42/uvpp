@@ -456,3 +456,19 @@ the sentinel is neither synchronization nor a close/lifetime check. Caller
 quiescence before close remains mandatory. See [the user contract](../user/async.md)
 and [initialization tests](../../tests/test-raw-async-init.cpp). Native-init fault
 injection and native platform/TSan gates remain separate validation work.
+
+## Native Windows poll rollback audit and validation progress
+
+The rollback dependency is now scoped to explicitly audited official tags and
+backend ordering in [the detailed audit](../design/raw-poll-init-rollback.md).
+There is no public synchronous libuv rollback API; public close changes failed
+constructor lifetime, while a preflight Winsock query cannot guarantee that the
+later query succeeds. Moving protocol discovery before registration upstream is
+the preferred way to eliminate this dependency; no upstream submission is made.
+
+Native Windows tests now intercept the real libuv module's Winsock protocol query,
+observe registration inside that query, and exercise actual native status/error
+propagation before uvpp rollback. They cover retry and both throwing constructor
+loop forms. CI adds pinned 1.45.0/static and 1.53.0/shared jobs for both queue
+representations. These are implemented tests/jobs, not claims of local native
+Windows execution. Broader vendor/custom-provider failures remain outside the audit.

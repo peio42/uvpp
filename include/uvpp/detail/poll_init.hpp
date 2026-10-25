@@ -1,12 +1,16 @@
 #pragma once
 
 #include <cassert>
+#include <type_traits>
 
 #include <uv.h>
 
 namespace uv::detail {
 
-  // libuv 1.x has used both a pointer array and a named queue structure here.
+  // uvpp helper, not an exported libuv function: it reproduces queue removal.
+  // Audited Windows tags and prerequisites are listed in
+  // docs/design/raw-poll-init-rollback.md. No blanket libuv 1.x guarantee.
+  // 1.44.2/1.45.0 use void*[2]; audited tags from 1.46.0 use uv__queue.
   // This is deliberately confined to rollback of an uncommitted poll init.
   template<class Queue>
   void unlink_poll_init_registration(Queue &queue) noexcept {
@@ -14,6 +18,9 @@ namespace uv::detail {
       queue.next->prev = queue.prev;
       queue.prev->next = queue.next;
     } else {
+      static_assert(std::is_array_v<Queue> && std::extent_v<Queue> == 2 &&
+                    std::is_same_v<std::remove_extent_t<Queue>, void *>,
+                    "Unreviewed libuv registration queue; audit poll-init rollback");
       auto *next = static_cast<void **>(queue[0]);
       auto *prev = static_cast<void **>(queue[1]);
       next[1] = queue[1];
