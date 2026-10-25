@@ -271,3 +271,10 @@ and does not install its new close callback. Runtime callback construction and
 address preparation can throw before operational entry. The inherited stream
 and separate connect/write/shutdown request submission surfaces retain their
 transitional throwing policy; see [raw TCP](../user/networking/raw-tcp.md).
+
+Raw UDP receive control and send submissions now return statuses; completion uses
+`(uv::raw::udp_send_request&, status)`. The send request shares the stream pending
+guard and pre-delivery release protocol. Immediate sends and suffix batches retain
+typed byte/datagram counts and would-block. Runtime callable and owning batch
+preparation can throw C++ exceptions; those failures are not native errors. See
+[raw UDP](../user/networking/raw-udp.md).

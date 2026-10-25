@@ -223,6 +223,18 @@ submission. Name queries retain string payloads as results and preserve native
 binary-name lengths; C++ allocations and legacy name copies retain exception
 contracts. Counts/types and immediate write progress remain typed observations.
 Raw request pending/reuse/completion and borrowed payload/exported-handle lifetimes
-are shared with stream/TCP. High-level pipe owners are unchanged. The [UDP socket slice](../user/networking/raw-udp.md) is now implemented;
-its send/receive/request protocols remain the next UDP step. See [implemented pipe behavior](../user/networking/raw-pipe.md)
+are shared with stream/TCP. High-level pipe owners are unchanged. The [raw UDP migration](../user/networking/raw-udp.md), including send/receive/request protocols, is now implemented. See [implemented pipe behavior](../user/networking/raw-pipe.md)
 and [raw pipe tests](../../tests/test-raw-pipe.cpp).
+
+## Raw UDP I/O progress
+
+The [implemented raw UDP contract](../user/networking/raw-udp.md) now covers
+status receive start/stop and asynchronous send submission, separate
+`uv::raw::udp_send_request`, runtime/static callback replacement/reuse and close.
+Paired subscription loans preserve allocator-owned storage through native delivery
+and recvmmsg chunks/FREE, including stop/replacement/close from a chunk. Native
+receive errors quiesce before delivery. Immediate sends and suffix batches preserve
+byte/datagram progress and would-block without hidden C++ operation metadata.
+See [real native tests](../../tests/test-raw-udp-io.cpp) and the
+[isolated allocation tests](../../tests/udp-allocation.cpp). Broader proposal work
+remains open; high-level UDP owners and their operation state are unchanged.

@@ -14,7 +14,7 @@ uv::buffer_view allocate(uv::raw::udp &, std::size_t suggested) {
 }
 
 struct send_context {
-  uv::udp_send_request request;
+  uv::raw::udp_send_request request;
   std::string payload;
   sockaddr_storage address{};
 
@@ -68,9 +68,9 @@ int main() {
     std::cout << "client received: " << packet_text(packet) << '\n';
     delete[] storage.data();
 
-    handle.receive_stop();
+    handle.receive_stop().throw_if_error();
     handle.close();
-  });
+  }).throw_if_error();
 
   server.receive_start(allocate, [&](uv::raw::udp &handle, uv::udp_receive_result packet) {
     auto storage = packet.storage();
@@ -96,32 +96,32 @@ int main() {
 
       auto view = reply->view();
       handle.send(reply->request, view, reply->native_address(),
-        [&handle, reply](uv::udp_send_request &, uv::status status) {
+        [&handle, reply](uv::raw::udp_send_request &, uv::status status) {
           if (!status) {
             std::cerr << status.error().message() << '\n';
           }
 
           delete reply;
           handle.close();
-        });
+        }).throw_if_error();
     }
 
     delete[] storage.data();
-    handle.receive_stop();
-  });
+    handle.receive_stop().throw_if_error();
+  }).throw_if_error();
 
   auto *ping = new send_context;
   ping->payload = "ping";
 
   auto view = ping->view();
   client.send(ping->request, view, server_address,
-    [ping](uv::udp_send_request &, uv::status status) {
+    [ping](uv::raw::udp_send_request &, uv::status status) {
       if (!status) {
         std::cerr << status.error().message() << '\n';
       }
 
       delete ping;
-    });
+    }).throw_if_error();
 
   loop.run();
   loop.close();

@@ -17,7 +17,7 @@
 namespace {
 using udp = uv::raw::udp;
 void close_count(udp &handle) { ++*handle.user_data<int>(); }
-void unexpected_send(uv::udp_send_request&, uv::status) { ADD_FAILURE(); }
+void unexpected_send(uv::raw::udp_send_request&, uv::status) { ADD_FAILURE(); }
 
 class RawUdp : public ::testing::Test {
 protected:
@@ -75,14 +75,14 @@ TEST_F(RawUdp, defaultStorageGuardsSocketOperationsAndObservations) {
 #if UVPP_HAS_UDP_USING_RECVMMSG
   EXPECT_FALSE(handle.using_recvmmsg());
 #endif
-  uv::udp_send_request request;
+  uv::raw::udp_send_request request;
   std::array<char, 1> data{};
   const uv::buffer_view buffer{data.data(), data.size()};
-  EXPECT_THROW(handle.send(request, buffer, uv::ipv4{"127.0.0.1", 9}, unexpected_send), uv::error);
+  EXPECT_EQ(handle.send(request, buffer, uv::ipv4{"127.0.0.1", 9}, unexpected_send).error(), badf);
   EXPECT_EQ(handle.send_now(buffer, uv::ipv4{"127.0.0.1", 9}).error_code(), badf);
-  EXPECT_THROW(handle.receive_start([](udp&, std::size_t) { return uv::buffer_view{}; },
-                                    [](udp&, uv::udp_receive_result) {}), uv::error);
-  EXPECT_THROW(handle.receive_stop(), uv::error);
+  EXPECT_EQ(handle.receive_start([](udp&, std::size_t) { return uv::buffer_view{}; },
+                                 [](udp&, uv::udp_receive_result) {}).error(), badf);
+  EXPECT_EQ(handle.receive_stop().error(), badf);
 }
 
 TEST_F(RawUdp, repeatedInitKeepsNativeIdentityDataAndBoundSocket) {

@@ -1,6 +1,5 @@
 #pragma once
 
-#include <cassert>
 #include <cstddef>
 #include <functional>
 #include <limits>
@@ -178,11 +177,8 @@ namespace uv {
                        std::span<sockaddr *> addresses)
       : udp_send_many_view{detail::checked_buffer_count(buffers.size()), buffers.data(), buffer_counts.data(),
                            addresses.data()} {
-      assert(buffers.size() == buffer_counts.size());
-      assert(buffers.size() == addresses.size());
-      if (buffers.size() != buffer_counts.size() || buffers.size() != addresses.size()) {
-        count_ = 0;
-      }
+      if (buffers.size() != buffer_counts.size() || buffers.size() != addresses.size())
+        throw std::invalid_argument{"UDP batch metadata sizes differ"};
     }
 
     unsigned int count() const noexcept { return count_; }
@@ -486,16 +482,29 @@ namespace uv::raw {
     }
 #endif
 
-    void close() noexcept { if (ready()) base::close(); }
+    void close() noexcept {
+      if (!ready()) return;
+      uv_close(native_handle(), &udp::close_trampoline);
+      retire_receive();
+    }
 
     void close(close_callback callback) noexcept {
-      if (ready()) base::close(std::move(callback));
+      if (!ready()) return;
+      set_close_callback(std::move(callback));
+      uv_close(native_handle(), &udp::close_trampoline);
+      retire_receive();
     }
 
     template<auto Callback>
       requires std::invocable<decltype(Callback), udp&>
     void close_static() noexcept {
-      if (ready()) base::template close_static<Callback>();
+      if (!ready()) return;
+      uv_close(native_handle(), [](uv_handle_t *raw) noexcept {
+        auto &self = from_native(raw);
+        self.pending_receive_ = {};
+        detail::invoke_static_callback<Callback>(self);
+      });
+      retire_receive();
     }
 
     status open(uv_os_sock_t socket) noexcept {
@@ -551,156 +560,227 @@ namespace uv::raw {
     }
 #endif
 
-    void receive_start(allocate_callback allocator, receive_callback receiver) {
-      require_ready();
-      allocate_callback_.replace(std::move(allocator));
-      receive_callback_.replace(std::move(receiver));
-      throw_if_error(uv_udp_recv_start(native(), &udp::alloc_trampoline, &udp::receive_trampoline));
+    status receive_start(allocate_callback allocator, receive_callback receiver) noexcept {
+      if (!ready()) return status::from_native(UV_EBADF);
+      if (!allocator || !receiver) return status::from_native(UV_EINVAL);
+      return start_receive(receive_subscription{std::move(allocator), std::move(receiver)});
     }
 
-    void receive_stop() {
-      require_ready();
-      throw_if_error(uv_udp_recv_stop(native()));
+    template<auto Allocator, auto Receiver>
+      requires std::invocable<decltype(Allocator), udp&, std::size_t> &&
+               std::convertible_to<std::invoke_result_t<decltype(Allocator), udp&, std::size_t>, buffer_view> &&
+               std::invocable<decltype(Receiver), udp&, udp_receive_result>
+    status receive_start_static() noexcept {
+      if (!ready()) return status::from_native(UV_EBADF);
+      receive_subscription next{};
+      next.static_allocate = [](udp &self, std::size_t size) { return Allocator(self, size); };
+      next.static_receive = [](udp &self, udp_receive_result result) { Receiver(self, result); };
+      return start_receive(std::move(next));
     }
 
-    void send(udp_send_request &request, std::span<const buffer_view> buffers, const sockaddr *addr,
-              udp_send_request::callback callback) {
-      require_ready();
-      detail::submit_request(request, std::move(callback), [&] {
+    status receive_stop() noexcept {
+      if (!ready()) return status::from_native(UV_EBADF);
+      const auto result = status::from_native(uv_udp_recv_stop(native()));
+      if (result) retire_receive();
+      return result;
+    }
+
+    status send(udp_send_request &request, std::span<const buffer_view> buffers, const sockaddr *address,
+                udp_send_request::callback callback) noexcept {
+      return detail::stream_request_submission::submit(request, std::move(callback), [&]() noexcept {
+        if (!ready()) return int{UV_EBADF};
+        if (!valid_buffers(buffers)) return int{UV_EINVAL};
         return uv_udp_send(request.native(), native(), reinterpret_cast<const uv_buf_t *>(buffers.data()),
-                           detail::checked_buffer_count(buffers.size()), addr, &udp::send_trampoline);
+                           detail::narrow_buffer_count_unchecked(buffers.size()), address, udp_send_request::trampoline);
       });
     }
 
-    void send(udp_send_request &request, std::span<const buffer_view> buffers, const ipv4 &addr,
-              udp_send_request::callback callback) {
-      send(request, buffers, addr.native_sockaddr(), std::move(callback));
+    status send(udp_send_request &request, const buffer_view &buffer, const sockaddr *address,
+                udp_send_request::callback callback) noexcept {
+      return send(request, std::span<const buffer_view>{&buffer, 1}, address, std::move(callback));
     }
 
-    void send(udp_send_request &request, std::span<const buffer_view> buffers, const ipv6 &addr,
-              udp_send_request::callback callback) {
-      send(request, buffers, addr.native_sockaddr(), std::move(callback));
-    }
-
-    void send(udp_send_request &request, const buffer_view &buf, const sockaddr *addr,
-              udp_send_request::callback callback) {
-      send(request, std::span<const buffer_view>{&buf, 1}, addr, std::move(callback));
-    }
-
-    void send(udp_send_request &request, const buffer_view &buf, const ipv4 &addr,
-              udp_send_request::callback callback) {
-      send(request, std::span<const buffer_view>{&buf, 1}, addr, std::move(callback));
-    }
-
-    void send(udp_send_request &request, const buffer_view &buf, const ipv6 &addr,
-              udp_send_request::callback callback) {
-      send(request, std::span<const buffer_view>{&buf, 1}, addr, std::move(callback));
-    }
-
-    void send(udp_send_request &request, std::span<const std::byte> bytes, const sockaddr *addr,
-              udp_send_request::callback callback) {
-      require_ready();
-      auto raw = detail::make_native_buffer(const_cast<char *>(reinterpret_cast<const char *>(bytes.data())),
-                                            bytes.size());
-      detail::submit_request(request, std::move(callback), [&] {
-        return uv_udp_send(request.native(), native(), &raw, 1, addr, &udp::send_trampoline);
+    status send(udp_send_request &request, std::span<const std::byte> bytes, const sockaddr *address,
+                udp_send_request::callback callback) noexcept {
+      return detail::stream_request_submission::submit(request, std::move(callback), [&]() noexcept {
+        if (!ready()) return int{UV_EBADF};
+        if (!detail::buffer_length_fits(bytes.size())) return int{UV_EINVAL};
+        const auto buffer = detail::make_native_buffer_unchecked(
+          const_cast<char *>(reinterpret_cast<const char *>(bytes.data())), bytes.size());
+        return uv_udp_send(request.native(), native(), &buffer, 1, address, udp_send_request::trampoline);
       });
     }
 
-    void send(udp_send_request &request, std::span<const std::byte> bytes, const ipv4 &addr,
-              udp_send_request::callback callback) {
-      send(request, bytes, addr.native_sockaddr(), std::move(callback));
-    }
-
-    void send(udp_send_request &request, std::span<const std::byte> bytes, const ipv6 &addr,
-              udp_send_request::callback callback) {
-      send(request, bytes, addr.native_sockaddr(), std::move(callback));
+    template<auto Callback>
+      requires std::invocable<decltype(Callback), udp_send_request&, uv::status>
+    status send_static(udp_send_request &request, std::span<const buffer_view> buffers,
+                       const sockaddr *address = nullptr) noexcept {
+      return detail::stream_request_submission::submit_static<Callback>(request, [&]() noexcept {
+        if (!ready()) return int{UV_EBADF};
+        if (!valid_buffers(buffers)) return int{UV_EINVAL};
+        return uv_udp_send(request.native(), native(), reinterpret_cast<const uv_buf_t *>(buffers.data()),
+                           detail::narrow_buffer_count_unchecked(buffers.size()), address, udp_send_request::trampoline);
+      });
     }
 
     template<auto Callback>
-    void send_static(udp_send_request &request, std::span<const buffer_view> buffers, const sockaddr *addr) {
-      require_ready();
-      throw_if_error(uv_udp_send(request.native(), native(), reinterpret_cast<const uv_buf_t *>(buffers.data()),
-                                 detail::checked_buffer_count(buffers.size()), addr, [](uv_udp_send_t *raw, int status) noexcept {
-        detail::invoke_static_callback<Callback>(udp_send_request::from_native(raw), uv::status::from_native(status));
-      }));
+      requires std::invocable<decltype(Callback), udp_send_request&, uv::status>
+    status send_static(udp_send_request &request, const buffer_view &buffer,
+                       const sockaddr *address = nullptr) noexcept {
+      return send_static<Callback>(request, std::span<const buffer_view>{&buffer, 1}, address);
     }
 
     template<auto Callback>
-    void send_static(udp_send_request &request, const buffer_view &buf, const ipv4 &addr) {
-      send_static<Callback>(request, std::span<const buffer_view>{&buf, 1}, addr.native_sockaddr());
+      requires std::invocable<decltype(Callback), udp_send_request&, uv::status>
+    status send_static(udp_send_request &request, std::span<const std::byte> bytes,
+                       const sockaddr *address = nullptr) noexcept {
+      return detail::stream_request_submission::submit_static<Callback>(request, [&]() noexcept {
+        if (!ready()) return int{UV_EBADF};
+        if (!detail::buffer_length_fits(bytes.size())) return int{UV_EINVAL};
+        const auto buffer = detail::make_native_buffer_unchecked(
+          const_cast<char *>(reinterpret_cast<const char *>(bytes.data())), bytes.size());
+        return uv_udp_send(request.native(), native(), &buffer, 1, address, udp_send_request::trampoline);
+      });
     }
 
-    template<auto Callback>
-    void send_static(udp_send_request &request, const buffer_view &buf, const ipv6 &addr) {
-      send_static<Callback>(request, std::span<const buffer_view>{&buf, 1}, addr.native_sockaddr());
-    }
-
-    send_now_result send_now(std::span<const buffer_view> buffers, const sockaddr *addr) noexcept {
+    send_now_result send_now(std::span<const buffer_view> buffers, const sockaddr *address = nullptr) noexcept {
       if (!ready()) return send_now_result{UV_EBADF};
-      if (!detail::buffer_count_fits(buffers.size())) {
-        return send_now_result{UV_EINVAL};
-      }
+      if (!valid_buffers(buffers)) return send_now_result{UV_EINVAL};
       return send_now_result{uv_udp_try_send(native(), reinterpret_cast<const uv_buf_t *>(buffers.data()),
-                                             detail::narrow_buffer_count_unchecked(buffers.size()), addr)};
+                              detail::narrow_buffer_count_unchecked(buffers.size()), address)};
     }
 
-    send_now_result send_now(const buffer_view &buf, const ipv4 &addr) noexcept {
-      return send_now(std::span<const buffer_view>{&buf, 1}, addr.native_sockaddr());
+    send_now_result send_now(const buffer_view &buffer, const sockaddr *address = nullptr) noexcept {
+      return send_now(std::span<const buffer_view>{&buffer, 1}, address);
     }
 
-    send_now_result send_now(const buffer_view &buf, const ipv6 &addr) noexcept {
-      return send_now(std::span<const buffer_view>{&buf, 1}, addr.native_sockaddr());
-    }
-
-    send_now_result send_now(std::span<const buffer_view> buffers) noexcept {
+    send_now_result send_now(std::span<const std::byte> bytes, const sockaddr *address = nullptr) noexcept {
       if (!ready()) return send_now_result{UV_EBADF};
-      if (!detail::buffer_count_fits(buffers.size())) {
-        return send_now_result{UV_EINVAL};
-      }
-      return send_now_result{uv_udp_try_send(native(), reinterpret_cast<const uv_buf_t *>(buffers.data()),
-                                             detail::narrow_buffer_count_unchecked(buffers.size()), nullptr)};
+      if (!detail::buffer_length_fits(bytes.size())) return send_now_result{UV_EINVAL};
+      const auto buffer = detail::make_native_buffer_unchecked(
+        const_cast<char *>(reinterpret_cast<const char *>(bytes.data())), bytes.size());
+      return send_now_result{uv_udp_try_send(native(), &buffer, 1, address)};
     }
 
-    send_now_result send_now(const buffer_view &buf) noexcept {
-      return send_now(std::span<const buffer_view>{&buf, 1});
+    status send(udp_send_request &request, std::span<const buffer_view> buffers, udp_send_request::callback callback) noexcept {
+      return send(request, buffers, nullptr, std::move(callback));
     }
 
-    send_now_result send_now(std::span<const std::byte> bytes, const sockaddr *addr) noexcept {
-      if (!ready()) return send_now_result{UV_EBADF};
-      if (!detail::buffer_length_fits(bytes.size())) {
-        return send_now_result{UV_EINVAL};
-      }
-      auto raw = detail::make_native_buffer_unchecked(const_cast<char *>(reinterpret_cast<const char *>(bytes.data())),
-                                                      bytes.size());
-      return send_now_result{uv_udp_try_send(native(), &raw, 1, addr)};
+    status send(udp_send_request &request, std::span<const buffer_view> buffers, const ipv4 &address,
+                udp_send_request::callback callback) noexcept {
+      return send(request, buffers, address.native_sockaddr(), std::move(callback));
     }
 
-    send_now_result send_now(std::span<const std::byte> bytes, const ipv4 &addr) noexcept {
-      return send_now(bytes, addr.native_sockaddr());
+    template<auto Callback>
+      requires std::invocable<decltype(Callback), udp_send_request&, uv::status>
+    status send_static(udp_send_request &request, std::span<const buffer_view> buffers, const ipv4 &address) noexcept {
+      return send_static<Callback>(request, buffers, address.native_sockaddr());
     }
 
-    send_now_result send_now(std::span<const std::byte> bytes, const ipv6 &addr) noexcept {
-      return send_now(bytes, addr.native_sockaddr());
+    send_now_result send_now(std::span<const buffer_view> buffers, const ipv4 &address) noexcept {
+      return send_now(buffers, address.native_sockaddr());
     }
 
-    send_now_result send_now(std::span<const std::byte> bytes) noexcept {
-      return send_now(bytes, static_cast<const sockaddr *>(nullptr));
+    status send(udp_send_request &request, std::span<const buffer_view> buffers, const ipv6 &address,
+                udp_send_request::callback callback) noexcept {
+      return send(request, buffers, address.native_sockaddr(), std::move(callback));
+    }
+
+    template<auto Callback>
+      requires std::invocable<decltype(Callback), udp_send_request&, uv::status>
+    status send_static(udp_send_request &request, std::span<const buffer_view> buffers, const ipv6 &address) noexcept {
+      return send_static<Callback>(request, buffers, address.native_sockaddr());
+    }
+
+    send_now_result send_now(std::span<const buffer_view> buffers, const ipv6 &address) noexcept {
+      return send_now(buffers, address.native_sockaddr());
+    }
+
+    status send(udp_send_request &request, const buffer_view & buffer, udp_send_request::callback callback) noexcept {
+      return send(request, buffer, nullptr, std::move(callback));
+    }
+
+    status send(udp_send_request &request, const buffer_view & buffer, const ipv4 &address,
+                udp_send_request::callback callback) noexcept {
+      return send(request, buffer, address.native_sockaddr(), std::move(callback));
+    }
+
+    template<auto Callback>
+      requires std::invocable<decltype(Callback), udp_send_request&, uv::status>
+    status send_static(udp_send_request &request, const buffer_view & buffer, const ipv4 &address) noexcept {
+      return send_static<Callback>(request, buffer, address.native_sockaddr());
+    }
+
+    send_now_result send_now(const buffer_view & buffer, const ipv4 &address) noexcept {
+      return send_now(buffer, address.native_sockaddr());
+    }
+
+    status send(udp_send_request &request, const buffer_view & buffer, const ipv6 &address,
+                udp_send_request::callback callback) noexcept {
+      return send(request, buffer, address.native_sockaddr(), std::move(callback));
+    }
+
+    template<auto Callback>
+      requires std::invocable<decltype(Callback), udp_send_request&, uv::status>
+    status send_static(udp_send_request &request, const buffer_view & buffer, const ipv6 &address) noexcept {
+      return send_static<Callback>(request, buffer, address.native_sockaddr());
+    }
+
+    send_now_result send_now(const buffer_view & buffer, const ipv6 &address) noexcept {
+      return send_now(buffer, address.native_sockaddr());
+    }
+
+    status send(udp_send_request &request, std::span<const std::byte> bytes, udp_send_request::callback callback) noexcept {
+      return send(request, bytes, nullptr, std::move(callback));
+    }
+
+    status send(udp_send_request &request, std::span<const std::byte> bytes, const ipv4 &address,
+                udp_send_request::callback callback) noexcept {
+      return send(request, bytes, address.native_sockaddr(), std::move(callback));
+    }
+
+    template<auto Callback>
+      requires std::invocable<decltype(Callback), udp_send_request&, uv::status>
+    status send_static(udp_send_request &request, std::span<const std::byte> bytes, const ipv4 &address) noexcept {
+      return send_static<Callback>(request, bytes, address.native_sockaddr());
+    }
+
+    send_now_result send_now(std::span<const std::byte> bytes, const ipv4 &address) noexcept {
+      return send_now(bytes, address.native_sockaddr());
+    }
+
+    status send(udp_send_request &request, std::span<const std::byte> bytes, const ipv6 &address,
+                udp_send_request::callback callback) noexcept {
+      return send(request, bytes, address.native_sockaddr(), std::move(callback));
+    }
+
+    template<auto Callback>
+      requires std::invocable<decltype(Callback), udp_send_request&, uv::status>
+    status send_static(udp_send_request &request, std::span<const std::byte> bytes, const ipv6 &address) noexcept {
+      return send_static<Callback>(request, bytes, address.native_sockaddr());
+    }
+
+    send_now_result send_now(std::span<const std::byte> bytes, const ipv6 &address) noexcept {
+      return send_now(bytes, address.native_sockaddr());
     }
 
 #if UVPP_HAS_UDP_TRY_SEND2
-    send_many_now_result send_many_now(udp_send_many_view batch) noexcept {
+    send_many_now_result send_many_now(udp_send_many_view batch, std::size_t first = 0) noexcept {
       if (!ready()) return send_many_now_result{UV_EBADF};
-      return send_many_now_result{uv_udp_try_send2(native(), batch.count(), batch.buffers(),
-                                                   batch.buffer_counts(), batch.addresses(), 0)};
+      if (first >= batch.count() || batch.count() - first > static_cast<unsigned int>((std::numeric_limits<int>::max)()) ||
+          !batch.buffers() || !batch.buffer_counts() || !batch.addresses()) return send_many_now_result{UV_EINVAL};
+      for (std::size_t i = first; i < batch.count(); ++i)
+        if (!valid_native_buffers(batch.buffers()[i], batch.buffer_counts()[i])) return send_many_now_result{UV_EINVAL};
+      return send_many_now_result{uv_udp_try_send2(native(), static_cast<unsigned int>(batch.count() - first),
+                                   batch.buffers() + first, batch.buffer_counts() + first, batch.addresses() + first, 0)};
     }
 
-    send_many_now_result send_many_now(udp_send_batch &batch) noexcept {
-      return send_many_now(batch.native_view());
+    send_many_now_result send_many_now(udp_send_batch &batch, std::size_t first = 0) noexcept {
+      return send_many_now(batch.native_view(), first);
     }
 
     send_many_now_result send_many_now(unsigned int count, uv_buf_t **buffers,
-                                       unsigned int *buffer_counts, sockaddr **addresses) noexcept {
+                                      unsigned int *buffer_counts, sockaddr **addresses) noexcept {
       return send_many_now(udp_send_many_view{count, buffers, buffer_counts, addresses});
     }
 #endif
@@ -790,7 +870,6 @@ namespace uv::raw {
 
   private:
     bool ready() const noexcept { return initialized() && !closing(); }
-    void require_ready() const { if (!ready()) status::from_native(UV_EBADF).throw_if_error(); }
     static bool native_text(std::string_view value) noexcept { return value.find('\0') == std::string_view::npos; }
 
     status finish_init(int code) noexcept {
@@ -805,31 +884,100 @@ namespace uv::raw {
       return status::from_native(code);
     }
 
-    static void alloc_trampoline(uv_handle_t *raw, size_t suggested_size, uv_buf_t *buf) noexcept {
-      auto &self = udp::from_native(raw);
+    struct receive_subscription {
+      allocate_callback allocate{};
+      receive_callback receive{};
+      buffer_view (*static_allocate)(udp&, std::size_t) = nullptr;
+      void (*static_receive)(udp&, udp_receive_result) = nullptr;
+      explicit operator bool() const noexcept { return (allocate && receive) || (static_allocate && static_receive); }
+    };
+    using receive_slot = detail::persistent_callback_slot<receive_subscription>;
 
-      if (!self.allocate_callback_.invoke([&](allocate_callback &callback) {
-            auto out = callback(self, suggested_size);
-            *buf = *out.native();
-          })) {
-        *buf = detail::make_native_buffer_unchecked(nullptr, 0);
+    status start_receive(receive_subscription next) noexcept {
+      if (receiving_) {
+        const auto stopped = receive_stop();
+        if (!stopped) return stopped;
       }
+      const auto result = status::from_native(uv_udp_recv_start(native(), &udp::alloc_trampoline, &udp::receive_trampoline));
+      if (result) {
+        receive_subscription_.replace(std::move(next));
+        receiving_ = true;
+      }
+      return result;
     }
 
-    static void receive_trampoline(uv_udp_t *raw, ssize_t nread, const uv_buf_t *buf, const sockaddr *addr,
-                                   unsigned flags) noexcept {
-      auto &self = udp::from_native(raw);
-      self.receive_callback_.invoke([&](receive_callback &callback) {
-        callback(self, udp_receive_result{nread, buf, addr, flags});
+    void retire_receive() noexcept {
+      receiving_ = false;
+      receive_subscription_.replace({});
+      // Unix recv_stop clears recv_cb, but recvmmsg still owes the current
+      // buffer its remaining chunk notifications and final FREE. Keep the fixed
+      // dispatcher until that loan finishes; stop/close quiesces native polling.
+      if (mmsg_inflight_) native()->recv_cb = &udp::receive_trampoline;
+    }
+
+    static bool valid_native_buffers(const uv_buf_t *buffers, std::size_t count) noexcept {
+      if (!buffers || count == 0 || !detail::buffer_count_fits(count)) return false;
+      for (std::size_t i = 0; i < count; ++i)
+        if (buffers[i].len != 0 && buffers[i].base == nullptr) return false;
+      return true;
+    }
+
+    static bool valid_buffers(std::span<const buffer_view> buffers) noexcept {
+      return valid_native_buffers(reinterpret_cast<const uv_buf_t *>(buffers.data()), buffers.size());
+    }
+
+    static void close_trampoline(uv_handle_t *raw) noexcept {
+      auto &self = from_native(raw);
+      self.pending_receive_ = {};
+      basic_handle<udp, uv_udp_t>::close_trampoline(raw);
+    }
+
+    static void alloc_trampoline(uv_handle_t *raw, size_t suggested_size, uv_buf_t *buffer) noexcept {
+      auto &self = from_native(raw);
+      self.receive_subscription_.restore(std::move(self.pending_receive_));
+      self.pending_receive_ = {};
+      auto loan = self.receive_subscription_.checkout();
+      *buffer = detail::make_native_buffer_unchecked(nullptr, 0);
+      if (loan.callback) detail::invoke_callback([&] {
+        auto &pair = loan.callback;
+        const auto out = pair.static_allocate ? pair.static_allocate(self, suggested_size) : pair.allocate(self, suggested_size);
+        *buffer = *out.native();
       });
+      self.pending_receive_ = std::move(loan);
     }
 
-    static void send_trampoline(uv_udp_send_t *raw, int status) noexcept {
-      udp_send_request::from_native(raw).invoke(status);
+    static void receive_trampoline(uv_udp_t *raw, ssize_t count, const uv_buf_t *buffer,
+                                   const sockaddr *address, unsigned flags) noexcept {
+      auto &self = from_native(raw);
+      auto loan = std::move(self.pending_receive_);
+      self.pending_receive_ = {};
+      if (!loan.callback) loan = self.receive_subscription_.checkout();
+      const udp_receive_result result{count, buffer, address, flags};
+      const bool chunk = result.mmsg_chunk();
+      self.mmsg_inflight_ = chunk;
+      if (count < 0) {
+        if (uv_udp_recv_stop(raw) < 0) detail::callback_exception_boundary();
+        self.retire_receive();
+      }
+      // End a stopped batch before user delivery; a new subscription installed
+      // by that delivery must survive unwinding of the old buffer's FREE.
+      if (!chunk && !self.receiving_) {
+        raw->recv_cb = nullptr;
+        raw->alloc_cb = nullptr;
+      }
+      if (loan.callback) detail::invoke_callback([&] {
+        auto &pair = loan.callback;
+        if (pair.static_receive) pair.static_receive(self, result);
+        else pair.receive(self, result);
+      });
+      if (chunk) self.pending_receive_ = std::move(loan);
+      else self.receive_subscription_.restore(std::move(loan));
     }
 
-    detail::persistent_callback_slot<allocate_callback> allocate_callback_{};
-    detail::persistent_callback_slot<receive_callback> receive_callback_{};
+    receive_slot receive_subscription_{};
+    typename receive_slot::delivery pending_receive_{};
+    bool receiving_ = false;
+    bool mmsg_inflight_ = false;
   };
 
 }

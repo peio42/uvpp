@@ -21,8 +21,8 @@ TEST(Uvpp2Udp, sendsAndReceivesDatagrams) {
   uv::loop loop;
   uv::raw::udp server(loop);
   uv::raw::udp client(loop);
-  uv::udp_send_request client_send_req;
-  uv::udp_send_request server_send_req;
+  uv::raw::udp_send_request client_send_req;
+  uv::raw::udp_send_request server_send_req;
 
   int client_send_marker = 1;
   int server_send_marker = 2;
@@ -57,12 +57,12 @@ TEST(Uvpp2Udp, sendsAndReceivesDatagrams) {
 
     static char response[] = "pong";
     uv::buffer_view out{response, 4};
-    udp.send(server_send_req, out, received.address(), [&](uv::udp_send_request &request, uv::status status) {
+    udp.send(server_send_req, out, received.address(), [&](uv::raw::udp_send_request &request, uv::status status) {
       ASSERT_TRUE(status);
       EXPECT_EQ(request.user_data<int>(), &server_send_marker);
       server_send_done = true;
-    });
-  });
+    }).throw_if_error();
+  }).throw_if_error();
 
   client.receive_start(udp_alloc, [&](uv::raw::udp &udp, uv::udp_receive_result received) {
     if (received.empty_event()) {
@@ -82,18 +82,18 @@ TEST(Uvpp2Udp, sendsAndReceivesDatagrams) {
     server.close([&](uv::raw::udp &) {
       server_closed = true;
     });
-  });
+  }).throw_if_error();
 
   auto bound_addr = server.sockname().value();
   uv::ipv4 destination{"127.0.0.1", bound_addr.port()};
 
   static char payload[] = "ping";
   uv::buffer_view out{payload, 4};
-  client.send(client_send_req, out, destination, [&](uv::udp_send_request &request, uv::status status) {
+  client.send(client_send_req, out, destination, [&](uv::raw::udp_send_request &request, uv::status status) {
     ASSERT_TRUE(status);
     EXPECT_EQ(request.user_data<int>(), &client_send_marker);
     client_send_done = true;
-  });
+  }).throw_if_error();
 
   loop.run();
 
@@ -111,7 +111,7 @@ namespace {
 
 bool static_udp_send_done = false;
 
-void on_static_udp_send(uv::udp_send_request &, uv::status status) {
+void on_static_udp_send(uv::raw::udp_send_request &, uv::status status) {
   EXPECT_TRUE(status);
   static_udp_send_done = true;
 }
@@ -122,7 +122,7 @@ TEST(Uvpp2Udp, runsStaticSendCallback) {
   uv::loop loop;
   uv::raw::udp server(loop);
   uv::raw::udp client(loop);
-  uv::udp_send_request send_req;
+  uv::raw::udp_send_request send_req;
   bool server_read = false;
   bool server_closed = false;
   bool client_closed = false;
@@ -145,14 +145,14 @@ TEST(Uvpp2Udp, runsStaticSendCallback) {
     client.close([&](uv::raw::udp &) {
       client_closed = true;
     });
-  });
+  }).throw_if_error();
 
   auto bound_addr2 = server.sockname().value();
   uv::ipv4 destination{"127.0.0.1", bound_addr2.port()};
 
   static char payload[] = "ping";
   uv::buffer_view out{payload, 4};
-  client.send_static<on_static_udp_send>(send_req, out, destination);
+  client.send_static<on_static_udp_send>(send_req, out, destination).throw_if_error();
 
   loop.run();
 
@@ -192,7 +192,7 @@ TEST(Uvpp2Udp, sendNowSendsBytes) {
     client.close([&](uv::raw::udp &) {
       client_closed = true;
     });
-  });
+  }).throw_if_error();
 
   std::array payload{'p', 'i', 'n', 'g'};
   auto bound = server.sockname().value();
@@ -268,7 +268,7 @@ TEST(Uvpp2Udp, sendManyNowSendsMultipleDatagrams) {
         client_closed = true;
       });
     }
-  });
+  }).throw_if_error();
 
   auto bound = server.sockname().value();
   uv::ipv4 destination{"127.0.0.1", bound.port()};
@@ -538,7 +538,7 @@ TEST(Uvpp2Udp, sendBatchBuildsManySendMetadata) {
         client_closed = true;
       });
     }
-  });
+  }).throw_if_error();
 
   auto bound = server.sockname().value();
   uv::ipv4 destination{"127.0.0.1", bound.port()};
@@ -628,13 +628,13 @@ TEST(Uvpp2Udp, appliesSocketOptions) {
 TEST(Uvpp2Udp, immediateSendFailureClearsCallback) {
   uv::loop loop;
   uv::raw::udp udp(loop);
-  uv::udp_send_request request;
+  uv::raw::udp_send_request request;
   std::array payload{'f', 'a', 'i', 'l'};
   auto token = std::make_shared<int>(1);
   std::weak_ptr<int> weak = token;
 
-  EXPECT_THROW(udp.send(request, std::as_bytes(std::span{payload}), static_cast<const sockaddr *>(nullptr),
-    [token](uv::udp_send_request&, uv::status) {}), uv::error);
+  EXPECT_FALSE(udp.send(request, std::as_bytes(std::span{payload}), static_cast<const sockaddr *>(nullptr),
+    [token](uv::raw::udp_send_request&, uv::status) {}));
 
   token.reset();
   EXPECT_TRUE(weak.expired());

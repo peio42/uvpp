@@ -264,5 +264,16 @@ at 1.45/1.48/1.53; the Unix exhaustion test does not exercise that backend branc
 The allocation binary separately injects C++ string-copy failure for group,
 interface and source preparation and checks native address, binding and data
 preservation. Native Windows/macOS execution remains a CI gate alongside local
-Linux suites and Windows-target syntax checks. Full UDP receive/send slot,
-request-reuse and buffer-loan validation remains in the next slice.
+Linux suites and Windows-target syntax checks.
+
+`test-raw-udp-io.cpp` completes receive/send/request validation with real sockets:
+paired allocator-owned buffers survive callback replacement, stop and close;
+recvmmsg retains the old pair through all delivered chunks and FREE without fixing
+kernel batch size. Native ENOBUFS quiesces before rearm. Empty/truncated packets,
+pending-request native-storage integrity, native submission/completion errors,
+request reuse, close with borrowed payloads, immediate queue would-block and
+batch prefix/suffix retry are covered. The isolated allocation binary measures
+prepared heap-backed callables through native send/receive delivery and a prepared
+batch with C++ allocation disabled. Focused ASan/UBSan and libuv 1.48 execution
+complement full compiler suites and Windows-target syntax checks. Native
+Windows/macOS runtime behavior remains a CI gate.

@@ -270,17 +270,17 @@ TEST(Uvpp2Core, requestCallbacksAreOneShot) {
   }
 
   {
-    uv::udp_send_request request;
+    uv::raw::udp_send_request request;
     auto token = std::make_shared<int>(1);
     std::weak_ptr<int> weak = token;
     bool called = false;
 
-    request.set_callback([token, &called](uv::udp_send_request&, uv::status) {
+    ASSERT_TRUE(uv::detail::stream_request_submission::submit(request, [token, &called](uv::raw::udp_send_request&, uv::status) {
       called = true;
-    });
+    }, []() noexcept { return 0; }));
     token.reset();
 
-    request.invoke(0);
+    decltype(request)::trampoline(request.native(), 0);
     EXPECT_TRUE(called);
     EXPECT_TRUE(weak.expired());
   }

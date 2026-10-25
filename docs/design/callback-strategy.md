@@ -196,3 +196,15 @@ and clears pending before user delivery. Runtime/static resubmission shares one
 protocol and old completion does not touch the request after delivery. Handle
 close retains request state through its own completion.
 See [the stream contract](../user/networking/raw-stream.md).
+
+## Raw UDP receive loans and send requests
+
+Raw UDP uses the same generation-tracked persistent slot model as stream reads,
+but retains a paired allocator/receiver loan across all native recvmmsg chunks
+until FREE. An executing old pair survives stop/replacement/close, while its
+generation cannot overwrite a new subscription. The fixed native dispatcher
+finishes an already-read batch even after stop from a chunk; no new polling is
+started. Close completion releases a remaining loan before close delivery.
+`uv::raw::udp_send_request` shares the stream request submission helper, clearing
+pending and extracting selection before user completion. Native data remains
+application-owned. See [the raw UDP guide](../user/networking/raw-udp.md).

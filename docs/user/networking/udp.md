@@ -56,7 +56,7 @@ callback state. Raw wrappers keep `data` available to application code.
 
 ## Raw socket operations
 
-[`uv::raw::udp`](raw-udp.md) provides caller-owned native storage with explicit
-initialization, status-oriented bind/open/options/multicast and typed address
-queries. Its send/receive callback and request protocols remain transitional in
-this first socket slice. These raw APIs are independent of `uv::udp_socket` owners.
+[`uv::raw::udp`](raw-udp.md) provides caller-owned native storage, explicit
+initialization and socket statuses, paired receive subscriptions, separate
+`uv::raw::udp_send_request` operations and typed immediate/batch outcomes.
+These APIs are independent of `uv::udp_socket` owners.

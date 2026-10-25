@@ -302,3 +302,62 @@ TEST(RawUdpAllocation, multicastPreparationFailuresRemainCppExceptions) {
   handle.close(); loop.run();
   EXPECT_NO_THROW(loop.close());
 }
+
+TEST(RawUdpAllocation, preparedReceiveAndSendNeedNoCppAllocationDuringNativeDelivery) {
+  uv::loop loop;
+  uv::raw::udp receiver{loop}, sender{loop};
+  receiver.bind(uv::ipv4{"127.0.0.1", 0}).throw_if_error();
+  sender.bind(uv::ipv4{"127.0.0.1", 0}).throw_if_error();
+  const auto target = receiver.sockname().value().to_v4();
+  std::array<char, 65536> storage{};
+  std::array<char, 256> capture{};
+  char payload = 'a';
+  int packets = 0, completions = 0;
+  bool completion_ok = false;
+  uv::status stopped;
+  uv::raw::udp::allocate_callback allocator = [&, capture](uv::raw::udp&, std::size_t) {
+    storage[0] = capture[0];
+    return uv::buffer_view{storage.data(), storage.size()};
+  };
+  uv::raw::udp::receive_callback receive = [&, capture](uv::raw::udp &self, uv::udp_receive_result result) {
+    if (!result.empty_event()) {
+      packets += 1 + capture[0];
+      stopped = self.receive_stop();
+    }
+  };
+  uv::raw::udp_send_request request;
+  uv::raw::udp_send_request::callback sent = [&, capture](uv::raw::udp_send_request &self, uv::status status) {
+    completions += 1 + capture[0];
+    completion_ok = status.has_value() && !self.pending();
+  };
+#if UVPP_HAS_UDP_TRY_SEND2
+  uv::udp_send_batch batch;
+  batch.add(uv::buffer_view{&payload, 1}, target);
+  uv::send_many_now_result batch_result{UV_EINVAL};
+#endif
+  uv::status started, submitted;
+  {
+    allocation_failure no_cpp_allocation{0};
+    started = receiver.receive_start(std::move(allocator), std::move(receive));
+    submitted = sender.send(request, uv::buffer_view{&payload, 1}, target, std::move(sent));
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds{5};
+    while ((packets == 0 || completions == 0) && std::chrono::steady_clock::now() < deadline)
+      loop.run(uv::run_mode::nowait);
+#if UVPP_HAS_UDP_TRY_SEND2
+    batch_result = sender.send_many_now(batch);
+#endif
+  }
+  EXPECT_TRUE(started);
+  EXPECT_TRUE(submitted);
+  EXPECT_TRUE(stopped);
+  EXPECT_EQ(packets, 1);
+  EXPECT_EQ(completions, 1);
+  EXPECT_TRUE(completion_ok);
+#if UVPP_HAS_UDP_TRY_SEND2
+  EXPECT_TRUE(batch_result.ok());
+  EXPECT_EQ(batch_result.datagrams_sent(), 1u);
+#endif
+  receiver.close(); sender.close(); loop.run();
+  EXPECT_FALSE(request.pending());
+  EXPECT_NO_THROW(loop.close());
+}

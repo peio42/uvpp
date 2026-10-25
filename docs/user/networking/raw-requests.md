@@ -92,3 +92,10 @@ pipe connect/connect_static and IPC write/write_with_handle_static. All return
 submission statuses and share the pending/completion protocol. Legacy pipe-name
 preparation can allocate independently; void native connect reports errors at
 completion. Pipe and TCP handles remain separate from their caller-owned requests.
+
+## UDP send requests
+
+`uv::raw::udp_send_request` uses the same pending/submission/completion protocol
+with `udp.send` and `udp.send_static`. It is a separate immovable request, not a
+handle. See [raw UDP](raw-udp.md#asynchronous-sends-and-requests) for borrowed
+payloads, connected destinations, immediate sends and batch progress.

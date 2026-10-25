@@ -259,8 +259,16 @@ a second unlink or native close. No added native-lifetime allocation is needed.
 Socket operations return statuses and address/descriptor/buffer queries retain
 results. Multicast string copies keep C++ exceptions separate from native errors;
 embedded NUL inputs are rejected before submission. Numeric/bool options have
-native status/noexcept contracts. Duplicate close is inert, while receive slots
-and UDP send request machinery retain their transitional protocols until the next
-slice. Typed receive/immediate/batch values stay in `uv`; batch friendship names
-the new raw handle explicitly. High-level socket storage is unchanged. See
+native status/noexcept contracts. Duplicate close is inert. Receive subscriptions
+now use generation-tracked paired callback loans, retained from allocation through
+native delivery and through recvmmsg's final FREE. Stop/replacement/close from a
+chunk preserve the original pair and fixed dispatcher for the remaining native
+batch; a new pair applies to later allocations. Terminal receive errors stop the
+source before user delivery. Close completion releases any remaining loan.
+`uv::raw::udp_send_request` shares the stream request submission helper: pending
+guards, commit after native acceptance, and extraction before completion delivery.
+C++ callable preparation remains separate from native errors. Immediate sends and
+suffix batches validate metadata and preserve byte/datagram progress and would-block
+without allocating hidden C++ metadata. Typed receive/immediate/batch values stay
+in `uv`. High-level socket storage is unchanged. See
 [the raw UDP contract](../user/networking/raw-udp.md).
