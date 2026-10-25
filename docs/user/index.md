@@ -51,7 +51,8 @@ and validation gates are tracked in [proposals](../proposals/index.md).
 
 [Raw watchers](raw-watchers.md) documents caller-owned signal, descriptor-readiness,
 filesystem-event, timer, and loop-phase callbacks, explicit statuses, and lifetimes.
-Raw signal/poll/fs-event/timer/idle/prepare/check also support [explicit initialization](raw-watchers.md#explicit-initialization).
+Raw async/signal/poll/fs-event/timer/idle/prepare/check also support [explicit initialization](raw-watchers.md#explicit-initialization); see also
+[async initialization and producer publication](async.md#construction-and-errors).
 
 [Raw async notifications](async.md) explains coalescing, cross-thread send, callback
 replacement, and producer quiescence before close.

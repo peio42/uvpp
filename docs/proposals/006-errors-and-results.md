@@ -350,7 +350,8 @@ setter status/results. Its fixed native trampoline supports runtime/static
 replacement, including reentrant replacement, without native reinitialization.
 It shares raw callback/close/query machinery, adds one static function pointer,
 and preserves application-owned native `data` and stable storage. Initialization
-is active immediately and remains throwing setup; no start/stop API, queue, lock,
+activates the handle immediately. Explicit init returns status and loop-taking
+constructors unwrap it; no start/stop API, queue, lock,
 or producer endpoint is added. Only send is cross-thread safe. The caller must
 prevent new sends and synchronize every in-flight send before close; send does not
 read loop-thread closing state or promise a recoverable after-close error.
@@ -411,7 +412,7 @@ registration. Such failure leaves `initialized()` false and permits retry withou
 closing the wrapper; any retained loop-owned infrastructure remains the loop's
 responsibility. Tests cover pre-init rejection, successful init, failed starts,
 repeated init, reentrant one-shot rearming, and close completion; native-init
-fault injection remains a separate validation gate. Async is not migrated here; poll explicit initialization is recorded below. See [the user contract](../user/raw-watchers.md) and
+fault injection remains a separate validation gate. Poll and async explicit initialization are recorded below. See [the user contract](../user/raw-watchers.md) and
 [portable initialization tests](../../tests/test-raw-subscription-init.cpp).
 
 ## Raw poll explicit initialization progress
@@ -432,3 +433,26 @@ init can never be reset/repeated. See the
 [implemented rollback boundary](../design/architecture.md#raw-poll-initialization-rollback),
 [user API](../user/raw-watchers.md#descriptor-readiness), and
 [initialization tests](../../tests/test-raw-poll-init.cpp).
+
+## Raw async explicit initialization progress
+
+Raw async now supports `async() noexcept`, native-loop-pointer `initialized()`, and
+six `init(loop&/loop_view)` overloads for empty, runtime, or static-tag callback
+selection. Native init returns status; loop-taking constructors unwrap the same
+result. Callable preparation may throw before init entry, while committing its
+move after successful native init is non-throwing. Failure retains no supplied
+callback and leaves uninitialized retryable storage. No poll-specific rollback
+or additional state/allocation is required.
+
+Shared pre-init observations/close/ref/query behavior matches the migrated watchers.
+Setters and send return `UV_EBADF` before initialization. Repeat init returns
+`UV_EALREADY` even during/after close and never changes loop, trampoline, pending
+notifications, callback selection, or slot generation. Runtime/static reentrant
+replacement and selection remain unchanged.
+
+Send reads only the native loop sentinel, immutable after successful init.
+Initialization must finish before producer publication and must not overlap sends;
+the sentinel is neither synchronization nor a close/lifetime check. Caller
+quiescence before close remains mandatory. See [the user contract](../user/async.md)
+and [initialization tests](../../tests/test-raw-async-init.cpp). Native-init fault
+injection and native platform/TSan gates remain separate validation work.

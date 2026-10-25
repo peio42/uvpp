@@ -140,7 +140,8 @@ loop-taking constructors unwrap that status. The shared internal
 and native-query guards without adding storage or changing callback ownership.
 The native `loop` pointer is the initialization sentinel, with no additional state
 field. It remains set after close, preventing reinitialization. All four guard operations before initialization;
-Async retains its existing constructor setup. Start/stop
+Async follows the same initialization lifecycle, with immediate activation as
+documented below. Start/stop
 and timer `again`/`set_repeat` return `status`, with shared explicit native-query
 results. Terminal one-shot timer delivery extracts its callable before invocation,
 while repeated events retain the callable.
@@ -156,14 +157,22 @@ unchanged. See [raw callback watchers](../user/raw-watchers.md).
 
 `uv::raw::async` extends the shared raw watcher callback/close/query bookkeeping
 with a fixed native trampoline and one non-owning static dispatch pointer.
-Initialization activates the handle immediately; there is no start/stop facade.
+Default construction leaves it uninitialized. Explicit `init(loop/loop_view)`
+supports empty/runtime/static callback forms, returning native status; loop-taking
+constructors unwrap the same result. The shared initialization helper guards
+observations, close/ref, and native queries without added storage. Initialization
+activates the handle immediately; there is no start/stop facade.
 `send() noexcept -> status` directly adapts `uv_async_send` without reading wrapper
-callback or closing state. The caller prevents new sends and joins/synchronizes
+callback or closing state. It rejects an unset native loop sentinel with
+`UV_EBADF`; after publication that pointer is immutable. Init must complete before
+producer publication and must never overlap sends. The caller prevents new sends and joins/synchronizes
 in-flight producers before close. Callback setters are loop-thread operations
-returning `status`, reject closing state with `UV_EBADF`, and preserve reentrant
+returning `status`, reject pre-init/closing state with `UV_EBADF`, and preserve reentrant
 replacement through generation tracking. Empty runtime selection drops delivery
-without stopping the handle. Construction/preparation retain their separately
-documented exception policy. Native `data`, address stability, explicit close,
+without stopping the handle. Repeat init, including during/after close, reports
+`UV_EALREADY` without changing dispatch or pending notifications. Callable
+preparation can throw before init entry; moves after native success do not throw.
+Unix native failures precede handle registration and require no wrapper close. Native `data`, address stability, explicit close,
 and shared loop rules are unchanged. `loop_posting` keeps its independent native
 storage, mutex admission, queue, and producer endpoints. See
 [raw async notifications](../user/async.md).

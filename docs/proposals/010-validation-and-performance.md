@@ -682,3 +682,31 @@ Windows/macOS execution and a native Windows post-registration fault injection
 remain CI/follow-up validation gates. Positive integer-descriptor initialization
 is covered on Unix; Windows tests use native sockets and cover negative descriptor
 validation rather than manufacturing CRT ownership of a socket.
+
+## Raw async explicit initialization validation
+
+[`test-raw-async-init.cpp`](../../tests/test-raw-async-init.cpp) adds eleven cases
+covering no native registration before init, pre-init send/setter/query rejection
+and capture release, inert close variants, stable native storage and application
+data, immediate active/referenced state, all six loop/view and empty/runtime/static
+init overloads, pending notification preservation across duplicate init, rejected
+runtime/static selection changes, reentrant duplicate init retaining the mutable
+runtime callable, initialized observations through close completion, callable
+preparation failures before/after init, successful init publication to a producer
+thread, and static native close completion.
+
+The producer is joined before loop delivery can close the handle. No test races
+init with send or sends during/after close: these remain protocol violations.
+`send()` checks the native loop pointer only; its immutability after successful
+init and application synchronization before publication are required, rather than
+an atomic wrapper state or a closing check. Existing producer/callback replacement
+and native layout tests remain regression coverage. Native-init fault injection,
+native Windows/macOS execution, and async-specific TSan remain separate gates.
+
+Targeted ASan/UBSan with leak detection passes 62 tests with one existing TTY skip,
+including the existing async, timer/phase initialization, and native-layout cases.
+The new tests compile with Clang `-Wall -Wextra -Werror`.
+
+Full local `make test-all` passes 529 tests with GCC and 529 with Clang, with two
+existing TTY skips per compiler, both separate UDP allocation cases passing, and
+all examples built. No native Windows/macOS execution was performed locally.

@@ -162,7 +162,9 @@ callback unwinding, and an executing callable stays local through return.
 All selection/close operations are loop-thread only; cross-thread send touches
 neither selection nor `closing()`. Callback argument construction precedes native
 initialization or setter entry, so preparation failure leaves the native/current
-selection unchanged. Native init remains throwing setup. Close quiesces native
+selection unchanged. Explicit init returns native status and commits its callable
+only on success; loop-taking constructors unwrap the result. Repeat init rejects
+without touching either callback mode or slot generation, including inside delivery. Close quiesces native
 delivery before clearing selection and captures, and raw storage survives native
 close completion. No public producer endpoint or concurrent-close guard is added.
 See [the user contract](../user/async.md).

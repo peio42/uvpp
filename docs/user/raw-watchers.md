@@ -265,8 +265,9 @@ wrapper's checks. Do not overwrite native `loop`, reinitialize native storage, o
 bypass the wrapper's lifetime protocol. All initialization and observations follow
 loop-thread affinity; `initialized()` provides no cross-thread synchronization.
 The same lifecycle and common-operation rules apply to raw signal, poll, fs-event,
-idle, prepare, and check handles; timer duration/reconfiguration methods remain
-timer-specific.
+idle, prepare, and check handles, and to [async](async.md#construction-and-errors)
+with its immediate activation and producer publication rules. Timer
+duration/reconfiguration methods remain timer-specific.
 
 ### Subscriptions and durations
 

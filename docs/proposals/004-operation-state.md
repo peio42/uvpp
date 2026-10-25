@@ -292,7 +292,8 @@ setter status/results. Its fixed native trampoline supports runtime/static
 replacement, including reentrant replacement, without native reinitialization.
 It shares raw callback/close/query machinery, adds one static function pointer,
 and preserves application-owned native `data` and stable storage. Initialization
-is active immediately and remains throwing setup; no start/stop API, queue, lock,
+activates the handle immediately. Explicit init returns status and loop-taking
+constructors unwrap it; no start/stop API, queue, lock,
 or producer endpoint is added. Only send is cross-thread safe. The caller must
 prevent new sends and synchronize every in-flight send before close; send does not
 read loop-thread closing state or promise a recoverable after-close error.

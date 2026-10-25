@@ -7,31 +7,30 @@
 
 #include "uvpp/core/error.hpp"
 #include "uvpp/core/loop.hpp"
-#include "uvpp/detail/raw_watcher.hpp"
+#include "uvpp/detail/initializable_raw_watcher.hpp"
 
 namespace uv::raw {
 
-  class async final : public ::uv::detail::raw_watcher_handle<async, uv_async_t> {
-    using base = ::uv::detail::raw_watcher_handle<async, uv_async_t>;
+  class async final : public ::uv::detail::initializable_raw_watcher_handle<async, uv_async_t> {
+    using base = ::uv::detail::initializable_raw_watcher_handle<async, uv_async_t>;
 
   public:
     template<auto Callback>
       requires std::invocable<decltype(Callback), async&>
     struct static_callback {};
 
+    async() noexcept = default;
+
     explicit async(loop &l) : async(l.view()) {}
 
     explicit async(loop_view l) {
-      init(l.native());
+      init(l).value();
     }
 
     async(loop &l, callback cb) : async(l.view(), std::move(cb)) {}
 
     async(loop_view l, callback cb) {
-      // The callable is prepared before init. Committing its move after native
-      // initialization cannot allocate or throw and needs no native rollback.
-      init(l.native());
-      replace_callback(std::move(cb));
+      init(l, std::move(cb)).value();
     }
 
     template<auto Callback>
@@ -40,12 +39,42 @@ namespace uv::raw {
 
     template<auto Callback>
       requires std::invocable<decltype(Callback), async&>
-    async(loop_view l, static_callback<Callback>) : async(l) {
-      static_dispatch_ = &invoke_static<Callback>;
+    async(loop_view l, static_callback<Callback> tag) {
+      init(l, tag).value();
+    }
+
+    status init(loop &l) noexcept { return init(l.view()); }
+
+    status init(loop_view l) noexcept { return init(l, callback{}); }
+
+    status init(loop &l, callback cb) noexcept { return init(l.view(), std::move(cb)); }
+
+    status init(loop_view l, callback cb) noexcept {
+      if (initialized()) return status::from_native(UV_EALREADY);
+      const auto result = status::from_native(uv_async_init(l.native(), native(), &async::async_trampoline));
+      if (!result) return result;
+      // Callable preparation precedes native init; committing cannot throw.
+      static_dispatch_ = nullptr;
+      replace_callback(std::move(cb));
+      return result;
+    }
+
+    template<auto Callback>
+      requires std::invocable<decltype(Callback), async&>
+    status init(loop &l, static_callback<Callback> tag) noexcept {
+      return init(l.view(), tag);
+    }
+
+    template<auto Callback>
+      requires std::invocable<decltype(Callback), async&>
+    status init(loop_view l, static_callback<Callback>) noexcept {
+      const auto result = init(l);
+      if (result) static_dispatch_ = &invoke_static<Callback>;
+      return result;
     }
 
     status set_callback(callback cb) noexcept {
-      if (closing()) return status::from_native(UV_EBADF);
+      if (!initialized() || closing()) return status::from_native(UV_EBADF);
       static_dispatch_ = nullptr;
       replace_callback(std::move(cb));
       return {};
@@ -54,16 +83,18 @@ namespace uv::raw {
     template<auto Callback>
       requires std::invocable<decltype(Callback), async&>
     status set_callback_static() noexcept {
-      if (closing()) return status::from_native(UV_EBADF);
+      if (!initialized() || closing()) return status::from_native(UV_EBADF);
       static_dispatch_ = &invoke_static<Callback>;
       replace_callback({});
       return {};
     }
 
-    // Cross-thread entry point. Producers must be stopped and joined (or
-    // otherwise synchronized) before close. Reading closing() here would race
-    // with loop-thread state without protecting the native storage lifetime.
+    // Publish only after init returns; never overlap init and send. The loop
+    // sentinel is then immutable, so this read adds no closing-state race.
+    // Producers must still be stopped and joined before close; closing() is
+    // not a cross-thread lifetime guard.
     status send() noexcept {
+      if (!initialized()) return status::from_native(UV_EBADF);
       return status::from_native(uv_async_send(native()));
     }
 
@@ -86,10 +117,6 @@ namespace uv::raw {
 
   private:
     using static_dispatch = void (*)(async&) noexcept;
-
-    void init(uv_loop_t *loop) {
-      throw_if_error(uv_async_init(loop, native(), &async::async_trampoline));
-    }
 
     template<auto Callback>
     static void invoke_static(async &self) noexcept {

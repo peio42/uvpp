@@ -53,6 +53,13 @@ ordering is version-dependent: libuv documents stronger send/callback sequential
 consistency starting with 1.53.0; the raw wrapper does not backport that guarantee.
 See [native async memory ordering](https://docs.libuv.org/en/v1.x/async.html).
 
+Complete `async::init()` before publishing the handle to producer threads and
+never overlap initialization attempts with sends. `send()` checks the native
+`loop` pointer for pre-init `UV_EBADF`; it remains unchanged after successful init,
+including through close. This non-atomic observation is not synchronization with
+init or a lifetime guard. The other initialization/state operations are loop-thread
+only.
+
 Before close, prevent new sends and wait for every in-flight producer send to
 return. A concurrent send/close or send after close is outside this raw protocol.
 `send()` does not read `closing()` because that would race with loop-thread state

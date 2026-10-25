@@ -13,6 +13,45 @@ are not message counts. See [libuv async handles](https://docs.libuv.org/en/v1.x
 
 ## Construction and errors
 
+Default construction creates uninitialized storage without registering a native
+handle. `init()` accepts `loop&` or `loop_view`, with no callback, a runtime
+callback, or the same static tag as the constructors:
+
+```cpp
+uv::loop loop;
+uv::raw::async wakeup;
+auto initialized = wakeup.init(loop, [](uv::raw::async& self) { self.close(); });
+if (initialized) {
+  auto submitted = wakeup.send();
+  if (!submitted) wakeup.close();
+}
+loop.run(); // Retain wakeup through any close completion.
+loop.close();
+```
+
+All six `init()` overloads return `uv::status` and are `noexcept` after argument
+preparation. A valid initialized loop is required. Runtime callback preparation
+can allocate or throw before `init()` is entered. Native init failures are returned
+unchanged and leave the wrapper uninitialized, without retaining its supplied
+callback or requiring handle close; retry is permitted. Native loop-owned
+infrastructure can remain. Native init-failure injection has not been validated.
+
+`initialized()` observes `native_handle()->loop != nullptr`, with no new state
+field. It remains true during/after close. Repeat init returns `UV_EALREADY`
+without changing loop, native trampoline, pending notifications, callback mode,
+or executing callable; a rejected prepared callback is released. A callback may
+observe this rejection from inside delivery without disturbing the subscription.
+Native addresses and application-owned `data` are preserved. Storage reuse after
+successful initialization is not supported.
+
+Before init, observations (`active`, `closing`, `has_ref`) are false;
+`ref`/`unref`/all close variants are inert, and no close callback is retained or
+invoked. `send`, both callback setters, and native descriptor/buffer queries return
+`UV_EBADF`. Only use borrowed handle views after successful init; their native
+operations do not perform these checks. Successful init immediately makes the
+handle active and referenced, even with no callback; it requires explicit close
+and storage retention through completion.
+
 Construct from `loop&` or `loop_view`, with an optional runtime callback or a
 static callback tag:
 
@@ -28,7 +67,8 @@ uv::raw::async static_dispatch{
 Both callback forms receive `uv::raw::async&`. Construction without a callback
 is allowed: notifications are consumed without user delivery until one is
 installed. The handle still remains active and referenced by default. Native
-initialization errors throw `uv::error`. Runtime callable preparation may allocate
+initialization errors from these constructors throw `uv::error`; they unwrap the
+same explicit `init()` result. Runtime callable preparation may allocate
 or throw before initialization; committing the prepared callable after native
 init uses a non-throwing move.
 
@@ -37,7 +77,8 @@ means notification submission, not user delivery, task acceptance, or one callba
 per send. There is no later native completion-error argument in the callback.
 
 `set_callback(cb)` and `set_callback_static<Callback>()` also return `uv::status`.
-They require the loop thread and return `UV_EBADF` while closing. Preparing a
+They require the loop thread and return `UV_EBADF` before initialization or while
+closing. Preparing a
 `std::function` argument may still throw before `set_callback` is entered; failure
 leaves the current callback intact, including during reentrant replacement.
 Static callback templates use `std::invocable` constraints.
@@ -50,7 +91,7 @@ make other handle operations cross-thread safe.
 
 ## Callback replacement
 
-One native trampoline is installed at construction. Each delivery selects either
+One native trampoline is installed on successful initialization. Each delivery selects either
 the runtime callable or a stored static function pointer. Runtime/static changes
 never reinitialize the handle or independently replace its native callback.
 
@@ -69,8 +110,12 @@ Exceptions escaping runtime or static callbacks terminate at the native C bounda
 
 ## Threads, data, and close
 
-Only `send()` is a cross-thread entry point. Callback installation, replacement,
-close, and destruction happen on the loop thread. Producers may send while that
+Only `send()` is a cross-thread entry point. Complete successful `init()` on the
+loop thread before publishing the handle to producers, using application-owned
+synchronization (such as starting a producer thread after init returns). Never
+race any init attempt with sends. A pre-init `send()` returns `UV_EBADF`, but its
+sentinel check is not synchronization with concurrent initialization. Callback
+installation, replacement, close, and destruction happen on the loop thread. Producers may send while that
 thread delivers or replaces callbacks, provided the handle remains initialized
 and open throughout every send.
 
@@ -84,8 +129,10 @@ lifetime-safe producer endpoints.
 
 `send()` deliberately does not read `closing()`: that loop-thread flag is not a
 cross-thread lifetime guard. Sending during/after close violates the raw protocol;
-there is no wrapper guarantee that such misuse reports `UV_EBADF`. The setter
-methods' closing checks do not extend to cross-thread send admission.
+there is no wrapper guarantee that such misuse reports `UV_EBADF`. `send()` reads
+only the native loop pointer to reject uninitialized storage;
+that pointer stays unchanged after successful init, including through close.
+The setter methods' closing checks do not extend to cross-thread send admission.
 
 The following example joins its sole producer before any close can run:
 
