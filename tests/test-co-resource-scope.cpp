@@ -68,10 +68,10 @@ TEST(UvppV3Coroutine, resourceScopeWaitsForEveryTcpCloseCompletion) {
   }
 
   uv::loop loop;
-  uv::tcp listener(loop);
-  std::vector<std::unique_ptr<uv::tcp>> peers;
+  uv::raw::tcp listener(loop);
+  std::vector<std::unique_ptr<uv::raw::tcp>> peers;
   try {
-    listener.bind(uv::ipv4{"127.0.0.1", 0});
+    listener.bind(uv::ipv4{"127.0.0.1", 0}).throw_if_error();
   } catch (const uv::error &error) {
     listener.close();
     loop.run();
@@ -81,13 +81,13 @@ TEST(UvppV3Coroutine, resourceScopeWaitsForEveryTcpCloseCompletion) {
     }
     throw;
   }
-  listener.listen([&](uv::tcp &server, uv::status status) {
+  listener.listen([&](uv::raw::tcp &server, uv::status status) {
     EXPECT_TRUE(status);
-    auto peer = std::make_unique<uv::tcp>(loop);
+    auto peer = std::make_unique<uv::raw::tcp>(loop);
     EXPECT_NO_THROW(server.accept(*peer));
     peers.push_back(std::move(peer));
   });
-  const uv::ipv4 address{"127.0.0.1", listener.sockname().port()};
+  const uv::ipv4 address{"127.0.0.1", listener.sockname().value().port()};
   bool finish_completed = false;
 
   auto parent = [&]() -> uv::co::task<void> {

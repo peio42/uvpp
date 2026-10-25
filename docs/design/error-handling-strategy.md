@@ -257,3 +257,16 @@ quiesce producers before close, so send during or after closing is a protocol vi
 Notifications coalesce and carry no completion error/result payload. Empty
 callback selection is supported and drops notifications while the handle remains
 active. See [raw async notifications](../user/async.md).
+
+Raw TCP setup now uses `init() -> status` with throwing constructors delegating to
+`.throw_if_error()`. Open/bind/options/reset return status; sockname/peername return
+`result<socket_address>` with inline payload storage. Common native descriptor and
+buffer results preserve their payloads. Chrono keepalive delay validation reports
+`UV_EINVAL` before mutation. Native init failure is already cleaned up by libuv;
+uvpp restores its null loop sentinel without starting asynchronous close.
+
+Normal close remains void, while reset rejection preserves stream subscriptions
+and does not install its new close callback. Runtime callback construction and
+address preparation can throw before operational entry. The inherited stream
+and separate connect/write/shutdown request submission surfaces retain their
+transitional throwing policy; see [raw TCP](../user/networking/raw-tcp.md).

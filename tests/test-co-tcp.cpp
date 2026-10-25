@@ -17,9 +17,9 @@ using namespace uvpp::test;
 
 TEST(UvppV3Coroutine, tcpConnectionConnectsMovesAndCloses) {
   uv::loop loop;
-  uv::tcp listener(loop);
+  uv::raw::tcp listener(loop);
   try {
-    listener.bind(uv::ipv4{"127.0.0.1", 0});
+    listener.bind(uv::ipv4{"127.0.0.1", 0}).throw_if_error();
   } catch (const uv::error &error) {
     if (error.code().value() == UV_EPERM) {
       listener.close();
@@ -29,8 +29,8 @@ TEST(UvppV3Coroutine, tcpConnectionConnectsMovesAndCloses) {
     }
     throw;
   }
-  const auto address = uv::ipv4{"127.0.0.1", listener.sockname().port()};
-  listener.listen([&](uv::tcp &, uv::status status) {
+  const auto address = uv::ipv4{"127.0.0.1", listener.sockname().value().port()};
+  listener.listen([&](uv::raw::tcp &, uv::status status) {
     EXPECT_TRUE(status);
   });
 
@@ -403,9 +403,9 @@ TEST(UvppV3Coroutine, internalTcpCloseCompletionDeliversDetachedWaitersAfterOwne
 
 TEST(UvppV3Coroutine, tcpConnectionRefusalClosesBeforeDeliveringTheError) {
   uv::loop loop;
-  uv::tcp listener(loop);
+  uv::raw::tcp listener(loop);
   try {
-    listener.bind(uv::ipv4{"127.0.0.1", 0});
+    listener.bind(uv::ipv4{"127.0.0.1", 0}).throw_if_error();
   } catch (const uv::error &error) {
     if (error.code().value() == UV_EPERM) {
       listener.close();
@@ -415,7 +415,7 @@ TEST(UvppV3Coroutine, tcpConnectionRefusalClosesBeforeDeliveringTheError) {
     }
     throw;
   }
-  const auto address = uv::ipv4{"127.0.0.1", listener.sockname().port()};
+  const auto address = uv::ipv4{"127.0.0.1", listener.sockname().value().port()};
   listener.close();
   loop.run();
 
@@ -443,9 +443,9 @@ TEST(UvppV3Coroutine, tcpConnectionRefusalClosesBeforeDeliveringTheError) {
 
 TEST(UvppV3Coroutine, tcpConnectionClosesDuringExceptionalTaskExit) {
   uv::loop loop;
-  uv::tcp listener(loop);
+  uv::raw::tcp listener(loop);
   try {
-    listener.bind(uv::ipv4{"127.0.0.1", 0});
+    listener.bind(uv::ipv4{"127.0.0.1", 0}).throw_if_error();
   } catch (const uv::error &error) {
     if (error.code().value() == UV_EPERM) {
       listener.close();
@@ -455,8 +455,8 @@ TEST(UvppV3Coroutine, tcpConnectionClosesDuringExceptionalTaskExit) {
     }
     throw;
   }
-  const auto address = uv::ipv4{"127.0.0.1", listener.sockname().port()};
-  listener.listen([&](uv::tcp &server, uv::status) { server.close(); });
+  const auto address = uv::ipv4{"127.0.0.1", listener.sockname().value().port()};
+  listener.listen([&](uv::raw::tcp &server, uv::status) { server.close(); });
 
   auto client = [&]() -> uv::co::task<void> {
     auto socket = co_await uv::tcp_connection::connect(address);
@@ -476,9 +476,9 @@ TEST(UvppV3Coroutine, tcpConnectionRejectsInvalidAddressDuringSetup) {
 
 TEST(UvppV3Coroutine, tcpConnectionReadSomeStopsAndReleasesSlotsBeforeResumption) {
   uv::loop loop;
-  uv::tcp listener(loop);
+  uv::raw::tcp listener(loop);
   try {
-    listener.bind(uv::ipv4{"127.0.0.1", 0});
+    listener.bind(uv::ipv4{"127.0.0.1", 0}).throw_if_error();
   } catch (const uv::error &error) {
     if (error.code().value() == UV_EPERM) {
       listener.close();
@@ -488,13 +488,13 @@ TEST(UvppV3Coroutine, tcpConnectionReadSomeStopsAndReleasesSlotsBeforeResumption
     }
     throw;
   }
-  const auto address = uv::ipv4{"127.0.0.1", listener.sockname().port()};
-  std::unique_ptr<uv::tcp> peer;
+  const auto address = uv::ipv4{"127.0.0.1", listener.sockname().value().port()};
+  std::unique_ptr<uv::raw::tcp> peer;
   std::unique_ptr<uv::write_request> reply_request;
   std::string reply{"reply"};
-  listener.listen([&](uv::tcp &server, uv::status status) {
+  listener.listen([&](uv::raw::tcp &server, uv::status status) {
     ASSERT_TRUE(status);
-    peer = std::make_unique<uv::tcp>(loop);
+    peer = std::make_unique<uv::raw::tcp>(loop);
     ASSERT_NO_THROW(server.accept(*peer));
     reply_request = std::make_unique<uv::write_request>();
     peer->write(*reply_request, std::as_bytes(std::span{reply.data(), reply.size()}),
@@ -764,10 +764,10 @@ TEST(UvppV3Coroutine, tcpConnectionPermitsOneReadAndOneWrite) {
   std::string client_received;
 
   pair.peer->read_start(
-      [&](uv::tcp &, std::size_t) {
+      [&](uv::raw::tcp &, std::size_t) {
         return uv::buffer_view{peer_buffer.data(), peer_buffer.size()};
       },
-      [&](uv::tcp &peer, uv::read_result result) {
+      [&](uv::raw::tcp &peer, uv::read_result result) {
         ASSERT_TRUE(result);
         EXPECT_EQ(result.count(), request.size());
         EXPECT_EQ((std::string_view{peer_buffer.data(),

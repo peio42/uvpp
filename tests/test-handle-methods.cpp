@@ -7,19 +7,21 @@
 
 TEST(Uvpp2HandleMethods, exposesNativeFileDescriptorAndSocketBuffers) {
   uv::loop loop;
-  uv::tcp tcp(loop);
+  uv::raw::tcp tcp(loop);
 
-  tcp.bind(uv::ipv4{"127.0.0.1", 0});
+  tcp.bind(uv::ipv4{"127.0.0.1", 0}).throw_if_error();
 
-  EXPECT_NO_THROW(static_cast<void>(tcp.fileno()));
+  EXPECT_TRUE(tcp.fileno());
 
   auto send_size = tcp.send_buffer_size();
   auto receive_size = tcp.receive_buffer_size();
-  EXPECT_GT(send_size, 0);
-  EXPECT_GT(receive_size, 0);
+  ASSERT_TRUE(send_size);
+  EXPECT_GT(send_size.value(), 0);
+  ASSERT_TRUE(receive_size);
+  EXPECT_GT(receive_size.value(), 0);
 
-  EXPECT_NO_THROW(tcp.send_buffer_size(send_size));
-  EXPECT_NO_THROW(tcp.receive_buffer_size(receive_size));
+  EXPECT_TRUE(tcp.send_buffer_size(send_size.value()));
+  EXPECT_TRUE(tcp.receive_buffer_size(receive_size.value()));
 
   tcp.close();
   loop.run();
@@ -28,15 +30,15 @@ TEST(Uvpp2HandleMethods, exposesNativeFileDescriptorAndSocketBuffers) {
 
 TEST(Uvpp2HandleMethods, exposesTcpOptionsAndSocknames) {
   uv::loop loop;
-  uv::tcp tcp(loop);
+  uv::raw::tcp tcp(loop);
 
-  EXPECT_NO_THROW(tcp.no_delay(true));
-  EXPECT_NO_THROW(tcp.keep_alive(false));
-  EXPECT_NO_THROW(tcp.simultaneous_accepts(true));
+  EXPECT_TRUE(tcp.no_delay(true));
+  EXPECT_TRUE(tcp.keep_alive(false));
+  EXPECT_TRUE(tcp.simultaneous_accepts(true));
 
-  tcp.bind(uv::ipv4{"127.0.0.1", 0});
+  tcp.bind(uv::ipv4{"127.0.0.1", 0}).throw_if_error();
 
-  auto tcp_addr = tcp.sockname();
+  auto tcp_addr = tcp.sockname().value();
   EXPECT_GT(tcp_addr.port(), 0);
 
   tcp.close();

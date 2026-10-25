@@ -70,17 +70,17 @@ struct cleanup_sample {
 
 cleanup_sample run_once(std::size_t connection_count) {
   uv::loop loop;
-  uv::tcp server(loop);
-  std::vector<std::unique_ptr<uv::tcp>> peers;
+  uv::raw::tcp server(loop);
+  std::vector<std::unique_ptr<uv::raw::tcp>> peers;
   int server_status = 0;
-  server.bind(uv::ipv4{"127.0.0.1", 0});
-  const auto address = uv::ipv4{"127.0.0.1", server.sockname().port()};
-  server.listen([&](uv::tcp &listener, uv::result status) {
+  server.bind(uv::ipv4{"127.0.0.1", 0}).throw_if_error();
+  const auto address = uv::ipv4{"127.0.0.1", server.sockname().value().port()};
+  server.listen([&](uv::raw::tcp &listener, uv::status status) {
     if (!status) {
-      server_status = status.status();
+      server_status = status.error().native();
       return;
     }
-    auto peer = std::make_unique<uv::tcp>(loop);
+    auto peer = std::make_unique<uv::raw::tcp>(loop);
     try {
       listener.accept(*peer);
     } catch (const uv::error &error) {

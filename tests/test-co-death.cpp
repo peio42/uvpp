@@ -133,15 +133,15 @@ TEST(UvppV3CoroutineDeathTest, tcpConnectionDestructionWithActivePipeHandleExpor
   EXPECT_DEATH(([&] {
     uv::loop loop;
     uv::pipe_listener listener(loop, path, true);
-    uv::tcp tcp_listener(loop);
-    tcp_listener.bind(uv::ipv4{"127.0.0.1", 0});
-    const uv::ipv4 address{"127.0.0.1", tcp_listener.sockname().port()};
-    std::unique_ptr<uv::tcp> peer;
-    tcp_listener.listen([&](uv::tcp &server, uv::status status) {
+    uv::raw::tcp tcp_listener(loop);
+    tcp_listener.bind(uv::ipv4{"127.0.0.1", 0}).throw_if_error();
+    const uv::ipv4 address{"127.0.0.1", tcp_listener.sockname().value().port()};
+    std::unique_ptr<uv::raw::tcp> peer;
+    tcp_listener.listen([&](uv::raw::tcp &server, uv::status status) {
       if (!status) {
         std::terminate();
       }
-      peer = std::make_unique<uv::tcp>(loop);
+      peer = std::make_unique<uv::raw::tcp>(loop);
       server.accept(*peer);
     });
     std::optional<uv::pipe_connection> pipe;

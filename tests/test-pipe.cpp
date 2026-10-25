@@ -227,8 +227,8 @@ TEST(Uvpp2Pipe, writeWithHandleSendsStreamOverIpc) {
   uv::connect_request connect_req;
   uv::write_request write_req;
 
-  uv::tcp tcp_to_pass(loop);
-  tcp_to_pass.bind(uv::ipv4{"127.0.0.1", 0});
+  uv::raw::tcp tcp_to_pass(loop);
+  tcp_to_pass.bind(uv::ipv4{"127.0.0.1", 0}).throw_if_error();
 
   bool data_received   = false;
   bool handle_received = false;
@@ -251,10 +251,10 @@ TEST(Uvpp2Pipe, writeWithHandleSendsStreamOverIpc) {
 
       if (ipc.pending_count() > 0) {
         EXPECT_EQ(ipc.pending_type(), uv::handle_type::tcp);
-        auto *received = new uv::tcp(loop);
+        auto *received = new uv::raw::tcp(loop);
         ipc.accept(*received);
         handle_received = true;
-        received->close([](uv::tcp &t) { delete &t; });
+        received->close([](uv::raw::tcp &t) { delete &t; });
       }
 
       ipc.read_stop();
@@ -288,7 +288,7 @@ TEST(Uvpp2Pipe, writeWithHandleSendsStreamOverIpc) {
 TEST(Uvpp2Pipe, writeWithHandleNowReportsUnconnectedPipeOutcome) {
   uv::loop loop;
   uv::pipe ipc(loop, true);
-  uv::tcp handle(loop);
+  uv::raw::tcp handle(loop);
 
   static char msg[] = "x";
   uv::buffer_view buf{msg, 1};

@@ -174,3 +174,10 @@ and loop-phase watchers. The internal initialization helper forwards each family
 notification argument types to the existing raw watcher slot; it adds no callback
 storage or dispatch layer. Rejected pre-init starts release their prepared callable
 without entering native start or changing signal one-shot bookkeeping.
+
+TCP ordinary/reset close uses a protected stream slot-release hook after native
+close has quiesced delivery. Runtime reset close stores its prepared close callable
+only after native initiation succeeds, avoiding callback replacement on failure.
+Handle read/allocator/listener slots are separate from connect/write/shutdown
+request callbacks, which remain retained until their own actual completion.
+Stream start/stop/submission rollback is deferred to the next network slice.

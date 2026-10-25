@@ -177,3 +177,12 @@ close and preserve stable storage/application data. This rollback occurs before
 requests exist; it is not a facility for resetting successful or closed handles.
 The caller retains ownership of descriptors/sockets, including native nonblocking
 side effects left by an unsuccessful init.
+
+Raw TCP stays non-copyable/non-movable with application-owned native `data`.
+Successful `open(socket)` transfers socket close responsibility to the handle;
+failed open does not transfer ownership, though native side effects may remain.
+Init failure requires no handle close because libuv already undoes its registration
+and socket acquisition. Successful init requires explicit ordinary/reset close
+and native storage retention until completion. Close releases handle-owned stream
+captures but never releases caller-owned connect/write/shutdown requests early.
+See [raw TCP lifetime and transitional scope](../user/networking/raw-tcp.md).

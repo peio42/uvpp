@@ -188,3 +188,28 @@ It requires an isolated dependency on libuv's private registration queue.
 The [rollback audit](raw-poll-init-rollback.md) records public-API alternatives,
 exact official tags reviewed, both queue layouts, backend/failure prerequisites,
 and the native Windows Winsock fault-injection tests and pinned CI jobs.
+
+## Raw TCP handle migration
+
+`uv::raw::tcp` combines the existing `uv::stream` storage/submission substrate
+with `detail::initializable_handle` lifecycle/native-query guards. The watcher
+initialization helper now specializes this same storage-free base; it preserves
+its prior callback/close semantics. TCP native init failures are already unlinked
+and resource-cleaned by libuv (Unix/Windows init_ex source reviewed at 1.45.0,
+1.51.0, and 1.53.0); clearing native storage restores the stale loop sentinel and
+preserves application `data`, without a second queue rollback.
+
+TCP init/open/bind/options/reset initiation return status; address queries return
+`result<socket_address>`, descriptor queries return `result<uv_os_fd_t>`, and buffer
+queries retain counts. Keepalive takes chrono seconds with native-range validation.
+C++ address/callback preparation remains separate from native operational errors.
+Normal close is void, while reset close can fail before initiation. Reset runtime
+callback installation is committed only after native success; failure retains
+existing stream slots and releases the rejected close callback.
+
+A protected stream callback-release hook quiesces handle-owned listener/read/
+allocator slots after TCP native close initiation. It does not alter request
+callback ownership or early completion rules. All other stream submission and
+TCP connect/request operations retain their existing throwing transitional API;
+there is no separate request namespace migration or new high-level owner here.
+See [the implemented scope](../user/networking/raw-tcp.md).

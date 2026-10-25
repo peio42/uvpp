@@ -195,6 +195,15 @@ namespace uv {
       return write_now_result{uv_try_write(native_stream(), &raw, 1)};
     }
 
+  protected:
+    // Called only after native close has quiesced the stream. Request callbacks
+    // belong to their requests and are deliberately independent of these slots.
+    void release_callbacks() noexcept {
+      allocate_callback_.replace({});
+      read_callback_.replace({});
+      connection_callback_.replace({});
+    }
+
   private:
     static void connection_trampoline(uv_stream_t *raw, int status) noexcept {
       auto &self = Derived::from_native(reinterpret_cast<Raw *>(raw));

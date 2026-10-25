@@ -351,13 +351,13 @@ TEST(UvppV3Coroutine, ipcPipeTransfersTcpIntoAStableReceivedOwner) {
   std::filesystem::remove(path);
   uv::loop loop;
   uv::pipe_listener control_listener(loop, path, true);
-  uv::tcp tcp_listener(loop);
-  tcp_listener.bind(uv::ipv4{"127.0.0.1", 0});
-  const uv::ipv4 tcp_address{"127.0.0.1", tcp_listener.sockname().port()};
-  std::unique_ptr<uv::tcp> tcp_peer;
-  tcp_listener.listen([&](uv::tcp &server, uv::status status) {
+  uv::raw::tcp tcp_listener(loop);
+  tcp_listener.bind(uv::ipv4{"127.0.0.1", 0}).throw_if_error();
+  const uv::ipv4 tcp_address{"127.0.0.1", tcp_listener.sockname().value().port()};
+  std::unique_ptr<uv::raw::tcp> tcp_peer;
+  tcp_listener.listen([&](uv::raw::tcp &server, uv::status status) {
     EXPECT_TRUE(status);
-    tcp_peer = std::make_unique<uv::tcp>(loop);
+    tcp_peer = std::make_unique<uv::raw::tcp>(loop);
     EXPECT_NO_THROW(server.accept(*tcp_peer));
   });
 
@@ -550,13 +550,13 @@ TEST(UvppV3Coroutine, pipeWriteWithHandleRejectsANonIpcPipe) {
   std::filesystem::remove(path);
   uv::loop loop;
   uv::pipe_listener pipe_listener(loop, path, false);
-  uv::tcp tcp_listener(loop);
-  tcp_listener.bind(uv::ipv4{"127.0.0.1", 0});
-  const uv::ipv4 address{"127.0.0.1", tcp_listener.sockname().port()};
-  std::unique_ptr<uv::tcp> peer;
-  tcp_listener.listen([&](uv::tcp &server, uv::status status) {
+  uv::raw::tcp tcp_listener(loop);
+  tcp_listener.bind(uv::ipv4{"127.0.0.1", 0}).throw_if_error();
+  const uv::ipv4 address{"127.0.0.1", tcp_listener.sockname().value().port()};
+  std::unique_ptr<uv::raw::tcp> peer;
+  tcp_listener.listen([&](uv::raw::tcp &server, uv::status status) {
     EXPECT_TRUE(status);
-    peer = std::make_unique<uv::tcp>(loop);
+    peer = std::make_unique<uv::raw::tcp>(loop);
     EXPECT_NO_THROW(server.accept(*peer));
   });
   int status = 0;
@@ -593,13 +593,13 @@ TEST(UvppV3Coroutine, ipcPipeWriteWithHandleRejectsAnActiveWrite) {
   std::filesystem::remove(path);
   uv::loop loop;
   uv::pipe_listener listener(loop, path, true);
-  uv::tcp tcp_listener(loop);
-  tcp_listener.bind(uv::ipv4{"127.0.0.1", 0});
-  const uv::ipv4 address{"127.0.0.1", tcp_listener.sockname().port()};
-  std::unique_ptr<uv::tcp> peer;
-  tcp_listener.listen([&](uv::tcp &server, uv::status status) {
+  uv::raw::tcp tcp_listener(loop);
+  tcp_listener.bind(uv::ipv4{"127.0.0.1", 0}).throw_if_error();
+  const uv::ipv4 address{"127.0.0.1", tcp_listener.sockname().value().port()};
+  std::unique_ptr<uv::raw::tcp> peer;
+  tcp_listener.listen([&](uv::raw::tcp &server, uv::status status) {
     EXPECT_TRUE(status);
-    peer = std::make_unique<uv::tcp>(loop);
+    peer = std::make_unique<uv::raw::tcp>(loop);
     EXPECT_NO_THROW(server.accept(*peer));
   });
   bool writers_finished = false;
@@ -692,13 +692,13 @@ TEST(UvppV3Coroutine, pipeWriteWithHandleUsesTheTcpExportSlotAcrossPipes) {
   std::filesystem::remove(path);
   uv::loop loop;
   uv::pipe_listener listener(loop, path, true);
-  uv::tcp tcp_listener(loop);
-  tcp_listener.bind(uv::ipv4{"127.0.0.1", 0});
-  const uv::ipv4 address{"127.0.0.1", tcp_listener.sockname().port()};
-  std::unique_ptr<uv::tcp> peer;
-  tcp_listener.listen([&](uv::tcp &server, uv::status status) {
+  uv::raw::tcp tcp_listener(loop);
+  tcp_listener.bind(uv::ipv4{"127.0.0.1", 0}).throw_if_error();
+  const uv::ipv4 address{"127.0.0.1", tcp_listener.sockname().value().port()};
+  std::unique_ptr<uv::raw::tcp> peer;
+  tcp_listener.listen([&](uv::raw::tcp &server, uv::status status) {
     EXPECT_TRUE(status);
-    peer = std::make_unique<uv::tcp>(loop);
+    peer = std::make_unique<uv::raw::tcp>(loop);
     EXPECT_NO_THROW(server.accept(*peer));
   });
   bool first_completed = false;
@@ -758,13 +758,13 @@ TEST(UvppV3Coroutine, ipcPipeBackToBackHandleWritesPreserveBytesAndOwners) {
   std::filesystem::remove(path);
   uv::loop loop;
   uv::pipe_listener listener(loop, path, true);
-  uv::tcp tcp_listener(loop);
-  tcp_listener.bind(uv::ipv4{"127.0.0.1", 0});
-  const uv::ipv4 address{"127.0.0.1", tcp_listener.sockname().port()};
-  std::vector<std::unique_ptr<uv::tcp>> peers;
-  tcp_listener.listen([&](uv::tcp &server, uv::status status) {
+  uv::raw::tcp tcp_listener(loop);
+  tcp_listener.bind(uv::ipv4{"127.0.0.1", 0}).throw_if_error();
+  const uv::ipv4 address{"127.0.0.1", tcp_listener.sockname().value().port()};
+  std::vector<std::unique_ptr<uv::raw::tcp>> peers;
+  tcp_listener.listen([&](uv::raw::tcp &server, uv::status status) {
     EXPECT_TRUE(status);
-    auto peer = std::make_unique<uv::tcp>(loop);
+    auto peer = std::make_unique<uv::raw::tcp>(loop);
     EXPECT_NO_THROW(server.accept(*peer));
     peers.push_back(std::move(peer));
   });

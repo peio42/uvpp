@@ -25,9 +25,9 @@ static_assert(!spawn_handle_rebinds_result<uv::co::spawn_handle<int>>);
 
 inline bool loopback_tcp_is_permitted() {
   uv::loop loop;
-  uv::tcp probe(loop);
+  uv::raw::tcp probe(loop);
   try {
-    probe.bind(uv::ipv4{"127.0.0.1", 0});
+    probe.bind(uv::ipv4{"127.0.0.1", 0}).throw_if_error();
   } catch (const uv::error &error) {
     probe.close();
     loop.run();
@@ -57,17 +57,17 @@ inline void write_filesystem_test_file(const std::filesystem::path &path, std::s
 
 struct connected_tcp_pair {
   uv::loop loop;
-  uv::tcp listener{loop};
-  std::unique_ptr<uv::tcp> peer;
+  uv::raw::tcp listener{loop};
+  std::unique_ptr<uv::raw::tcp> peer;
   std::optional<uv::tcp_connection> client;
   std::optional<uv::co::spawn_handle<>> connect_execution;
 
   void connect() {
-    listener.bind(uv::ipv4{"127.0.0.1", 0});
-    const auto address = uv::ipv4{"127.0.0.1", listener.sockname().port()};
-    listener.listen([&](uv::tcp &server, uv::status status) {
+    listener.bind(uv::ipv4{"127.0.0.1", 0}).throw_if_error();
+    const auto address = uv::ipv4{"127.0.0.1", listener.sockname().value().port()};
+    listener.listen([&](uv::raw::tcp &server, uv::status status) {
       EXPECT_TRUE(status);
-      peer = std::make_unique<uv::tcp>(loop);
+      peer = std::make_unique<uv::raw::tcp>(loop);
       EXPECT_NO_THROW(server.accept(*peer));
     });
 

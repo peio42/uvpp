@@ -80,3 +80,7 @@ exception paths; owner destruction may leave native cleanup for the loop to driv
 to uvpp; callers must not overwrite it, replace uvpp-owned callbacks, or
 independently close the handle. Moving the owner preserves this storage and its
 callback state. Raw wrappers keep `data` available to application code.
+
+For caller-owned native storage, [raw TCP](raw-tcp.md) provides explicit TCP setup,
+address queries and close/reset. Its inherited stream/request submission surface
+is still transitional and is independent of these high-level owners.

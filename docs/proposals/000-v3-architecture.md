@@ -327,3 +327,23 @@ init error branch requires an isolated internal queue rollback; see
 [implemented architecture](../design/architecture.md#raw-poll-initialization-rollback).
 Native external nonblocking side effects are not rolled back. Broader native
 backend failure injection remains a validation gate.
+
+## Raw TCP first migration slice
+
+The caller-owned TCP class is now `uv::raw::tcp` without a legacy alias. Default
+construction, explicit status init and throwing constructors share native-loop
+initialization tracking. Native TCP init_ex failures are already unregistered and
+resource-cleaned by libuv; uvpp clears the stale loop pointer while preserving
+application data and address stability. No poll-specific queue rollback is reused.
+Open/bind/options/reset return status, address/descriptor/buffer queries retain
+typed payloads, and keepalive duration uses chrono seconds with range validation.
+Normal/reset close releases handle stream slots only after native quiescence;
+reset failure retains existing subscriptions and does not install its new close
+callback. Request callbacks/storage remain independent until actual completion.
+
+The stream substrate and connect/write/shutdown request submission protocols are
+still transitional, including their throwing initiation. Their namespace/error/
+slot migration, then pipe and UDP, remain later slices. This is not a claim of
+fully status-oriented stream I/O. High-level network owners remain independent.
+See [implemented user scope](../user/networking/raw-tcp.md) and
+[TCP tests](../../tests/test-raw-tcp.cpp).

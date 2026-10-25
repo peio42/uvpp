@@ -760,3 +760,40 @@ TTY skips, both separate UDP allocation cases passing, and all example builds.
 The updated posting and timer examples also build with both compilers after their
 error-only checks are switched to the new spelling. Native Windows/macOS runs
 remain CI validation.
+
+## Raw TCP first-slice validation
+
+[`test-raw-tcp.cpp`](../../tests/test-raw-tcp.cpp) adds 16 lifecycle/operation cases
+covering default/pre-init guards, inert close and capture release, stable storage
+and application data, typed address/descriptor/buffer results, IPv4/IPv6 bind,
+native socket ownership transfer by open, typed/range-checked keepalive seconds,
+duplicate init preserving socket/loop, invalid-family failure and retry, normal
+close subscription release, and ordinary/reset native close completion. Runtime
+callback preparation failure is checked separately from native operational errors.
+
+Connected cases retain separate connect/shutdown requests and verify their
+identity/completion callback lifetimes. In particular a reset rejected during
+pending shutdown is attempted from a mutable read callback through the registered
+stream trampoline twice; its callable state and the shutdown request callback
+survive until native completion. Successful reset releases read captures before
+close completion while retaining its close callable through completion.
+
+A Unix/macOS subprocess lowers only its soft descriptor limit after loop setup,
+forcing real native socket creation failure inside init_ex after registration.
+It restores the limit, checks no registration remains, verifies application data
+and null initialization sentinel, tests throwing construction, and retries.
+Windows compiles the portable lifecycle/operation cases without POSIX headers;
+this subprocess case is conditionally excluded. Windows native init fault
+injection remains separate validation work. Libuv init_ex cleanup was source-
+reviewed for Unix/Windows at 1.45.0, 1.51.0, and 1.53.0; uvpp does not unlink
+TCP's already-removed registration a second time.
+
+Full local GCC/Clang `make test-all` each passes 548 tests with two existing TTY
+skips, both separate UDP allocation cases, and all examples. Focused ASan/UBSan
+with leak detection passes 28 tests with one existing TTY skip, including legacy
+TCP/stream interoperability, native layout and native-query cases. The migrated
+resource-scope cleanup benchmark builds; no new performance/allocation claim is
+inferred from compilation. Clang/MinGW cross-target syntax checks cover the new
+TCP cases and existing TCP/layout units with the repository's Windows defines
+(the existing MinGW UV_ONCE_INIT missing-braces warning is suppressed for umbrella
+header units). Native Windows/macOS execution remains a CI gate.
