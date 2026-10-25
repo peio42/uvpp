@@ -80,6 +80,10 @@ Provide integral seconds (or an exactly convertible chrono duration); there is
 no implicit fractional-second rounding. `UVPP_HAS_TCP_REUSEPORT` gates the
 `reuse_port` bind flag; `ipv6_only` retains native IPv6 semantics.
 
+On Windows, `simultaneous_accepts(false)` switches to a single pending accept;
+a later `simultaneous_accepts(true)` returns native `UV_ENOTSUP`. Configuring the
+initial enabled state succeeds; disabling it is not a reversible toggle there.
+
 Open/bind/options and address queries reject closing handles with `UV_EBADF`.
 Native descriptor/buffer queries retain native observation/error behavior after
 initialization, including while closing if the native resource still exists.

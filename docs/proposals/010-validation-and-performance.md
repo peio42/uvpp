@@ -781,7 +781,9 @@ close completion while retaining its close callable through completion.
 A Unix/macOS subprocess lowers only its soft descriptor limit after loop setup,
 forcing real native socket creation failure inside init_ex after registration.
 It restores the limit, checks no registration remains, verifies application data
-and null initialization sentinel, tests throwing construction, and retries.
+and null initialization sentinel, propagates the stored error after restoring
+the limit, and retries. Throwing constructor failure is separately covered with
+an invalid family.
 Windows compiles the portable lifecycle/operation cases without POSIX headers;
 this subprocess case is conditionally excluded. Windows native init fault
 injection remains separate validation work. Libuv init_ex cleanup was source-
@@ -797,3 +799,27 @@ inferred from compilation. Clang/MinGW cross-target syntax checks cover the new
 TCP cases and existing TCP/layout units with the repository's Windows defines
 (the existing MinGW UV_ONCE_INIT missing-braces warning is suppressed for umbrella
 header units). Native Windows/macOS execution remains a CI gate.
+
+### TCP Windows option transitions and sanitizer-safe resource exhaustion
+
+The options test now checks Windows' native `UV_ENOTSUP` when re-enabling
+simultaneous accepts after disabling them; the wrapper preserves that native
+failure. Unix retains its successful/no-op behavior.
+
+The native socket-exhaustion subprocess restricts descriptors only across the
+status-returning init call. It restores the soft limit before constructing or
+inspecting C++ exceptions: UBSan vptr checking and symbolization may need to open
+process metadata, and a zero descriptor limit can otherwise produce misleading
+invalid-vptr diagnostics and sanitizer-internal failures. The native init still
+fails after registration and must leave retryable unregistered storage. GoogleTest
+uses its threadsafe re-exec style for this case, avoiding allocation/exception
+work in a fork-only child after other suites have started native threads.
+
+Validation of this correction: full GCC/Clang suites and the complete
+`make test-asan-ubsan` target each pass 548 tests with two existing TTY skips;
+the separate UDP allocation cases and examples also pass/build. The Windows
+branch passes Clang/MinGW warnings-as-errors syntax validation. A second
+ASan/UBSan runtime (Clang 16 with GCC 12 standard headers) reproduces the exact
+old invalid-vptr / pthread_getattr_np / EMFILE symbolizer failure with the original
+test, while the corrected subprocess test passes. Native Windows execution
+remains to be confirmed by CI.

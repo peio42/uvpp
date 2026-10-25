@@ -116,8 +116,15 @@ TEST_F(RawTcp, bindQueriesAndOptionsReturnTypedNativeOutcomes) {
   EXPECT_TRUE(handle.no_delay(true));
   EXPECT_TRUE(handle.no_delay(false));
   EXPECT_TRUE(handle.keep_alive(false));
-  EXPECT_TRUE(handle.simultaneous_accepts(false));
   EXPECT_TRUE(handle.simultaneous_accepts(true));
+  EXPECT_TRUE(handle.simultaneous_accepts(false));
+  const auto reenabled = handle.simultaneous_accepts(true);
+#ifdef _WIN32
+  // Windows cannot transition back from single to multiple pending accepts.
+  EXPECT_EQ(reenabled.error(), uv::make_error_code(UV_ENOTSUP));
+#else
+  EXPECT_TRUE(reenabled);
+#endif
   ASSERT_TRUE(handle.bind(uv::ipv4{"127.0.0.1", 0}));
   const auto &view = handle;
   auto address = view.sockname();
@@ -444,12 +451,16 @@ int exhausted_family_init() {
   auto limited = saved;
   limited.rlim_cur = 0;
   if (setrlimit(RLIMIT_NOFILE, &limited)) return 2;
+  // Keep only native status initiation inside the descriptor-starved window.
+  // Constructing a C++ exception here can force UBSan's vptr checker/symbolizer
+  // to open /proc resources, masking the native failure with sanitizer errors.
   const auto failed = handle.init(loop, uv::tcp_socket_family::ipv4);
-  bool ctor_failed = false;
-  try { tcp other{loop, uv::tcp_socket_family::ipv4}; }
-  catch (const uv::error &error) { ctor_failed = error.code().value() == UV_EMFILE; }
   if (setrlimit(RLIMIT_NOFILE, &saved)) return 3;
-  if (failed.error().native() != UV_EMFILE || !ctor_failed || handle.initialized()) return 4;
+  if (failed.error().native() != UV_EMFILE || handle.initialized()) return 4;
+  bool propagated = false;
+  try { failed.throw_if_error(); }
+  catch (const uv::error &error) { propagated = error.code().value() == UV_EMFILE; }
+  if (!propagated) return 7;
   if (!loop.handles().empty() || handle.user_data<int>() != &marker) return 5;
   if (!handle.init(loop, uv::tcp_socket_family::ipv4)) return 6;
   handle.close();
@@ -458,7 +469,12 @@ int exhausted_family_init() {
   return 0;
 }
 TEST(RawTcpDeathTest, nativeSocketCreationFailureAfterRegistrationAllowsRetry) {
+  // Other suites may have started libuv/sanitizer threads. Re-exec rather than
+  // running native allocation and C++ exception handling in a fork-only child.
+  const auto previous_style = GTEST_FLAG_GET(death_test_style);
+  GTEST_FLAG_SET(death_test_style, "threadsafe");
   EXPECT_EXIT(std::exit(exhausted_family_init()), ::testing::ExitedWithCode(0), "");
+  GTEST_FLAG_SET(death_test_style, previous_style);
 }
 #endif
 
