@@ -232,8 +232,10 @@ The [implemented raw UDP contract](../user/networking/raw-udp.md) now covers
 status receive start/stop and asynchronous send submission, separate
 `uv::raw::udp_send_request`, runtime/static callback replacement/reuse and close.
 Paired subscription loans preserve allocator-owned storage through native delivery
-and recvmmsg chunks/FREE, including stop/replacement/close from a chunk. Native
-receive errors quiesce before delivery. Immediate sends and suffix batches preserve
+and recvmmsg notifications actually delivered by libuv. Stop/replacement/close
+from a chunk do not force remaining chunks or FREE; native callback fields are
+left to libuv. If FREE is suppressed, the pending pair is retained until the next
+allocation or close completion. Native receive errors quiesce before delivery. Immediate sends and suffix batches preserve
 byte/datagram progress and would-block without hidden C++ operation metadata.
 See [real native tests](../../tests/test-raw-udp-io.cpp) and the
 [isolated allocation tests](../../tests/udp-allocation.cpp). Broader proposal work

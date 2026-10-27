@@ -849,8 +849,11 @@ subscription replacement, stop/close with allocator-owned storage in use, native
 ENOBUFS and rearming, empty/truncated datagrams, pending-request rejection with a
 native-storage snapshot, native submission/completion failures, request reuse and
 borrowed payload retention through close. Real recvmmsg tests retain the original
-pair through chunk/FREE after stop, replacement or close, without assuming a fixed
-kernel batch size. Immediate tests exercise native queue would-block, metadata
+pair through notifications actually delivered after stop, replacement or close,
+without requiring FREE or a fixed kernel batch size. Native callback state after
+stop is compared against direct libuv, and loans without FREE are retained until
+next allocation/close completion. The former callback-field workaround is removed;
+uvpp leaves native chunk/FREE delivery to the linked backend/version. Immediate tests exercise native queue would-block, metadata
 validation and partial prefix/suffix retry (allowing backend whole-call rejection).
 
 [Isolated allocation coverage](../../tests/udp-allocation.cpp) adds prepared
@@ -858,9 +861,9 @@ heap-backed UDP callback submission and real native receive/send delivery, plus
 a prepared immediate batch, with C++ allocation disabled. This measures the
 wrapper path; it does not promise that libuv performs no native allocations.
 
-GCC and Clang full suites pass 636 tests each with two existing TTY skips; each
+GCC and Clang full suites pass 637 tests each with two existing TTY skips; each
 separate allocation binary passes six cases, and all examples build. Focused
-ASan/UBSan covers 47 UDP tests; a libuv 1.48 build/run passes 28 raw UDP tests,
+ASan/UBSan covers 48 UDP tests; a libuv 1.48 build/run passes 29 raw UDP tests,
 with later batch APIs absent at compile time. Windows-target syntax checks pass
 for UDP I/O tests, allocation tests and the example. Native Windows/macOS runtime
 validation remains delegated to the existing CI; local checks do not claim it.

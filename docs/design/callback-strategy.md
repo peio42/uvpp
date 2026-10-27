@@ -200,11 +200,13 @@ See [the stream contract](../user/networking/raw-stream.md).
 ## Raw UDP receive loans and send requests
 
 Raw UDP uses the same generation-tracked persistent slot model as stream reads,
-but retains a paired allocator/receiver loan across all native recvmmsg chunks
-until FREE. An executing old pair survives stop/replacement/close, while its
-generation cannot overwrite a new subscription. The fixed native dispatcher
-finishes an already-read batch even after stop from a chunk; no new polling is
-started. Close completion releases a remaining loan before close delivery.
+but retains a paired allocator/receiver loan across native recvmmsg notifications.
+An executing old pair survives stop/replacement/close, while its generation cannot
+overwrite a new subscription. Native callback fields are never rewritten to force
+remaining chunks or FREE after stop/close. If libuv suppresses FREE, the pending
+pair survives until the next allocation or close completion. Close completion
+releases a remaining loan before close delivery. Allocation ownership must not
+rely solely on FREE after stopping, replacing or closing from a chunk.
 `uv::raw::udp_send_request` shares the stream request submission helper, clearing
 pending and extracting selection before user completion. Native data remains
 application-owned. See [the raw UDP guide](../user/networking/raw-udp.md).

@@ -341,11 +341,21 @@ TEST_F(RawUdpIO, connectedSendUsesNoDestinationAndPreservesEmptyPayload) {
 
 #if UVPP_HAS_UDP_INIT_EX && UVPP_HAS_UDP_RECVMMSG_FLAG && UVPP_HAS_UDP_USING_RECVMMSG && UVPP_HAS_UDP_MMSG_FREE
 class RawUdpMmsg : public RawUdpIO, public ::testing::WithParamInterface<int> {};
-TEST_P(RawUdpMmsg, realBatchKeepsOriginalPairThroughChunksAndFinalFree) {
+TEST_P(RawUdpMmsg, realBatchKeepsOriginalPairForNativeDeliveriesWithoutForcingFree) {
   setup(true);
   if (!receiver.using_recvmmsg()) { GTEST_SKIP() << "Native recvmmsg unavailable"; }
   receiver.user_data(static_state);
   static_state.wait_for_marker = true;
+  // Compare stop's native callback state with a direct libuv stop. In particular,
+  // uvpp must not restore a callback cleared by the current native backend.
+  udp reference{loop, uv::udp_socket_family::ipv4, uv::udp_init_flag::recvmmsg};
+  ASSERT_EQ(uv_udp_recv_start(reference.native(),
+    [](uv_handle_t*, std::size_t, uv_buf_t *out) { *out = uv_buf_init(nullptr, 0); },
+    [](uv_udp_t*, ssize_t, const uv_buf_t*, const sockaddr*, unsigned) {}), 0);
+  ASSERT_EQ(uv_udp_recv_stop(reference.native()), 0);
+  const bool native_receive_cleared = reference.native()->recv_cb == nullptr;
+  const bool native_allocator_cleared = reference.native()->alloc_cb == nullptr;
+  reference.close();
   auto owned = std::make_shared<std::vector<char>>(4 * 65536);
   const auto *base = owned->data();
   std::weak_ptr<std::vector<char>> weak = owned;
@@ -358,6 +368,7 @@ TEST_P(RawUdpMmsg, realBatchKeepsOriginalPairThroughChunksAndFinalFree) {
       if (result.mmsg_free()) {
         ++frees;
         EXPECT_EQ(result.storage().data(), base);
+        if (GetParam() == 3) { EXPECT_TRUE(self.receive_stop()); }
         return;
       }
       if (result.empty_event()) return;
@@ -365,7 +376,12 @@ TEST_P(RawUdpMmsg, realBatchKeepsOriginalPairThroughChunksAndFinalFree) {
       EXPECT_EQ(result.count(), 1);
       ++chunks;
       if (chunks == 1) {
-        if (GetParam() == 0) { EXPECT_TRUE(self.receive_stop()); EXPECT_FALSE(self.active()); }
+        if (GetParam() == 0) {
+          EXPECT_TRUE(self.receive_stop());
+          EXPECT_FALSE(self.active());
+          EXPECT_EQ(self.native()->recv_cb == nullptr, native_receive_cleared);
+          EXPECT_EQ(self.native()->alloc_cb == nullptr, native_allocator_cleared);
+        }
         if (GetParam() == 1) { EXPECT_TRUE((self.receive_start_static<static_allocate, static_receive>())); }
         if (GetParam() == 2) { self.close([&](udp&) { EXPECT_TRUE(weak.expired()); closed = true; }); }
       }
@@ -374,18 +390,27 @@ TEST_P(RawUdpMmsg, realBatchKeepsOriginalPairThroughChunksAndFinalFree) {
     }));
   owned.reset();
   send_byte('a'); send_byte('b'); send_byte('c');
-  until([&] { return frees == 1 && (GetParam() != 2 || closed); });
+  until([&] { return chunks >= 1 && (GetParam() != 3 || frees == 1); });
+  if (GetParam() == 3) {
+    EXPECT_EQ(frees, 1);
+    EXPECT_TRUE(weak.expired());
+  }
   EXPECT_GE(chunks, 1);
   EXPECT_LE(chunks, 3);
-  EXPECT_TRUE(weak.expired());
-  EXPECT_EQ(frees, 1);
   if (GetParam() == 1) {
     send_byte('d'); until([&] { return static_state.marker_received; });
-    EXPECT_GE(static_state.frees, 1);
-    EXPECT_EQ(chunks + static_state.packets, 4);
   }
+  // Stop/close may suppress native FREE or remaining chunks. Keep a pending
+  // allocator loan until the next allocation or close completion, without
+  // synthesizing notifications or changing native callback fields.
+  if (GetParam() != 2) {
+    receiver.close([&](udp&) { EXPECT_TRUE(weak.expired()); closed = true; });
+  }
+  until([&] { return closed; });
+  EXPECT_TRUE(weak.expired());
+  EXPECT_LE(frees, 1);
 }
-INSTANTIATE_TEST_SUITE_P(StopReplaceClose, RawUdpMmsg, ::testing::Values(0, 1, 2));
+INSTANTIATE_TEST_SUITE_P(StopReplaceCloseOrContinue, RawUdpMmsg, ::testing::Values(0, 1, 2, 3));
 #endif
 
 #if UVPP_HAS_UDP_TRY_SEND2

@@ -268,8 +268,9 @@ Linux suites and Windows-target syntax checks.
 
 `test-raw-udp-io.cpp` completes receive/send/request validation with real sockets:
 paired allocator-owned buffers survive callback replacement, stop and close;
-recvmmsg retains the old pair through all delivered chunks and FREE without fixing
-kernel batch size. Native ENOBUFS quiesces before rearm. Empty/truncated packets,
+recvmmsg retains the old pair through native notifications without forcing FREE
+or fixing kernel batch size. Stop's callback state is compared against a direct
+native stop, and a loan without FREE is released by next allocation/close. Native ENOBUFS quiesces before rearm. Empty/truncated packets,
 pending-request native-storage integrity, native submission/completion errors,
 request reuse, close with borrowed payloads, immediate queue would-block and
 batch prefix/suffix retry are covered. The isolated allocation binary measures

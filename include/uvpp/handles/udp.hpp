@@ -909,10 +909,6 @@ namespace uv::raw {
     void retire_receive() noexcept {
       receiving_ = false;
       receive_subscription_.replace({});
-      // Unix recv_stop clears recv_cb, but recvmmsg still owes the current
-      // buffer its remaining chunk notifications and final FREE. Keep the fixed
-      // dispatcher until that loan finishes; stop/close quiesces native polling.
-      if (mmsg_inflight_) native()->recv_cb = &udp::receive_trampoline;
     }
 
     static bool valid_native_buffers(const uv_buf_t *buffers, std::size_t count) noexcept {
@@ -954,16 +950,9 @@ namespace uv::raw {
       if (!loan.callback) loan = self.receive_subscription_.checkout();
       const udp_receive_result result{count, buffer, address, flags};
       const bool chunk = result.mmsg_chunk();
-      self.mmsg_inflight_ = chunk;
       if (count < 0) {
         if (uv_udp_recv_stop(raw) < 0) detail::callback_exception_boundary();
         self.retire_receive();
-      }
-      // End a stopped batch before user delivery; a new subscription installed
-      // by that delivery must survive unwinding of the old buffer's FREE.
-      if (!chunk && !self.receiving_) {
-        raw->recv_cb = nullptr;
-        raw->alloc_cb = nullptr;
       }
       if (loan.callback) detail::invoke_callback([&] {
         auto &pair = loan.callback;
@@ -977,7 +966,6 @@ namespace uv::raw {
     receive_slot receive_subscription_{};
     typename receive_slot::delivery pending_receive_{};
     bool receiving_ = false;
-    bool mmsg_inflight_ = false;
   };
 
 }

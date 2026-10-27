@@ -261,9 +261,10 @@ results. Multicast string copies keep C++ exceptions separate from native errors
 embedded NUL inputs are rejected before submission. Numeric/bool options have
 native status/noexcept contracts. Duplicate close is inert. Receive subscriptions
 now use generation-tracked paired callback loans, retained from allocation through
-native delivery and through recvmmsg's final FREE. Stop/replacement/close from a
-chunk preserve the original pair and fixed dispatcher for the remaining native
-batch; a new pair applies to later allocations. Terminal receive errors stop the
+native delivery, including recvmmsg chunks/FREE actually delivered by libuv.
+Stop/replacement/close preserve native callback state without rewriting fields or
+forcing FREE delivery. A pending pair survives until native FREE, the next
+allocation or close completion; a new pair applies to later allocations. Terminal receive errors stop the
 source before user delivery. Close completion releases any remaining loan.
 `uv::raw::udp_send_request` shares the stream request submission helper: pending
 guards, commit after native acceptance, and extraction before completion delivery.

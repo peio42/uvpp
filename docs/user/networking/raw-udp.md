@@ -122,14 +122,19 @@ Borrowed addresses and payload observations are valid only during delivery.
 
 With native recvmmsg enabled, a buffer may produce several `MMSG_CHUNK`
 notifications followed by `MMSG_FREE` for the original allocation. Do not free the
-allocation for individual chunks. Even after stop, replacement or close from a
-chunk, the original pair receives the remaining chunks already read in that native
-batch and its final FREE. A new subscription applies to subsequent allocations.
-The wrapper keeps its fixed dispatcher installed long enough to finish that loan;
-native polling remains stopped when requested. This matches the inspected Unix
-libuv 1.45/1.48/1.53 chunk/FREE loops; backends without native recvmmsg use ordinary
-receive delivery. A recvmmsg allocator must provide a sufficiently large buffer
-(at least 64 KiB); `using_recvmmsg()` observes native support under its gate.
+allocation for individual chunks. The original pair receives only the notifications
+libuv actually delivers; a new subscription applies to subsequent allocations.
+Uvpp does not rewrite native callback fields after stop/close or synthesize FREE.
+Stopping, replacing or closing reception from a chunk can suppress remaining
+chunks and FREE, depending on the native backend/version. FREE delivery is not
+guaranteed after those transitions. Arrange allocation ownership independently of
+FREE in that case, for example by capturing an owning buffer in the allocator.
+The pending pair stays retained until native FREE, the next native allocation or
+close completion, so its captured storage survives any remaining native use.
+A stopped handle can therefore retain that pair until reception resumes or close
+completes. Backends without native recvmmsg use ordinary receive delivery. A
+recvmmsg allocator must provide a sufficiently large buffer (at least 64 KiB);
+`using_recvmmsg()` observes native support under its gate.
 
 Stop/close release the active selection, but never release a pair still backing a
 native buffer. Close completion releases any remaining loan before the close
