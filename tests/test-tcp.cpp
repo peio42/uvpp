@@ -7,7 +7,7 @@
 
 namespace {
 
-uv::buffer_view test_alloc(uv::tcp &, std::size_t) {
+uv::buffer_view test_alloc(uv::raw::tcp &, std::size_t) {
   static std::array<char, 1024> storage{};
   return uv::buffer_view{storage.data(), storage.size()};
 }
@@ -16,11 +16,11 @@ uv::buffer_view test_alloc(uv::tcp &, std::size_t) {
 
 TEST(Uvpp2Tcp, acceptsReadsAndWrites) {
   uv::loop loop;
-  uv::tcp server(loop);
-  uv::tcp client(loop);
-  uv::connect_request connect_req;
-  uv::write_request client_write_req;
-  uv::write_request server_write_req;
+  uv::raw::tcp server(loop);
+  uv::raw::tcp client(loop);
+  uv::raw::connect_request connect_req;
+  uv::raw::write_request client_write_req;
+  uv::raw::write_request server_write_req;
 
   int server_marker = 1;
   int client_marker = 2;
@@ -34,7 +34,7 @@ TEST(Uvpp2Tcp, acceptsReadsAndWrites) {
   client_write_req.user_data(client_write_marker);
   server_write_req.user_data(server_write_marker);
 
-  std::unique_ptr<uv::tcp> accepted;
+  std::unique_ptr<uv::raw::tcp> accepted;
   bool accepted_connection = false;
   bool client_connected = false;
   bool server_read = false;
@@ -45,18 +45,18 @@ TEST(Uvpp2Tcp, acceptsReadsAndWrites) {
   bool server_closed = false;
 
   uv::ipv4 bind_addr{"127.0.0.1", 0};
-  server.bind(bind_addr);
+  server.bind(bind_addr).throw_if_error();
 
-  server.listen([&](uv::tcp &srv, uv::result status) {
+  server.listen([&](uv::raw::tcp &srv, uv::status status) {
     ASSERT_TRUE(status);
     EXPECT_EQ(srv.user_data<int>(), &server_marker);
 
     accepted_connection = true;
-    accepted = std::make_unique<uv::tcp>(loop);
-    srv.accept(*accepted);
+    accepted = std::make_unique<uv::raw::tcp>(loop);
+    srv.accept(*accepted).throw_if_error();
     accepted->user_data(server_marker);
 
-    accepted->read_start(test_alloc, [&](uv::tcp &stream, uv::read_result read) {
+    accepted->read_start(test_alloc, [&](uv::raw::tcp &stream, uv::read_result read) {
       if (read.eof()) {
         return;
       }
@@ -68,33 +68,33 @@ TEST(Uvpp2Tcp, acceptsReadsAndWrites) {
 
       static char response[] = "pong";
       uv::buffer_view out{response, 4};
-      stream.write(server_write_req, out, [&](uv::write_request &request, uv::result write_status) {
+      stream.write(server_write_req, out, [&](uv::raw::write_request &request, uv::status write_status) {
         ASSERT_TRUE(write_status);
         EXPECT_EQ(request.user_data<int>(), &server_write_marker);
         server_write_done = true;
-        stream.close([&](uv::tcp &) {
+        stream.close([&](uv::raw::tcp &) {
           accepted_closed = true;
         });
-      });
-    });
-  });
+      }).throw_if_error();
+    }).throw_if_error();
+  }).throw_if_error();
 
-  auto bound = server.sockname();
+  auto bound = server.sockname().value();
   uv::ipv4 connect_addr{"127.0.0.1", bound.port()};
 
-  client.connect(connect_req, connect_addr, [&](uv::connect_request &request, uv::result status) {
+  client.connect(connect_req, connect_addr, [&](uv::raw::connect_request &request, uv::status status) {
     ASSERT_TRUE(status);
     EXPECT_EQ(request.user_data<int>(), &connect_marker);
     client_connected = true;
 
     static char payload[] = "ping";
     uv::buffer_view out{payload, 4};
-    client.write(client_write_req, out, [&](uv::write_request &request, uv::result write_status) {
+    client.write(client_write_req, out, [&](uv::raw::write_request &request, uv::status write_status) {
       ASSERT_TRUE(write_status);
       EXPECT_EQ(request.user_data<int>(), &client_write_marker);
       client_write_done = true;
 
-      client.read_start(test_alloc, [&](uv::tcp &stream, uv::read_result read) {
+      client.read_start(test_alloc, [&](uv::raw::tcp &stream, uv::read_result read) {
         if (read.eof()) {
           return;
         }
@@ -105,15 +105,15 @@ TEST(Uvpp2Tcp, acceptsReadsAndWrites) {
         auto bytes = read.bytes();
         ASSERT_EQ(bytes.size(), 4u);
         EXPECT_EQ(std::memcmp(bytes.data(), "pong", 4), 0);
-        stream.close([&](uv::tcp &) {
+        stream.close([&](uv::raw::tcp &) {
           client_closed = true;
         });
-        server.close([&](uv::tcp &) {
+        server.close([&](uv::raw::tcp &) {
           server_closed = true;
         });
-      });
-    });
-  });
+      }).throw_if_error();
+    }).throw_if_error();
+  }).throw_if_error();
 
   loop.run();
 
@@ -131,17 +131,17 @@ TEST(Uvpp2Tcp, acceptsReadsAndWrites) {
 
 namespace {
 
-void on_static_ipv6_connect(uv::connect_request &, uv::result) {}
+void on_static_ipv6_connect(uv::raw::connect_request &, uv::status) {}
 
 }
 
 #if UVPP_HAS_TCP_INIT_EX
 TEST(Uvpp2Tcp, initializesWithSocketFamily) {
   uv::loop loop;
-  uv::tcp tcp(loop, uv::tcp_socket_family::ipv4);
+  uv::raw::tcp tcp(loop, uv::tcp_socket_family::ipv4);
 
-  tcp.bind(uv::ipv4{"127.0.0.1", 0});
-  auto bound = tcp.sockname();
+  tcp.bind(uv::ipv4{"127.0.0.1", 0}).throw_if_error();
+  auto bound = tcp.sockname().value();
   EXPECT_GT(bound.port(), 0);
 
   tcp.close();
@@ -151,8 +151,8 @@ TEST(Uvpp2Tcp, initializesWithSocketFamily) {
 #endif
 
 TEST(Uvpp2Tcp, bindsWithTypedFlags) {
-  using bind_with_flag = void (uv::tcp::*)(const uv::ipv4 &, uv::tcp_bind_flag);
-  bind_with_flag fn = &uv::tcp::bind;
+  using bind_with_flag = uv::status (uv::raw::tcp::*)(const uv::ipv4 &, uv::tcp_bind_flag);
+  bind_with_flag fn = &uv::raw::tcp::bind;
   auto flag = uv::tcp_bind_flag::ipv6_only;
   (void)fn;
   (void)flag;
@@ -164,10 +164,10 @@ TEST(Uvpp2Tcp, bindsWithTypedFlags) {
 
 TEST(Uvpp2Tcp, socknameToStringMatchesBoundAddress) {
   uv::loop loop;
-  uv::tcp server(loop);
-  server.bind(uv::ipv4{"127.0.0.1", 0});
+  uv::raw::tcp server(loop);
+  server.bind(uv::ipv4{"127.0.0.1", 0}).throw_if_error();
 
-  auto addr = server.sockname();
+  auto addr = server.sockname().value();
   ASSERT_TRUE(addr.is_v4());
   EXPECT_EQ(addr.to_string(), "127.0.0.1");
 
@@ -177,17 +177,17 @@ TEST(Uvpp2Tcp, socknameToStringMatchesBoundAddress) {
 }
 
 TEST(Uvpp2Tcp, exposesStaticIpv6ConnectOverload) {
-  using connect_static_ipv6 = void (uv::tcp::*)(uv::connect_request &, const uv::ipv6 &);
-  connect_static_ipv6 fn = &uv::tcp::connect_static<on_static_ipv6_connect>;
+  using connect_static_ipv6 = uv::status (uv::raw::tcp::*)(uv::raw::connect_request &, const uv::ipv6 &) noexcept;
+  connect_static_ipv6 fn = &uv::raw::tcp::connect_static<on_static_ipv6_connect>;
   (void)fn;
 }
 
 #if UVPP_HAS_TCP_CLOSE_RESET
 TEST(Uvpp2Tcp, closeResetClosesConnectedTcp) {
   uv::loop loop;
-  uv::tcp server(loop);
-  uv::tcp client(loop);
-  uv::connect_request connect_req;
+  uv::raw::tcp server(loop);
+  uv::raw::tcp client(loop);
+  uv::raw::connect_request connect_req;
 
   bool accepted_connection = false;
   bool server_observed_close = false;
@@ -195,40 +195,40 @@ TEST(Uvpp2Tcp, closeResetClosesConnectedTcp) {
   bool client_closed = false;
   bool server_closed = false;
 
-  server.bind(uv::ipv4{"127.0.0.1", 0});
-  server.listen([&](uv::tcp &srv, uv::result status) {
+  server.bind(uv::ipv4{"127.0.0.1", 0}).throw_if_error();
+  server.listen([&](uv::raw::tcp &srv, uv::status status) {
     ASSERT_TRUE(status);
     accepted_connection = true;
 
-    auto accepted = std::make_unique<uv::tcp>(loop);
-    srv.accept(*accepted);
-    srv.close([&](uv::tcp &) {
+    auto accepted = std::make_unique<uv::raw::tcp>(loop);
+    srv.accept(*accepted).throw_if_error();
+    srv.close([&](uv::raw::tcp &) {
       server_closed = true;
     });
 
-    accepted->read_start(test_alloc, [&](uv::tcp &stream, uv::read_result read) {
+    accepted->read_start(test_alloc, [&](uv::raw::tcp &stream, uv::read_result read) {
       if (read) {
         return;
       }
 
       server_observed_close = true;
-      stream.close([&](uv::tcp &closed) {
+      stream.close([&](uv::raw::tcp &closed) {
         accepted_closed = true;
         delete &closed;
       });
-    });
+    }).throw_if_error();
 
     accepted.release();
-  });
+  }).throw_if_error();
 
-  auto bound = server.sockname();
+  auto bound = server.sockname().value();
   client.connect(connect_req, uv::ipv4{"127.0.0.1", bound.port()},
-    [&](uv::connect_request &, uv::result status) {
+    [&](uv::raw::connect_request &, uv::status status) {
       ASSERT_TRUE(status);
-      client.close_reset([&](uv::tcp &) {
+      client.close_reset([&](uv::raw::tcp &) {
         client_closed = true;
-      });
-    });
+      }).throw_if_error();
+    }).throw_if_error();
 
   loop.run();
 

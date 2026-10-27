@@ -1,351 +1,275 @@
-# uvpp v2 Architecture
-
-## Goal
-
-uvpp v2 is a header-only C++ wrapper over libuv with a small compiled footprint and a deliberately C++ API. The library should keep libuv's performance model visible, but should not expose libuv structs as C++ base classes.
-
-The v2 architecture treats libuv as the native engine and uvpp as a typed C++ facade around it.
-
-The project, repository, and include root keep the `uvpp` name. The public C++ API lives in namespace `uv`:
-
-```cpp
-#include <uvpp/uv.hpp>
-
-uv::loop loop;
-uv::tcp server(loop);
-```
-
-v2 does not provide a compatibility alias from `uvpp` to `uv`.
-
-## Language Baseline
-
-uvpp v2 requires C++20.
-
-This is a design baseline, not an implementation accident. The API relies on C++20 vocabulary and language features such as `std::span`, `std::chrono` duration ergonomics, constrained zero-overhead callback APIs based on `template<auto Callback>`, and modern aggregate/value type conventions.
-
-The project should not add compatibility shims for C++17 or earlier in the v2 core. If an older-standard compatibility layer is ever needed, it should live outside the primary API.
-
-## Core Principles
-
-- Prefer composition over inheriting from libuv C structs.
-- Keep every native pointer conversion local and named through `native()` helpers.
-- Represent libuv's object hierarchy in C++ with CRTP mixins, not with C++ inheritance from C structs.
-- Make ownership and lifetime rules explicit.
-- Keep handles non-copyable and non-movable once initialized.
-- Support both zero-overhead callback forms and ergonomic runtime callables.
-- Use modern C++ vocabulary types where they improve clarity without hiding libuv semantics.
-
-## Directory Layout
-
-```text
-AGENTS.md
-README.md
-docs/
-  index.md
-  getting-started.md
-  callbacks.md
-  errors.md
-  ownership-and-lifetime.md
-  buffers.md
-  streams.md
-  filesystem.md
-  network.md
-  process.md
-  threading.md
-  design/
-    architecture.md
-    api-principles.md
-    api-policy-decisions.md
-    callback-strategy.md
-    coroutine-strategy.md
-    error-handling-strategy.md
-    ownership-strategy.md
-    request-guide.md
-    thread-safety.md
-    threading-primitives.md
-    v3-notes.md
-include/uvpp/
-  uv.hpp
-  core/
-    error.hpp
-    loop.hpp
-    native.hpp
-    callback.hpp
-    version.hpp
-  handles/
-    handle.hpp
-    stream.hpp
-    tcp.hpp
-    pipe.hpp
-    tty.hpp
-    udp.hpp
-    timer.hpp
-    async.hpp
-    prepare.hpp
-    check.hpp
-    idle.hpp
-    signal.hpp
-    poll.hpp
-    process.hpp
-    fs_event.hpp
-    fs_poll.hpp
-  requests/
-    request.hpp
-    connect.hpp
-    dns.hpp
-    fs.hpp
-    random.hpp
-    write.hpp
-    shutdown.hpp
-    udp_send.hpp
-    work.hpp
-  net/
-    address.hpp
-    buffer.hpp
-    dns.hpp
-    interface.hpp
-    socket_address.hpp
-  misc/
-    random.hpp
-    system.hpp
-  threading/
-    primitives.hpp
-  threadpool/
-    work.hpp
-  fs/
-    file.hpp
-    dir.hpp
-    result.hpp
-    operations.hpp
-tests/
-examples/
-```
-
-User documentation lives directly under `docs/`. Design and coding strategy lives under `docs/design/` and is referenced from `AGENTS.md`.
-
-## Native Storage Model
-
-Every wrapper owns or references a native libuv object through composition.
-
-```cpp
-template<class Derived, class Raw, class BaseRaw>
-class native_storage {
-public:
-  using raw_type = Raw;
-
-  Raw* native() noexcept { return &raw_; }
-  const Raw* native() const noexcept { return &raw_; }
-
-  BaseRaw* native_base() noexcept {
-    return reinterpret_cast<BaseRaw*>(&raw_);
-  }
-
-protected:
-  Raw raw_{};
-};
-
-template<class Derived, class Raw>
-class basic_handle : public detail::native_storage<Derived, Raw, uv_handle_t> {
-  // handle operations and callback slots
-};
-```
-
-This keeps the wrapper layout predictable and avoids pretending that a C struct is a C++ base class.
-
-The low-level wrappers must preserve one additional invariant: the native `raw_` object is the first member of a small standard-layout storage base. uvpp uses that invariant to reconstruct the C++ owner from a libuv callback pointer without consuming libuv's `data` field.
-
-```cpp
-static timer& timer::from_native(uv_timer_t* raw) noexcept;
-```
-
-This is deliberately a low-level implementation contract. It keeps callback trampolines allocation-free and leaves `uv_handle_t::data` / `uv_req_t::data` available to user code.
-
-Required guard rails:
-
-- `static_assert` the native storage base remains standard-layout;
-- test that `Wrapper::from_native(wrapper.native())` returns the original wrapper;
-- keep `raw_` private to the native storage base so derived wrappers cannot accidentally reorder it;
-- do not add virtual functions or virtual bases to low-level wrappers;
-- review every new wrapper family against this invariant before adding callbacks.
-
-`process` is the exception to inline wrapper storage. `uv_spawn()` can attach a
-process handle to its loop and then fail, at which point a throwing constructor
-must not leave the loop pointing into the object that is being destroyed.
-`process` therefore owns a small separately allocated state object whose
-standard-layout native-storage base begins with `uv_process_t`. On a failed
-spawn, that storage is released only by an internal `uv_close()` callback; on a
-successful spawn it also keeps the pointer back to the address-stable `process`
-wrapper used by public callback trampolines. This does not use the native
-`data` field.
-
-## C++ Hierarchy
-
-libuv's C hierarchy is mirrored by C++ mixins:
-
-```text
-basic_handle<Derived, Raw>
-  stream<Derived, Raw>
-    tcp
-    pipe
-    tty
-  udp
-  timer
-  async
-  prepare
-  check
-  idle
-  signal
-  poll
-  fs_event
-  fs_poll
-
-process (owns separate native storage)
-```
-
-`process` does not inherit from `basic_handle`; it implements its handle operations
-using the separately allocated storage described above.
-
-`stream<Derived, Raw>` is a CRTP mixin that provides stream operations and a `native_stream()` helper. It does not create a separate runtime object.
-
-## Native Interop
-
-Every public wrapper should expose:
-
-```cpp
-Raw* native() noexcept;
-const Raw* native() const noexcept;
-```
-
-Derived categories may expose additional typed native views:
-
-```cpp
-uv_handle_t* native_handle() noexcept;
-uv_stream_t* native_stream() noexcept;
-```
-
-These functions are the only sanctioned locations for raw pointer reinterpretation.
-
-Handles also expose an explicit non-owning view for code that operates on
-generic libuv handles:
-
-```cpp
-uv::handle_view view = timer.view();
-```
-
-`handle_view` wraps a `uv_handle_t*` and offers the common handle operations
-such as `active()`, `closing()`, `ref()`, and `unref()`. It is a borrowed view,
-not an owner, and does not consume the native `data` field.
-
-The conversion from a concrete handle wrapper to `handle_view` must stay named
-as `.view()`. Do not provide an implicit conversion operator from
-`basic_handle` to `handle_view`.
-
-## Native Option Construction
-
-Not every libuv struct should be wrapped like a handle or request. Handles and
-requests have native identity: libuv stores their addresses and may refer to
-them later from callbacks. Option structs such as `uv_process_options_t` are
-different. They are temporary submission records consumed synchronously by the
-libuv call.
-
-When a native option struct contains borrowed pointers, prefer a C++ value that
-owns the inputs and constructs the native view at submission time.
-
-Example:
-
-```cpp
-auto options = uv::process_options::make("git")
-  .arg("status")
-  .cwd(repo);
-```
-
-`process_options` owns strings, argument vectors, environment entries, and stdio
-containers. `process` builds a local `uv_process_options_t` immediately before
-calling `uv_spawn()`. This avoids exposing a public `native()` view whose
-pointers could be invalidated by later mutation, vector reallocation, copy, or
-move of the owning C++ value.
-
-Use a public native wrapper only when the native struct has a durable identity
-or a stable value representation. Use a private or `detail` native view when the
-native struct is only a transient adapter for one libuv call.
-
-## User Data
-
-libuv's `data` fields remain user-owned in v2. Wrapper objects must not store `this` in `raw.data` for handles or requests.
-
-Expose them through typed non-owning helpers:
-
-```cpp
-handle.user_data(&state);
-handle.user_data(state);
-auto* state = handle.user_data<state_type>();
-handle.clear_user_data();
-```
-
-This API is intentionally zero-overhead: it stores exactly the native `void*` and performs only a typed cast at the boundary. It cannot validate that the requested type matches the stored object. The documentation should present it as a convenience over libuv's raw pointer, not as a type-safe ownership mechanism.
-
-## Wrapper Growth
-
-Add wrappers one libuv object family at a time. Each addition should preserve the same low-level contract:
-
-- address-stable native storage;
-- explicit native accessors;
-- no wrapper-owned state in libuv `data`;
-- typed callback arguments;
-- explicit async lifetime;
-- focused tests for layout, lifecycle, errors, and callback behavior.
-
-## Loop Run Return Value
-
-`loop::run()` and `loop_view::run()` take `uv::run_mode` and return `bool`. The return value is `true` if there are still active handles or requests pending after the loop exits (i.e., when run in `uv::run_mode::nowait` or `uv::run_mode::once` mode); it is `false` when the loop is empty. In the default `uv::run_mode::until_done` mode the loop runs until there is no more work and always returns `false`.
-
-## Loop Introspection
-
-`loop` and `loop_view` expose thin wrappers over libuv loop introspection:
-
-- `backend_fd()` and `backend_timeout()` report backend polling details;
-- `enable_metrics_idle_time()`, `metrics_idle_time()`, and `metrics_info()` expose libuv loop metrics;
-- `configure_block_signal()` and `fork()` map to the corresponding libuv loop configuration operations;
-- `walk(callback)` visits handles synchronously as `handle_view` values;
-- `handles()` collects the current walked handles into a `std::vector<handle_view>` for range-based loops and ranges pipelines.
-
-These APIs intentionally stay close to libuv. They do not take ownership of
-handles and do not add wrapper state.
-
-`backend_timeout()` returns `std::optional<std::chrono::milliseconds>`:
-`std::nullopt` represents libuv's infinite wait sentinel. `metrics_idle_time()`
-returns `std::chrono::nanoseconds`. Loop counters and event counters remain
-plain integer counts in `loop_metrics`.
-
-## Filesystem Layering
-
-Filesystem operations are intentionally split from normal request wrappers.
-
-`uv::fs` is the public C++ layer: it owns the internal `uv_fs_t`, performs cleanup automatically, and returns scalar or owned result values.
-
-`uv::fs::raw` is the direct libuv-facing layer: it exposes `raw::request`, manual cleanup, request reuse, caller-owned buffers, request-scoped result views, and static callbacks.
-
-This is the preferred pattern when libuv exposes a protocol that cannot be made safe with a thin wrapper alone: keep the raw protocol available, but do not make it the default public API.
-
-`uv::fs::raw` is not a precedent for moving every low-level operation into a
-global raw namespace. It exists because filesystem has two complete API layers
-with different ownership rules. Handle APIs such as TCP and UDP are already the
-low-level layer; individual native-shaped operations should stay on the relevant
-handle unless a higher-level layer is introduced above them.
-
-## Libuv Feature Availability
-
-uvpp compiles against the user's installed libuv headers. Newer libuv constants
-and functions must therefore be guarded when they are not available in older
-commonly used packages.
-
-Feature checks live in `include/uvpp/core/version.hpp` as named
-`UVPP_HAS_*` capability macros. Public headers should depend on those macros,
-not on repeated numeric `UV_VERSION_HEX` comparisons. This keeps version policy
-centralized and gives users a stable compile-time spelling for portable code.
-
-The capability macros are compile-time API availability checks. If a native
-symbol is absent from the libuv headers, uvpp omits the corresponding wrapper
-API. It does not declare a replacement function that fails at runtime, because
-that would require spelling or emulating a native function that the installed
-headers do not provide.
+# V3 architecture
+
+`main` implements the architecture accepted in
+[proposal 000](../proposals/000-v3-architecture.md). C++20 and header-only
+integration are baseline requirements. The include root is `uvpp`, and the public
+namespace is `uv`. The architecture is accepted; the complete API is not yet
+implemented or frozen.
+
+## Layers and implementation status
+
+| Layer | Target responsibility | Current implementation |
+| --- | --- | --- |
+| `uv::raw` | Explicit low-level handles, requests, and operational results | Namespace and error-policy migration remains unfinished; existing wrappers still largely live in `uv` |
+| `uv` | Shared vocabulary and stable high-level resource owners | TCP/pipe connections and listeners, UDP sockets, filesystem files, `signal_source`, `fs_event_source`, `poll_source`, loop, addresses, buffers, common results |
+| `uv::co` | Cold tasks, spawning, cancellation, and structured composition | `task<T>`, `spawn_handle<T>`, join, cooperative stop, timer sleep, task and resource scopes |
+| `uv::ops` | Explicit-result high-level operations and creation | Network listener/socket creation, read/write/accept/receive/send/close, signal/fs-event/poll-source next, DNS resolution, and filesystem open/read/write/close |
+
+Filesystem uses `uv::fs` and `uv::raw::fs`. Raw filesystem submissions return
+`uv::status`, with caller-owned requests and explicit cleanup; the callback facade
+unwraps submission failures and owns its operation state. Existing process, DNS, watcher,
+and utility implementations do not establish their final v3 API merely by
+remaining in the source tree.
+
+## One execution context
+
+`uv::loop` is the common owning loop. `uv::loop_view` borrows a native loop;
+there is no separate raw or coroutine loop owner. Tasks are cold, bind at root
+spawn, and pass their context to awaited child tasks. Native callbacks and
+coroutine continuations run on the same loop thread unless an API explicitly
+states otherwise. There is no implicit posting queue or second runtime.
+
+The application drives the loop through completion and native close, then calls
+`loop.close()`. Loop and resource destructors never run a nested loop. Active
+spawn-handle destruction requests stop and releases only public observation; an
+internal completion baton retains execution state through actual completion and
+reclaims the root only after final suspension. An unobserved root failure is routed
+exactly once through the loop failure handler; its default policy terminates.
+
+## Native identity and ownership
+
+Low-level wrappers use composition and stable native storage rather than inheriting
+from libuv structs. They are not copyable or movable after initialization.
+Callback reconstruction must respect the actual storage layout and type; native
+handles belonging to high-level owners are not low-level wrapper instances.
+
+High-level owners move by transferring stable storage. Close state retains that
+storage through the native close callback. Borrowed views do not retain resource
+ownership. Native access is explicit. Raw wrapper `data` remains application-owned;
+high-level owners and internal operations may reserve it for implementation state.
+Prefer it when it avoids an artificial dependency on object layout; the choice
+depends on the lifetime and simplest reconstruction mechanism, not just the layer.
+See [ownership](ownership-strategy.md) and [callback strategy](callback-strategy.md).
+
+High-level operations own their control state, but writes/sends borrow payloads.
+Cancellation does not complete work or release borrowed bytes. Terminal delivery
+releases operation slots before resuming user code. Current owners permit one
+operation per direction, including duplex I/O; see [I/O concurrency](io-concurrency.md).
+
+`signal_source` owns one persistent native signal subscription and one exclusive
+coroutine consumer slot. Ordinary signal delivery keeps the subscription active;
+completed task cancellation releases only that consumer slot and leaves the source
+usable. Terminal source close stops native delivery before releasing its waiter.
+One notification may be retained while no waiter is active; it is intentionally
+coalesced rather than becoming an unbounded queue.
+
+## Errors and costs
+
+The v3 target uses explicit operational results in raw APIs, throwing high-level
+awaits, and explicit-result `uv::ops` awaits. Existing low-level throwing submission
+helpers remain a migration gap, not the rule for new raw APIs. Allocation/setup
+failures require separate contracts; status-oriented does not imply `noexcept`.
+
+Raw primitives must not gain hidden operation allocations. Existing callback,
+string, and native-lifetime storage costs must be documented. High-level owners,
+scopes, and coroutine frames may allocate. Allocation-free claims require measured
+paths; [proposal 010](../proposals/010-validation-and-performance.md) tracks gates.
+
+## Repository organization
+
+- `include/uvpp/core/`: loop, native storage, buffers, callback boundary, results, capabilities.
+- `include/uvpp/handles/` and `requests/`: current low-level binding machinery.
+- `include/uvpp/net/`: address vocabulary and network owners.
+- `include/uvpp/co/`: tasks, cancellation, sleep, task scopes, resource scopes.
+- `include/uvpp/detail/`: shared stream I/O and asynchronous close machinery.
+- `docs/user/`: strictly v3 usage and current availability.
+- `docs/design/`: implementation contracts and contributor rules.
+- `docs/proposals/`: unfinished contracts, decisions, and validation work.
+
+The [design index](index.md) links implementation and test evidence. A proposal
+sketch is not callable API; keep code, implemented documentation, and proposal
+progress synchronized as each slice lands.
+
+## Per-wait descriptor readiness
+
+`poll_source` owns stable `uv_poll_t` storage while borrowing its descriptor.
+Construction leaves polling inactive; `next(mask)` arms one exclusive native wait.
+Success, completion error, and cancellation stop polling and release the waiter
+before resuming user code. A later wait can select a new mask; no readiness is
+queued between waits. Close marks the source terminal before cancelling its
+waiter and retains storage through native close. This intentionally differs from
+the persistent `signal_source` subscription.
+
+## Filesystem event subscriptions
+
+`fs_event_source` owns stable native watcher storage and reserves `data` for its
+state. It starts one persistent subscription at construction and borrows the
+loop, without owning the watched filesystem object. Its exclusive waiter uses
+`one_shot_callback_slot`; ordinary delivery and cancellation release that waiter
+before resumption while retaining the subscription. Terminal close quiesces the
+watcher, cancels its waiter, clears retained outcomes, and joins native close.
+Reentrant owner release during delivery is safe through close completion.
+
+One pending outcome bounds notification retention: successes merge flags and
+retain a filename only while all names agree; a failure replaces success and
+remains sticky until consumed. Callback filename materialization exceptions travel
+as `exception_ptr` and rethrow at the await in either policy. See the
+[user contract](../user/fs-events.md) for costs and native portability limits.
+The raw wrappers `uv::raw::{signal,poll,fs_event}` use explicit start/stop status
+and query results. Shared subscription bookkeeping commits callbacks after
+successful start, preserves an old callable only while its native source remains
+active, and releases terminal slots before user delivery. High-level source
+ownership and pending-event policies remain separate. Raw signal, poll, and fs-event
+also support default construction and status-returning `init(loop/loop_view)`
+through the shared `initializable_raw_watcher_handle`, now parameterized by
+notification payloads. Native `loop` tracks initialization without added state;
+pre-init operations (including fs-event `path`) return `UV_EBADF`, observations
+are false, and close/ref operations are inert. Repeat init reports `UV_EALREADY`
+through and after close. Signal native init failure precedes handle registration
+and leaves the sentinel unset, allowing retry without handle close; any retained
+loop infrastructure belongs to the loop. See [raw watchers](../user/raw-watchers.md).
+
+
+## Raw timers and loop phases
+
+`uv::raw::{timer,idle,prepare,check}` use the same `raw_watcher_handle` subscription
+bookkeeping as the migrated signal/poll/fs-event families. All four additionally
+support default construction and explicit `init(loop/loop_view) -> status`; their
+loop-taking constructors unwrap that status. The shared internal
+`initializable_raw_watcher_handle` factors out pre-init observation, close/ref,
+and native-query guards without adding storage or changing callback ownership.
+The native `loop` pointer is the initialization sentinel, with no additional state
+field. It remains set after close, preventing reinitialization. All four guard operations before initialization;
+Async follows the same initialization lifecycle, with immediate activation as
+documented below. Start/stop
+and timer `again`/`set_repeat` return `status`, with shared explicit native-query
+results. Terminal one-shot timer delivery extracts its callable before invocation,
+while repeated events retain the callable.
+Inactive `again` cannot resurrect a callback released by stop or completion.
+Phase starts stop/restart native dispatch so active runtime/static replacement
+actually installs the new callback. Duration validation precedes native mutation,
+and timer getters preserve unsigned native milliseconds. Shared loop, native
+address stability, application-owned `data`, and explicit close completion are
+unchanged. See [raw callback watchers](../user/raw-watchers.md).
+
+
+## Raw async notifications
+
+`uv::raw::async` extends the shared raw watcher callback/close/query bookkeeping
+with a fixed native trampoline and one non-owning static dispatch pointer.
+Default construction leaves it uninitialized. Explicit `init(loop/loop_view)`
+supports empty/runtime/static callback forms, returning native status; loop-taking
+constructors unwrap the same result. The shared initialization helper guards
+observations, close/ref, and native queries without added storage. Initialization
+activates the handle immediately; there is no start/stop facade.
+`send() noexcept -> status` directly adapts `uv_async_send` without reading wrapper
+callback or closing state. It rejects an unset native loop sentinel with
+`UV_EBADF`; after publication that pointer is immutable. Init must complete before
+producer publication and must never overlap sends. The caller prevents new sends and joins/synchronizes
+in-flight producers before close. Callback setters are loop-thread operations
+returning `status`, reject pre-init/closing state with `UV_EBADF`, and preserve reentrant
+replacement through generation tracking. Empty runtime selection drops delivery
+without stopping the handle. Repeat init, including during/after close, reports
+`UV_EALREADY` without changing dispatch or pending notifications. Callable
+preparation can throw before init entry; moves after native success do not throw.
+Unix native failures precede handle registration and require no wrapper close. Native `data`, address stability, explicit close,
+and shared loop rules are unchanged. `loop_posting` keeps its independent native
+storage, mutex admission, queue, and producer endpoints. See
+[raw async notifications](../user/async.md).
+
+## Raw poll initialization rollback
+
+Raw poll synchronously rolls back an inactive registration if native Windows
+initialization fails after registration but before any request or poll-owned
+resource exists. This preserves immediately destructible/retryable failed init
+and throwing constructors without driving the loop or adding cleanup allocation.
+It requires an isolated dependency on libuv's private registration queue.
+
+The [rollback audit](raw-poll-init-rollback.md) records public-API alternatives,
+exact official tags reviewed, both queue layouts, backend/failure prerequisites,
+and the native Windows Winsock fault-injection tests and pinned CI jobs.
+
+## Raw TCP handle migration
+
+`uv::raw::tcp` combines the `uv::raw::stream` storage/submission substrate
+with `detail::initializable_handle` lifecycle/native-query guards. The watcher
+initialization helper now specializes this same storage-free base; it preserves
+its prior callback/close semantics. TCP native init failures are already unlinked
+and resource-cleaned by libuv (Unix/Windows init_ex source reviewed at 1.45.0,
+1.51.0, and 1.53.0); clearing native storage restores the stale loop sentinel and
+preserves application `data`, without a second queue rollback.
+
+TCP init/open/bind/options/reset initiation return status; address queries return
+`result<socket_address>`, descriptor queries return `result<uv_os_fd_t>`, and buffer
+queries retain counts. Keepalive takes chrono seconds with native-range validation.
+C++ address/callback preparation remains separate from native operational errors.
+Normal close is void, while reset close can fail before initiation. Reset runtime
+callback installation is committed only after native success; failure retains
+existing stream slots and releases the rejected close callback.
+
+The stream substrate is now `uv::raw::stream`, also consumed by `uv::raw::pipe` and the still-legacy
+TTY family wrapper. Listen/read start/stop/accept/blocking use statuses;
+read outcomes keep signed counts, EOF and borrowed buffers. Runtime/static
+subscription selection is committed after successful native start. Read replacement
+stops the old source first: restart failure after successful stop leaves it stopped.
+The paired allocation/read slot supports generation-tagged checkout across one
+native buffer loan, with inline active/pending storage and no callback copies.
+Terminal read stops before user delivery. Listener errors retain the
+persistent listener while native activity remains; backend-stopped errors release
+selection before delivery (notably Windows fatal accept failures).
+
+Normal/reset close releases active subscriptions after native initiation, while an
+outstanding buffer loan retains its original allocator/reader through native read
+or close completion. All close forms install internal completion cleanup before
+user delivery, even without a user close callback. Reset failure leaves existing
+subscriptions untouched. Request callbacks/storage remain independent. Connect,
+write and shutdown now use separate `uv::raw` requests and status-oriented
+submission. A shared inline request state rejects pending reuse, commits callback
+selection only after native acceptance and clears pending/selection before user
+completion, with no request access afterwards. Close does not retire request
+state early. Pipe-specific connect/IPC entry points now return statuses over
+this shared lifecycle.
+See [raw TCP](../user/networking/raw-tcp.md) and
+[stream subscriptions](../user/networking/raw-stream.md).
+
+## Raw pipe migration
+
+`uv::raw::pipe` combines the initializable-handle guards with the raw stream
+substrate, without a legacy alias or changes to high-level owner storage. Native
+Unix/Windows pipe init has no fallible post-registration step, so it needs no poll
+rollback or extra lifetime allocation. Bind/open/chmod/connect/IPC submissions
+return statuses. Pending-instance configuration adapts native void behavior;
+pending counts/types remain native observations. Name queries return
+`result<string>`, with separate C++ allocation and exact native byte lengths,
+including Linux abstract-name NUL bytes. Legacy terminated-name copies remain
+fallible C++ preparation; modern length-aware APIs retain capability gates.
+IPC runtime/static submissions use the shared request protocol and typed immediate
+writes retain partial/would-block outcomes. Exported native storage/payload remains
+borrowed through completion. See [the raw pipe contract](../user/networking/raw-pipe.md).
+
+## Raw UDP socket migration
+
+`uv::raw::udp` now uses the common initializable-handle guards over its existing
+inline native storage. Init/default/eager family/recvmmsg forms share status
+initialization and throwing constructor unwrapping. Unix fails eager socket
+creation before registration. Reviewed Windows 1.45/1.48/1.53 native paths remove
+their failed registration and close newly created sockets; uvpp clears native
+storage, preserving application data and resetting the stale loop sentinel without
+a second unlink or native close. No added native-lifetime allocation is needed.
+Socket operations return statuses and address/descriptor/buffer queries retain
+results. Multicast string copies keep C++ exceptions separate from native errors;
+embedded NUL inputs are rejected before submission. Numeric/bool options have
+native status/noexcept contracts. Duplicate close is inert. Receive subscriptions
+now use generation-tracked paired callback loans, retained from allocation through
+native delivery, including recvmmsg chunks/FREE actually delivered by libuv.
+Stop/replacement/close preserve native callback state without rewriting fields or
+forcing FREE delivery. A pending pair survives until native FREE, the next
+allocation or close completion; a new pair applies to later allocations. Terminal receive errors stop the
+source before user delivery. Close completion releases any remaining loan.
+`uv::raw::udp_send_request` shares the stream request submission helper: pending
+guards, commit after native acceptance, and extraction before completion delivery.
+C++ callable preparation remains separate from native errors. Immediate sends and
+suffix batches validate metadata and preserve byte/datagram progress and would-block
+without allocating hidden C++ metadata. Typed receive/immediate/batch values stay
+in `uv`. High-level socket storage is unchanged. See
+[the raw UDP contract](../user/networking/raw-udp.md).

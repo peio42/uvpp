@@ -8,7 +8,7 @@
 #include "uvpp/core/callback.hpp"
 #include "uvpp/requests/request.hpp"
 
-namespace uv::fs::raw {
+namespace uv::raw::fs {
 
   class request final : public basic_request<request, uv_fs_t> {
   public:
@@ -62,7 +62,7 @@ namespace uv::fs::raw {
       callback_ = {};
 
       if (callback) {
-        detail::invoke_callback(callback, *this);
+        uv::detail::invoke_callback(callback, *this);
       }
     }
 

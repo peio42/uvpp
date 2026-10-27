@@ -1,0 +1,374 @@
+# Raw callback watchers
+
+`uv::raw::{signal,poll,fs_event,timer,idle,prepare,check}` provide caller-owned
+callbacks on the shared `uv::loop`. Include the corresponding
+`<uvpp/handles/<name>.hpp>` header or `<uvpp/uv.hpp>`.
+
+These wrappers are neither copyable nor movable. Keep their storage alive through
+native close completion, explicitly call `close()`, and drive the loop through
+that completion. Destructors do not close or run the loop. Native `data` is
+application-owned; native access does not permit independently replacing wrapper
+callbacks or bypassing its subscription/close protocol.
+
+For cross-thread notification, see [`uv::raw::async`](async.md), which is active
+from initialization and has no start/stop protocol. Its send/close synchronization
+is caller-controlled.
+
+Use the high-level [signal source](signals.md), [poll source](poll.md), or
+[filesystem event source](fs-events.md) when you want movable ownership and
+coroutine waits. Those owners retain their existing throwing and `uv::ops`
+contracts. Their native objects are not raw wrapper instances.
+
+## Errors and subscription state
+
+All `start`, `start_static`, signal `start_oneshot` variants, and `stop` operations
+return `uv::status`. Timer `again` and `set_repeat` also return `uv::status`. Inspect the initiating status independently of later event
+results. A rejected start does not install or retain its new runtime callable.
+The old callable remains installed only while the native source remains active;
+a native reconfiguration failure can itself stop that source. No portable
+transactional rollback of native subscription state is promised. Starts and stops
+on closing handles return `UV_EBADF`.
+
+Successful stop releases the stored runtime callable. Successful replacement,
+including switching to a static callback, releases the old callable. An executing
+callback remains alive until it returns. Ordinary notifications retain a
+persistent subscription; reentrant stop/replacement is respected when that
+callback returns. Supply a valid callback and follow loop-thread affinity.
+
+A negative poll/fs-event callback status is terminal for that raw subscription:
+the wrapper stops the native source and releases its slot before delivering the
+error. The callback may immediately start a replacement. An unexpected failure
+to stop during terminal delivery terminates rather than releasing live callback
+storage. The high-level fs-event source has its own persistent error-retention
+policy, documented separately.
+
+Close quiesces native delivery and releases the subscription callable before
+returning; its close callback runs later. Retain wrapper storage until then.
+Exceptions escaping runtime or static user callbacks terminate at the C boundary.
+
+Constructors taking a loop perform throwing initialization: native init failures
+raise `uv::error`. Preparing a runtime `std::function` or a filesystem path may allocate
+and throw C++ exceptions before native start. There is no hidden uvpp operation
+allocation, lock, queue, or coroutine state. libuv may allocate its own native
+subscription storage; no measured allocation-free guarantee is made.
+
+The shared native queries are explicit-result operations on these wrappers too:
+`fileno()` returns `result<uv_os_fd_t>`, buffer-size getters return `result<int>`,
+and buffer-size setters return `status`. Native errors, including unsupported
+queries on a given handle type, remain results. Common loop/value and borrowed
+`handle_view` policies are independent of this watcher migration.
+
+## Signal
+
+`signal() noexcept` creates uninitialized storage. `init(loop&)` and
+`init(loop_view)` return `status` without throwing; loop-taking constructors
+unwrap the same result. Initialization follows the
+[common lifecycle](#explicit-initialization): native `loop` is the sentinel,
+repeat initialization reports `UV_EALREADY` even after close, and views require
+successful init. Before init, all persistent/one-shot runtime/static starts and
+stop return `UV_EBADF`; common observations, ref/unref, queries, and close use the
+same pre-init rules as timer. Init does not subscribe to a signal.
+
+Native initialization failures are returned unchanged and leave the wrapper
+uninitialized, with no close required; a retry is permitted. In libuv's Unix
+implementation, fallible loop-side preparation precedes native handle
+registration. Such preparation can retain loop-owned infrastructure; it does not
+create an initialized wrapper handle. A valid initialized loop is required.
+After successful init, close is required even when a later start fails. Callback preparation can still throw
+before a runtime start is entered.
+
+```cpp
+uv::loop loop;
+uv::raw::signal interrupt{loop};
+auto started = interrupt.start_oneshot(SIGINT,
+  [](uv::raw::signal& self, uv::signal_number signum) {
+    // The subscription is already stopped here.
+    self.close();
+  });
+if (!started) {
+  interrupt.close();
+}
+loop.run();
+loop.close();
+```
+
+`signal_number` remains in `uv`. Persistent `start` and
+`start_static<Callback>` deliver `(raw::signal&, signal_number)` repeatedly.
+`start_oneshot` and `start_oneshot_static<Callback>` stop before their sole delivery,
+allowing runtime/static rearming inside the callback. This uses a persistent
+native signal source with wrapper-controlled stop at first delivery, rather than
+`uv_signal_start_oneshot`: it does not promise native signal-handler one-shot
+semantics before the loop dispatches the notification. Signal delivery can
+coalesce, and signal disposition remains subject to libuv/platform restrictions.
+
+## Descriptor readiness
+
+`poll() noexcept` creates uninitialized storage. The explicit overloads are:
+
+```cpp
+status init(loop&, int fd) noexcept;
+status init(loop_view, int fd) noexcept;
+status init(loop&, uv_os_sock_t socket, socket_poll_t) noexcept;
+status init(loop_view, uv_os_sock_t socket, socket_poll_t) noexcept;
+```
+
+Call `readiness.init(loop, fd)` or
+`readiness.init(loop, socket, uv::socket_poll)`. Constructors taking these same
+arguments unwrap the result and throw `uv::error` on failure. A valid initialized
+loop is required. Windows supports sockets; use the tagged overload for a native
+`SOCKET`, preserving its width. The descriptor overload takes an integer file
+descriptor, not a narrowed Windows socket value. Negative descriptors report
+`UV_EBADF` before native init.
+
+The [common initialization lifecycle](#explicit-initialization) applies:
+`initialized()` uses native `loop` and remains true after close; repeat init
+returns `UV_EALREADY` without changing the borrowed descriptor, loop, or callback.
+Before init, all runtime/static/raw starts, stop, and native queries return
+`UV_EBADF`; observations are false and ref/unref/close are inert. These checks
+precede event-mask validation. Pre-init close callbacks are not retained or invoked.
+Views require successful initialization, and all operations remain loop-thread
+operations. After success, explicit close and storage retention through completion
+are required even if no start succeeds.
+
+An init failure leaves no wrapper registration in the loop and preserves native
+address/application `data`, so the object can be retried or destroyed without
+close. On Windows, uvpp synchronously rolls back libuv's possible partial handle
+registration before reporting the error. It does not run the loop or allocate
+cleanup state. This depends on the private libuv registration layout and audited
+failure ordering; see [audited versions, backends, and alternatives](../design/raw-poll-init-rollback.md).
+Native init may already have changed the external socket's
+nonblocking mode; those external changes and loop-owned infrastructure are not
+rolled back.
+
+`uv::raw::poll` borrows its descriptor or socket. The common `poll_event`,
+`poll_events`, `socket_poll`, and mask operators remain in `uv`:
+
+```cpp
+uv::raw::poll readiness{loop, fd};
+auto started = readiness.start(uv::poll_event::readable,
+  [](uv::raw::poll& self, uv::raw::poll_result result) {
+    if (!result) {
+      // result.error_code(); the subscription has stopped.
+      self.close();
+      return;
+    }
+    // Consume readiness without blocking. Stop/close when finished.
+  });
+```
+
+Readiness is a persistent raw subscription, unlike the per-wait high-level
+`poll_source`. Poll initialization can set the external descriptor non-blocking;
+close does not close that descriptor. Keep it open through native poll close.
+Use `socket_poll` as the third constructor argument for `uv_poll_init_socket`.
+
+`start_raw(int, cb)` and `start_static_raw<Callback>(int)` select an integer mask.
+Unknown bits on an initialized, non-closing handle report `UV_EINVAL` before native submission; the existing
+`UVPP_HAS_POLL_DISCONNECT` and `UVPP_HAS_POLL_PRIORITIZED` gates apply. A zero mask
+stops polling and releases the runtime callback. Both dispatch forms return a
+`raw::poll_result`, retaining `events()`, `raw_events()`, and `has_event()`.
+
+## Filesystem events
+
+`fs_event() noexcept`, `init(loop&) noexcept -> status`, and
+`init(loop_view) noexcept -> status` provide the same
+[explicit initialization lifecycle](#explicit-initialization). Loop-taking
+constructors unwrap that status. Init registers an inactive handle without
+watching a path. Repeat init returns `UV_EALREADY` and leaves the current path,
+activity, and callable unchanged. Before init, all start/stop variants and
+`path()` report `UV_EBADF`; close is inert and no close callback is retained or
+invoked. Common queries/observations/ref operations share timer's pre-init rules.
+A valid initialized loop is required. Initialization and queries remain loop-thread
+operations, and `initialized()` is not synchronization. Successful init requires
+close completion before releasing storage, even if every start fails.
+
+`uv::raw::fs_event` starts on a path with optional `raw::fs_event_flag` flags.
+Runtime and static overloads share the same contract. Paths containing embedded
+NUL report `UV_EINVAL` on an initialized, non-closing handle before native start. Path preparation precedes native
+submission and callback installation.
+
+`path()` returns `result<std::string>`: its success value owns a copy, while native
+query failures are explicit errors. Uninitialized/closing checks precede buffer
+allocation. Otherwise this query allocates a temporary buffer and
+may resize it before materializing its string; allocation exceptions still throw.
+
+`raw::fs_event_result::filename()` borrows native memory only during callback
+delivery; copy it before retaining it. Missing filenames produce an empty view.
+Flags use `raw::fs_event_kind` and `has()`. Both raw event result families expose
+`ok()`, boolean conversion, `status()`, `raw_status()`, and `error_code()`;
+successful statuses normalize to zero without losing their event payloads.
+
+Filesystem notifications retain libuv's backend-dependent names, flags,
+coalescing, and loss limitations. See [libuv's fs-event documentation](https://docs.libuv.org/en/v1.x/fs_event.html).
+`fs_poll` remains outside this migration slice.
+
+
+## Timers
+
+`uv::raw::timer` supports `start(timeout, cb)`, `start(timeout, repeat, cb)`,
+and `start_static<Callback>(timeout, repeat = 0ms)`. Callbacks receive `timer&`.
+
+```cpp
+using namespace std::chrono_literals;
+uv::loop loop;
+uv::raw::timer timer{loop};
+auto started = timer.start(10ms, [](uv::raw::timer& self) {
+  // This one-shot subscription has already finished. A fresh start is allowed.
+  self.close();
+});
+if (!started) timer.close();
+loop.run();
+loop.close();
+```
+
+### Explicit initialization
+
+A timer may also be default-constructed without registering a native handle.
+`init(loop&)` and `init(loop_view)` are `noexcept` and return `uv::status`:
+
+```cpp
+uv::loop loop;
+uv::raw::timer timer;
+auto initialized = timer.init(loop);
+if (initialized) {
+  auto started = timer.start(10ms, [](uv::raw::timer& self) { self.close(); });
+  if (!started) timer.close();
+}
+loop.run(); // Retain timer storage through any native close completion.
+loop.close();
+```
+
+`timer{loop}` and `timer{loop.view()}` unwrap the same initialization status and
+throw `uv::error` on failure. A valid, initialized loop is required for `init()`
+and these constructors. Native timer initialization currently always succeeds
+with a valid loop; there is no artificial native failure path.
+
+`initialized()` observes `native_handle()->loop != nullptr`. It is false before
+initialization and remains true during and after close completion. A second
+`init()`, including with a different loop or after close, returns `UV_EALREADY`
+without changing native state or callbacks. Storage reuse after close is not
+supported. No separate state field or allocation is added. Application-owned
+`data` and native addresses are preserved by initialization.
+
+Before initialization:
+
+- `start`, `start_static`, `stop`, `again`, `set_repeat`, descriptor and buffer-size
+  operations return `UV_EBADF`; rejected runtime callbacks are not retained.
+- `active()`, `closing()`, and `has_ref()` return false; `repeat()` and `due_in()`
+  return zero.
+- `ref()`, `unref()`, and all close variants have no effect. Close callbacks are
+  neither retained nor invoked; the object can still be initialized afterward.
+- Destruction requires no asynchronous cleanup. After successful initialization,
+  explicit close and storage retention through completion are required even if
+  no start succeeds.
+
+Native access exposes storage, not proof of initialization. Only use borrowed
+handle views after successful initialization; their operations do not perform the
+wrapper's checks. Do not overwrite native `loop`, reinitialize native storage, or
+bypass the wrapper's lifetime protocol. All initialization and observations follow
+loop-thread affinity; `initialized()` provides no cross-thread synchronization.
+The same lifecycle and common-operation rules apply to raw signal, poll, fs-event,
+idle, prepare, and check handles, and to [async](async.md#construction-and-errors)
+with its immediate activation and producer publication rules. Timer
+duration/reconfiguration methods remain timer-specific.
+
+### Subscriptions and durations
+
+A repeating timer retains its callback between firings. Libuv rearms it before
+user delivery; the wrapper uses actual native activity at delivery to distinguish
+persistent events from terminal one-shot completion. Terminal delivery extracts
+the runtime callable before invoking it, so captures are released when that
+invocation returns even if the timer remains open. A callback can immediately
+start a replacement, with either dispatch form. There is no extra operation state
+or per-firing uvpp allocation.
+
+`stop()` and `close()` release the subscription callable. `again()` only reuses an
+active subscription, returning `UV_EINVAL` if the timer is inactive (including
+never started, explicitly stopped, or completed one-shot). Start a new
+subscription with a callback after those terminal states. This deliberately
+narrows native `uv_timer_again`, which can reuse a stopped timer's native callback;
+raw uvpp does not resurrect a released callback. For an active subscription,
+`again()` follows native repeat timing; a zero repeat makes it a successful no-op.
+All mutating methods return `UV_EBADF` while closing.
+
+`set_repeat(interval)` changes the configured repeat without changing an already
+scheduled timeout. Setting repeat to zero from a repeating callback still permits
+the already-scheduled next firing; that final delivery releases the callback.
+Setting a positive repeat on an inactive timer does not restart it. See
+[libuv's timer timing rules](https://docs.libuv.org/en/v1.x/timer.html).
+
+Duration inputs accept standard integral and floating-point chrono representations.
+Finite negative values first normalize to zero, then conversion to whole
+milliseconds truncates toward zero, without rounding up. For example, `-2ms`
+and `500us` both become `0ms`, while `1500us` becomes `1ms`. A zero timeout
+requests delivery on a subsequent loop iteration, not inline: an elapsed duration
+can therefore request an immediate timer without imposing a minimum one-millisecond
+delay. A repeat interval converted to zero disables repetition. This differs
+from `uv::co::sleep_for`, which rounds positive fractional milliseconds up.
+Non-finite or overflowing values report `UV_EINVAL` before native
+mutation or callback installation. Integral native-millisecond counts retain the
+full `uint64_t` range; ordinary integral units with an integer conversion factor
+are checked without overflowing intermediate chrono arithmetic. Other ratios and
+floating-point values convert through `long double`, rejecting values at or above
+2^64 milliseconds. This conversion can inherit floating-point rounding near
+integral boundaries; use integral milliseconds for exact native counts.
+
+`repeat()` and version-gated `due_in()` return `timer::duration`, a
+`std::chrono::duration<uint64_t, std::milli>`, preserving native unsigned counts
+rather than narrowing them into signed milliseconds. `due_in()` retains the
+`UVPP_HAS_TIMER_GET_DUE_IN` capability gate (libuv 1.40.0). These native getters
+have no operational failure channel and do not check `closing()`. They observe
+native state while the initialized handle's storage remains valid, including
+during closing. The associated loop must also remain alive for these queries.
+These observations do not imply that the timer remains active or can be restarted;
+start/stop and timer reconfiguration still reject closing handles with `UV_EBADF`.
+Loop-taking constructors remain throwing conveniences over `init()`;
+callback preparation may allocate before `start` runs, even for an uninitialized
+timer. Raw timeout rounding and lifetime rules do not change the separate high-level `uv::co::sleep_for` contract.
+
+## Idle, prepare, and check
+
+`uv::raw::{idle,prepare,check}` expose `start(cb)`, `start_static<Callback>()`, and
+`stop()`. Their callbacks receive a reference to their wrapper and carry no native
+completion error. Start/stop errors use the immediate `status` result.
+
+Each also supports default construction and `init(loop&)` / `init(loop_view)`
+returning `status` without throwing. Loop-taking constructors unwrap the same
+status. The [explicit initialization lifecycle](#explicit-initialization) matches
+timer: `initialized()` uses the native `loop` pointer and remains true after close;
+repeat initialization returns `UV_EALREADY` without changing subscriptions.
+Before init, start/stop and native descriptor/buffer queries report `UV_EBADF`,
+activity/closing/reference observations return false, and ref/unref/close are inert.
+Pre-init close callbacks are not retained or invoked. Successful init requires
+explicit close and storage retention through completion even without a start.
+Only use borrowed views after initialization. These entry points remain on the
+loop thread and add no storage field or allocation. Native phase initialization
+currently always succeeds for a valid initialized loop on Unix and Windows.
+
+```cpp
+uv::raw::prepare before_poll;
+auto initialized = before_poll.init(loop);
+if (initialized) {
+  auto started = before_poll.start([](uv::raw::prepare& self) {
+    self.close();
+  });
+  if (!started) before_poll.close();
+}
+loop.run(uv::run_mode::nowait); // Do not block waiting for I/O in this example.
+loop.run();                   // Complete close before releasing before_poll.
+```
+
+All three retain their subscription between loop iterations until stop or close.
+Successful replacement supports runtime-to-runtime, runtime-to-static,
+static-to-runtime, and static-to-static transitions, including from inside the
+executing callback. Each start stops and restarts native delivery before committing
+the new callable because native start on an already-active phase watcher does
+not replace its callback. This can change that handle's order relative to other
+watchers of the same phase; no order among peers is promised. Stop and close
+release stored captures, while an executing callable survives until it returns.
+
+Idle callbacks run each iteration while active and force a zero poll timeout;
+they are not a low-priority background-work facility. Prepare callbacks run
+before polling, and check callbacks after polling. An active prepare/check
+watcher alone does not guarantee that polling returns promptly; use an actual
+wake source or `run(run_mode::nowait)` when appropriate. There is no new high-level
+phase owner, coroutine frontend, queue, or cross-thread entry point in this slice.

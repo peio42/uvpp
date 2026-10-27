@@ -8,13 +8,13 @@
 
 namespace {
 
-uv::buffer_view allocate(uv::udp &, std::size_t suggested) {
+uv::buffer_view allocate(uv::raw::udp &, std::size_t suggested) {
   auto *data = new char[suggested];
   return uv::buffer_view{data, suggested};
 }
 
 struct send_context {
-  uv::udp_send_request request;
+  uv::raw::udp_send_request request;
   std::string payload;
   sockaddr_storage address{};
 
@@ -44,13 +44,13 @@ void copy_address(sockaddr_storage &storage, const sockaddr *address) {
 
 int main() {
   uv::loop loop;
-  uv::udp server(loop);
-  uv::udp client(loop);
+  uv::raw::udp server(loop);
+  uv::raw::udp client(loop);
 
-  server.bind(uv::ipv4{"127.0.0.1", 0});
-  auto server_address = server.sockname().to_v4();
+  server.bind(uv::ipv4{"127.0.0.1", 0}).throw_if_error();
+  auto server_address = server.sockname().value().to_v4();
 
-  client.receive_start(allocate, [&](uv::udp &handle, uv::udp_receive_result packet) {
+  client.receive_start(allocate, [&](uv::raw::udp &handle, uv::udp_receive_result packet) {
     auto storage = packet.storage();
 
     if (packet.empty_event()) {
@@ -59,7 +59,7 @@ int main() {
     }
 
     if (!packet) {
-      std::cerr << packet.status().error_code().message() << '\n';
+      std::cerr << packet.status().error().message() << '\n';
       delete[] storage.data();
       handle.close();
       return;
@@ -68,11 +68,11 @@ int main() {
     std::cout << "client received: " << packet_text(packet) << '\n';
     delete[] storage.data();
 
-    handle.receive_stop();
+    handle.receive_stop().throw_if_error();
     handle.close();
-  });
+  }).throw_if_error();
 
-  server.receive_start(allocate, [&](uv::udp &handle, uv::udp_receive_result packet) {
+  server.receive_start(allocate, [&](uv::raw::udp &handle, uv::udp_receive_result packet) {
     auto storage = packet.storage();
 
     if (packet.empty_event()) {
@@ -81,7 +81,7 @@ int main() {
     }
 
     if (!packet) {
-      std::cerr << packet.status().error_code().message() << '\n';
+      std::cerr << packet.status().error().message() << '\n';
       delete[] storage.data();
       handle.close();
       return;
@@ -96,32 +96,32 @@ int main() {
 
       auto view = reply->view();
       handle.send(reply->request, view, reply->native_address(),
-        [&handle, reply](uv::udp_send_request &, uv::result status) {
+        [&handle, reply](uv::raw::udp_send_request &, uv::status status) {
           if (!status) {
-            std::cerr << status.error_code().message() << '\n';
+            std::cerr << status.error().message() << '\n';
           }
 
           delete reply;
           handle.close();
-        });
+        }).throw_if_error();
     }
 
     delete[] storage.data();
-    handle.receive_stop();
-  });
+    handle.receive_stop().throw_if_error();
+  }).throw_if_error();
 
   auto *ping = new send_context;
   ping->payload = "ping";
 
   auto view = ping->view();
   client.send(ping->request, view, server_address,
-    [ping](uv::udp_send_request &, uv::result status) {
+    [ping](uv::raw::udp_send_request &, uv::status status) {
       if (!status) {
-        std::cerr << status.error_code().message() << '\n';
+        std::cerr << status.error().message() << '\n';
       }
 
       delete ping;
-    });
+    }).throw_if_error();
 
   loop.run();
   loop.close();

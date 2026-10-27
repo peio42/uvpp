@@ -5,7 +5,7 @@
 
 namespace {
 
-uv::buffer_view allocate(uv::tcp &, std::size_t suggested) {
+uv::buffer_view allocate(uv::raw::tcp &, std::size_t suggested) {
   auto *data = new char[suggested];
   return uv::buffer_view{data, suggested};
 }
@@ -14,26 +14,26 @@ uv::buffer_view allocate(uv::tcp &, std::size_t suggested) {
 
 int main() {
   uv::loop loop;
-  uv::tcp server(loop);
+  uv::raw::tcp server(loop);
 
   uv::ipv4 address{"0.0.0.0", 2345};
-  server.bind(address);
+  server.bind(address).throw_if_error();
 
-  server.listen([&](uv::tcp &srv, uv::result status) {
+  server.listen([&](uv::raw::tcp &srv, uv::status status) {
     if (!status) {
-      std::cerr << status.error_code().message() << '\n';
+      std::cerr << status.error().message() << '\n';
       return;
     }
 
-    auto *client = new uv::tcp(loop);
-    srv.accept(*client);
+    auto *client = new uv::raw::tcp(loop);
+    srv.accept(*client).throw_if_error();
 
-    client->read_start(allocate, [client](uv::tcp &stream, uv::read_result read) {
+    client->read_start(allocate, [client](uv::raw::tcp &stream, uv::read_result read) {
       auto storage = read.storage();
 
       if (read.eof()) {
         delete[] storage.data();
-        stream.close([client](uv::tcp &) {
+        stream.close([client](uv::raw::tcp &) {
           delete client;
         });
         return;
@@ -41,24 +41,24 @@ int main() {
 
       if (!read.ok()) {
         delete[] storage.data();
-        stream.close([client](uv::tcp &) {
+        stream.close([client](uv::raw::tcp &) {
           delete client;
         });
         return;
       }
 
-      auto *request = new uv::write_request;
+      auto *request = new uv::raw::write_request;
       auto bytes = read.bytes();
 
-      stream.write(*request, bytes, [request, storage](uv::write_request &, uv::result status) {
+      stream.write(*request, bytes, [request, storage](uv::raw::write_request &, uv::status status) {
         if (!status) {
-          std::cerr << status.error_code().message() << '\n';
+          std::cerr << status.error().message() << '\n';
         }
         delete[] storage.data();
         delete request;
-      });
-    });
-  });
+      }).throw_if_error();
+    }).throw_if_error();
+  }).throw_if_error();
 
   loop.run();
   return 0;

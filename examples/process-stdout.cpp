@@ -5,7 +5,7 @@
 
 namespace {
 
-uv::buffer_view allocate(uv::pipe &, std::size_t suggested) {
+uv::buffer_view allocate(uv::raw::pipe &, std::size_t suggested) {
   auto *data = new char[suggested];
   return uv::buffer_view{data, suggested};
 }
@@ -14,21 +14,21 @@ uv::buffer_view allocate(uv::pipe &, std::size_t suggested) {
 
 int main() {
   uv::loop loop;
-  uv::pipe stdout_pipe(loop);
+  uv::raw::pipe stdout_pipe(loop);
 
-  auto options = uv::process_options::make("/bin/sh")
+  auto options = uv::raw::process_options::make("/bin/sh")
     .args({"-c", "printf 'hello from child process\\n'"})
     .ignore_stdin()
     .pipe_stdout(stdout_pipe)
     .inherit_stderr();
 
-  uv::process child(loop, options, [](uv::process &process, uv::process_exit exit) {
+  uv::raw::process child(loop, options, [](uv::raw::process &process, uv::raw::process_exit exit) {
     std::cout << "child exited status=" << exit.status
               << " signal=" << exit.signal << '\n';
     process.close();
   });
 
-  stdout_pipe.read_start(allocate, [](uv::pipe &stream, uv::read_result read) {
+  stdout_pipe.read_start(allocate, [](uv::raw::pipe &stream, uv::read_result read) {
     auto storage = read.storage();
 
     if (read.eof()) {
@@ -38,7 +38,7 @@ int main() {
     }
 
     if (!read) {
-      std::cerr << read.status().error_code().message() << '\n';
+      std::cerr << read.status().error().message() << '\n';
       delete[] storage.data();
       stream.close();
       return;
@@ -48,7 +48,7 @@ int main() {
     std::cout.write(reinterpret_cast<const char *>(bytes.data()),
                     static_cast<std::streamsize>(bytes.size()));
     delete[] storage.data();
-  });
+  }).throw_if_error();
 
   loop.run();
   loop.close();

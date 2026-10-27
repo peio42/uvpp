@@ -39,10 +39,11 @@ static_assert(!std::invocable<invalid_walk_callback&, uv::handle_view>);
 TEST(Uvpp2Loop, backendFdIsValidFileDescriptor) {
 #ifdef _WIN32
   GTEST_SKIP() << "uv_backend_fd not available on Windows";
-#endif
+#else
   uv::loop loop;
   EXPECT_GE(loop.backend_fd(), 0);
   loop.close();
+#endif
 }
 
 TEST(Uvpp2Loop, backendTimeoutReflectsLoopState) {
@@ -53,8 +54,8 @@ TEST(Uvpp2Loop, backendTimeoutReflectsLoopState) {
   ASSERT_TRUE(empty_timeout.has_value());
   EXPECT_EQ(*empty_timeout, std::chrono::milliseconds{0});
 
-  uv::timer timer(loop);
-  timer.start(std::chrono::seconds{10}, [](uv::timer &) {});
+  uv::raw::timer timer(loop);
+  timer.start(std::chrono::seconds{10}, [](uv::raw::timer &) {});
 
   // With a pending timer the loop must wait. std::nullopt would mean
   // "no timeout", i.e. block indefinitely.
@@ -77,8 +78,8 @@ TEST(Uvpp2Loop, metricsIdleTimeAccumulatesAfterRun) {
 
   auto idle_before = loop.metrics_idle_time();
 
-  uv::timer timer(loop);
-  timer.start(std::chrono::milliseconds{50}, [](uv::timer &t) { t.close(); });
+  uv::raw::timer timer(loop);
+  timer.start(std::chrono::milliseconds{50}, [](uv::raw::timer &t) { t.close(); });
 
   loop.run();
 
@@ -90,8 +91,8 @@ TEST(Uvpp2Loop, metricsIdleTimeAccumulatesAfterRun) {
 TEST(Uvpp2Loop, metricsInfoCountsLoopIterations) {
   uv::loop loop;
 
-  uv::timer timer(loop);
-  timer.start(std::chrono::milliseconds{1}, [](uv::timer &t) { t.close(); });
+  uv::raw::timer timer(loop);
+  timer.start(std::chrono::milliseconds{1}, [](uv::raw::timer &t) { t.close(); });
 
   loop.run();
 
@@ -117,13 +118,13 @@ TEST(Uvpp2Loop, metricsInfoIsAccessibleOnLoopView) {
 
 TEST(Uvpp2Loop, handlesCollectsIntoVectorForRangeBasedFor) {
   uv::loop loop;
-  uv::timer t1(loop);
-  uv::timer t2(loop);
-  uv::idle  idle(loop);
+  uv::raw::timer t1(loop);
+  uv::raw::timer t2(loop);
+  uv::raw::idle  idle(loop);
 
-  t1.start(std::chrono::seconds{10}, [](uv::timer &) {});
-  t2.start(std::chrono::seconds{10}, [](uv::timer &) {});
-  idle.start([](uv::idle &) {});
+  t1.start(std::chrono::seconds{10}, [](uv::raw::timer &) {});
+  t2.start(std::chrono::seconds{10}, [](uv::raw::timer &) {});
+  idle.start([](uv::raw::idle &) {});
 
   auto all = loop.handles();
   EXPECT_EQ(all.size(), 3u);
@@ -141,13 +142,13 @@ TEST(Uvpp2Loop, handlesCollectsIntoVectorForRangeBasedFor) {
 
 TEST(Uvpp2Loop, handlesIsComposableWithStdRanges) {
   uv::loop loop;
-  uv::timer t1(loop);
-  uv::timer t2(loop);
-  uv::idle  idle(loop);
+  uv::raw::timer t1(loop);
+  uv::raw::timer t2(loop);
+  uv::raw::idle  idle(loop);
 
-  t1.start(std::chrono::seconds{10}, [](uv::timer &) {});
-  t2.start(std::chrono::seconds{10}, [](uv::timer &) {});
-  idle.start([](uv::idle &) {});
+  t1.start(std::chrono::seconds{10}, [](uv::raw::timer &) {});
+  t2.start(std::chrono::seconds{10}, [](uv::raw::timer &) {});
+  idle.start([](uv::raw::idle &) {});
 
   auto timers = loop.handles()
                 | std::views::filter([](uv::handle_view h) {
@@ -165,11 +166,11 @@ TEST(Uvpp2Loop, handlesIsComposableWithStdRanges) {
 
 TEST(Uvpp2Loop, walkVisitsAllActiveHandles) {
   uv::loop loop;
-  uv::timer t1(loop);
-  uv::timer t2(loop);
+  uv::raw::timer t1(loop);
+  uv::raw::timer t2(loop);
 
-  t1.start(std::chrono::seconds{10}, [](uv::timer &) {});
-  t2.start(std::chrono::seconds{10}, [](uv::timer &) {});
+  t1.start(std::chrono::seconds{10}, [](uv::raw::timer &) {});
+  t2.start(std::chrono::seconds{10}, [](uv::raw::timer &) {});
 
   std::vector<uv::handle_type> types;
   loop.walk([&](uv::handle_view h) {
@@ -188,8 +189,8 @@ TEST(Uvpp2Loop, walkVisitsAllActiveHandles) {
 
 TEST(Uvpp2Loop, walkHandleViewExposesActiveAndClosingState) {
   uv::loop loop;
-  uv::timer timer(loop);
-  timer.start(std::chrono::seconds{10}, [](uv::timer &) {});
+  uv::raw::timer timer(loop);
+  timer.start(std::chrono::seconds{10}, [](uv::raw::timer &) {});
 
   loop.walk([](uv::handle_view h) {
     EXPECT_TRUE(h.active());
@@ -204,13 +205,13 @@ TEST(Uvpp2Loop, walkHandleViewExposesActiveAndClosingState) {
 
 TEST(Uvpp2Loop, walkCanRecoverUvppHandleViaAs) {
   uv::loop loop;
-  uv::timer timer(loop);
-  timer.start(std::chrono::seconds{10}, [](uv::timer &) {});
+  uv::raw::timer timer(loop);
+  timer.start(std::chrono::seconds{10}, [](uv::raw::timer &) {});
 
   bool found = false;
   loop.walk([&](uv::handle_view h) {
     if (h.type() == uv::handle_type::timer) {
-      auto &recovered = h.as<uv::timer>();
+      auto &recovered = h.as<uv::raw::timer>();
       EXPECT_EQ(recovered.native(), timer.native());
       found = true;
     }
@@ -224,8 +225,8 @@ TEST(Uvpp2Loop, walkCanRecoverUvppHandleViaAs) {
 
 TEST(Uvpp2Loop, walkWorksOnLoopView) {
   uv::loop loop;
-  uv::timer timer(loop);
-  timer.start(std::chrono::seconds{10}, [](uv::timer &) {});
+  uv::raw::timer timer(loop);
+  timer.start(std::chrono::seconds{10}, [](uv::raw::timer &) {});
 
   int count = 0;
   loop.view().walk([&](uv::handle_view) { ++count; });
@@ -238,8 +239,8 @@ TEST(Uvpp2Loop, walkWorksOnLoopView) {
 
 TEST(Uvpp2Loop, walkAcceptsFunctionPointerCallbacks) {
   uv::loop loop;
-  uv::timer timer(loop);
-  timer.start(std::chrono::seconds{10}, [](uv::timer &) {});
+  uv::raw::timer timer(loop);
+  timer.start(std::chrono::seconds{10}, [](uv::raw::timer &) {});
 
   int count = 0;
   timer.user_data(count);
@@ -258,10 +259,10 @@ TEST(Uvpp2Loop, walkAcceptsFunctionPointerCallbacks) {
 // ---------------------------------------------------------------------------
 
 TEST(Uvpp2HandleView, basicHandleExposesNamedHandleView) {
-  static_assert(!std::is_convertible_v<uv::timer &, uv::handle_view>);
+  static_assert(!std::is_convertible_v<uv::raw::timer &, uv::handle_view>);
 
   uv::loop loop;
-  uv::timer timer(loop);
+  uv::raw::timer timer(loop);
 
   uv::handle_view view = timer.view();
   EXPECT_EQ(view.type(), uv::handle_type::timer);
@@ -275,7 +276,7 @@ TEST(Uvpp2HandleView, basicHandleExposesNamedHandleView) {
 
 TEST(Uvpp2HandleView, handleViewRefAndUnrefAdjustReferenceCount) {
   uv::loop loop;
-  uv::timer timer(loop);
+  uv::raw::timer timer(loop);
 
   uv::handle_view view = timer.view();
   EXPECT_TRUE(view.has_ref());
@@ -306,8 +307,8 @@ TEST(Uvpp2Loop, configureBlockSignalAcceptsSigprof) {
 
 TEST(Uvpp2Loop, forkReinitializesLoopInChildProcess) {
   uv::loop loop;
-  uv::timer timer(loop);
-  timer.start(std::chrono::milliseconds{1}, [](uv::timer &t) { t.close(); });
+  uv::raw::timer timer(loop);
+  timer.start(std::chrono::milliseconds{1}, [](uv::raw::timer &t) { t.close(); });
 
   pid_t pid = ::fork();
   ASSERT_NE(pid, -1);

@@ -1,4 +1,4 @@
-#include <netdb.h>
+#include <uv.h>
 #include <string>
 #include <type_traits>
 #include <vector>
@@ -65,7 +65,7 @@ TEST(Uvpp2Network, getaddrinfoCancelAfterCompletionFails) {
   EXPECT_THROW(request.cancel(), uv::error);
   auto ec = request.try_cancel();
   ASSERT_TRUE(ec);
-  EXPECT_EQ(ec.value(), UV_EBUSY);
+  EXPECT_EQ(ec.native(), UV_EBUSY);
 
   loop.close();
 }
@@ -153,7 +153,7 @@ TEST(Uvpp2Network, getnameinfoCancelAfterCompletionFails) {
   EXPECT_THROW(request.cancel(), uv::error);
   auto ec = request.try_cancel();
   ASSERT_TRUE(ec);
-  EXPECT_EQ(ec.value(), UV_EBUSY);
+  EXPECT_EQ(ec.native(), UV_EBUSY);
 
   loop.close();
 }
@@ -207,7 +207,18 @@ TEST(Uvpp2Network, immediateGetnameinfoFailureLeavesRequestReusable) {
 #if UVPP_HAS_IF_INDEX_TO_NAME
 TEST(Uvpp2Network, invalidInterfaceIndexThrows) {
   EXPECT_THROW((void)uv::interface_name(0), uv::error);
+}
+#endif
+
 #if UVPP_HAS_IF_INDEX_TO_IID
+TEST(Uvpp2Network, interfaceIdentifierPreservesPlatformSemantics) {
+#ifdef _WIN32
+  // Windows formats the numeric index for an IPv6 scope identifier; this is
+  // not an interface lookup and does not validate whether the index exists.
+  EXPECT_EQ(uv::interface_identifier(0), "0");
+  EXPECT_EQ(uv::interface_identifier(42), "42");
+#else
+  // Unix delegates to if_indextoname(), which rejects the zero index.
   EXPECT_THROW((void)uv::interface_identifier(0), uv::error);
 #endif
 }

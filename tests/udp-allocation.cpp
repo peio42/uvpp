@@ -1,12 +1,19 @@
 #include <array>
+#include <chrono>
 #include <cstdlib>
 #include <new>
 
 #include "gtest/gtest.h"
 #include "uvpp/handles/udp.hpp"
+#include "uvpp/handles/tcp.hpp"
+#include "uvpp/handles/pipe.hpp"
+#include "platform-support.hpp"
+#include "uvpp/net/tcp_listener.hpp"
+#include "uvpp/net/pipe_listener.hpp"
+#include "uvpp/net/udp_socket.hpp"
 
 // This file has its own test executable so allocator replacement cannot affect
-// the regular suite. Injection is limited to the assignment on this thread.
+// the regular suite. Injection is limited to the tested operation on this thread.
 namespace {
 thread_local int allocations_before_failure = -1;
 
@@ -112,4 +119,245 @@ TEST(Uvpp2Udp, sendBatchCopyAssignmentPreservesStateOnAllocationFailure) {
 #else
   GTEST_SKIP() << "Requires UVPP_HAS_UDP_TRY_SEND2";
 #endif
+}
+
+namespace {
+template<class Create>
+void expect_creation_bad_alloc(uv::loop &loop, Create create, int fail_after = 0) {
+  bool caught = false;
+  {
+    allocation_failure injection{fail_after};
+    try { create(); }
+    catch (const std::bad_alloc &) { caught = true; }
+  }
+  EXPECT_TRUE(caught);
+  int handles = 0;
+  uv_walk(loop.native(), [](uv_handle_t *, void *data) {
+    ++*static_cast<int *>(data);
+  }, &handles);
+  EXPECT_EQ(handles, 0); // All C++ preparation precedes native initialization.
+}
+}
+
+TEST(NetworkFactoriesAllocation, CppFailuresThrowInBothCreationPolicies) {
+  uv::loop loop;
+  const uv::ipv4 address{"127.0.0.1", 0};
+  const std::string path(256, 'p'); // Force allocation in the legacy bind path.
+  expect_creation_bad_alloc(loop, [&] { uv::tcp_listener owner{loop, address}; });
+  expect_creation_bad_alloc(loop, [&] { (void)uv::ops::make_tcp_listener(loop, address); });
+  expect_creation_bad_alloc(loop, [&] { uv::udp_socket owner{loop, address}; });
+  expect_creation_bad_alloc(loop, [&] { (void)uv::ops::make_udp_socket(loop, address); });
+  expect_creation_bad_alloc(loop, [&] { uv::pipe_listener owner{loop, path}; });
+  expect_creation_bad_alloc(loop, [&] { (void)uv::ops::make_pipe_listener(loop, path); });
+#if !UVPP_HAS_PIPE_BIND2
+  // Cover both path-copy and state-storage failure, with no native handle left.
+  expect_creation_bad_alloc(loop, [&] { uv::pipe_listener owner{loop, path}; }, 1);
+  expect_creation_bad_alloc(loop, [&] { (void)uv::ops::make_pipe_listener(loop, path); }, 1);
+#endif
+  EXPECT_NO_THROW(loop.close());
+}
+
+// The isolated allocation binary also verifies the raw stream substrate: even
+// heap-backed prepared callables must move through native delivery without copies.
+TEST(RawStreamAllocation, preparedSubscriptionsAndRepeatedDeliveryNeedNoCppAllocation) {
+  uv::loop loop;
+  uv::raw::tcp listener{loop}, client{loop}, peer{loop};
+  uv::raw::connect_request request;
+  bool accepted = false, connected = false;
+  listener.bind(uv::ipv4{"127.0.0.1", 0}).throw_if_error();
+  listener.listen([&](uv::raw::tcp &self, uv::status status) {
+    EXPECT_TRUE(status);
+    EXPECT_TRUE(self.accept(peer));
+    accepted = true;
+  }).throw_if_error();
+  client.connect(request, listener.sockname().value().to_v4(), [&](uv::raw::connect_request&, uv::status status) {
+    EXPECT_TRUE(status);
+    connected = true;
+  }).throw_if_error();
+  const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds{5};
+  while (!(accepted && connected) && std::chrono::steady_clock::now() < deadline)
+    loop.run(uv::run_mode::nowait);
+  if (!(accepted && connected)) {
+    listener.close(); client.close(); peer.close(); loop.run();
+    FAIL() << "TCP pair setup timed out";
+  }
+  using substrate = uv::raw::stream<uv::raw::tcp, uv_tcp_t>;
+  std::array<char, 8> storage{};
+  std::array<char, 256> capture{};
+  int delivered = 0;
+  substrate::allocate_callback allocator = [&, capture](uv::raw::tcp&, std::size_t) {
+    storage[0] = capture[0];
+    return uv::buffer_view{storage.data(), storage.size()};
+  };
+  substrate::read_callback reader = [&, capture](uv::raw::tcp&, uv::read_result) { delivered += 1 + capture[0]; };
+  uv::raw::write_request writing;
+  int write_deliveries = 0;
+  bool write_succeeded = false;
+  uv::raw::write_request::callback written = [&, capture](uv::raw::write_request &request, uv::status status) {
+    write_deliveries += 1 + capture[0];
+    write_succeeded = status.has_value() && !request.pending();
+  };
+  uv::status started, stopped, submitted;
+  {
+    allocation_failure no_cpp_allocation{0};
+    started = client.read_start(std::move(allocator), std::move(reader));
+    if (started) {
+      auto *native = client.native_stream();
+      for (int i = 0; i < 1000; ++i) {
+        uv_buf_t buffer{};
+        native->alloc_cb(client.native_handle(), storage.size(), &buffer);
+        native->read_cb(native, 0, &buffer);
+      }
+      stopped = client.read_stop();
+      submitted = client.write(writing, uv::buffer_view{storage.data(), 1}, std::move(written));
+      const auto completion_deadline = std::chrono::steady_clock::now() + std::chrono::seconds{5};
+      while (writing.pending() && std::chrono::steady_clock::now() < completion_deadline)
+        loop.run(uv::run_mode::nowait);
+    }
+  }
+  EXPECT_TRUE(started);
+  EXPECT_TRUE(stopped);
+  EXPECT_EQ(delivered, 1000);
+  EXPECT_TRUE(submitted);
+  EXPECT_EQ(write_deliveries, 1);
+  EXPECT_TRUE(write_succeeded);
+  listener.close(); client.close(); peer.close();
+  loop.run();
+  EXPECT_NO_THROW(loop.close());
+}
+
+TEST(RawPipeAllocation, nativeResultsAndCppNameAllocationFailuresRemainSeparate) {
+  uv::loop loop;
+  uv::raw::pipe handle{loop};
+  const auto path = uvpp::test::pipe_path("raw-name-allocation");
+  std::error_code ignored;
+  std::filesystem::remove(path, ignored);
+  ASSERT_TRUE(handle.bind(path));
+  const auto *native = handle.native();
+  bool allocation_failed = false;
+  {
+    allocation_failure injection{0};
+    try { (void)handle.sockname(); }
+    catch (const std::bad_alloc&) { allocation_failed = true; }
+  }
+  EXPECT_TRUE(allocation_failed);
+  EXPECT_EQ(handle.native(), native);
+  EXPECT_TRUE(handle.initialized());
+  EXPECT_FALSE(handle.closing());
+  EXPECT_EQ(handle.sockname().value(), path);
+#if !UVPP_HAS_PIPE_CONNECT2
+  uv::raw::pipe client{loop};
+  uv::raw::connect_request request;
+  uv::raw::connect_request::callback callback = [](uv::raw::connect_request&, uv::status) {};
+  bool preparation_failed = false;
+  {
+    allocation_failure injection{0};
+    try { (void)client.connect(request, path, std::move(callback)); }
+    catch (const std::bad_alloc&) { preparation_failed = true; }
+  }
+  EXPECT_TRUE(preparation_failed);
+  EXPECT_FALSE(request.pending());
+  client.close();
+#endif
+  handle.close();
+  loop.run();
+  EXPECT_NO_THROW(loop.close());
+  std::filesystem::remove(path, ignored);
+}
+
+TEST(RawUdpAllocation, multicastPreparationFailuresRemainCppExceptions) {
+  uv::loop loop;
+  uv::raw::udp handle{loop};
+  ASSERT_TRUE(handle.bind(uv::ipv4{"127.0.0.1", 0}));
+  const auto port = handle.sockname().value().port();
+  auto *native = handle.native();
+  int marker = 42;
+  handle.user_data(marker);
+  const std::string long_address(128, 'x');
+#if UVPP_HAS_UDP_SOURCE_MEMBERSHIP
+  constexpr int operations = 3;
+#else
+  constexpr int operations = 2;
+#endif
+  for (int operation = 0; operation < operations; ++operation) {
+    bool failed = false;
+    {
+      allocation_failure injection{0};
+      try {
+        if (operation == 0) (void)handle.set_membership(long_address, uv::membership::join);
+        if (operation == 1) (void)handle.set_multicast_interface(long_address);
+#if UVPP_HAS_UDP_SOURCE_MEMBERSHIP
+        if (operation == 2) (void)handle.set_source_membership("239.255.42.99", long_address, uv::membership::join);
+#endif
+      } catch (const std::bad_alloc&) { failed = true; }
+    }
+    EXPECT_TRUE(failed);
+    EXPECT_TRUE(handle.initialized());
+    EXPECT_FALSE(handle.closing());
+    EXPECT_EQ(handle.native(), native);
+    EXPECT_EQ(handle.user_data<int>(), &marker);
+    EXPECT_EQ(handle.sockname().value().port(), port);
+  }
+  EXPECT_EQ(handle.set_membership(long_address, uv::membership::join).error(), uv::make_error_code(UV_EINVAL));
+  handle.close(); loop.run();
+  EXPECT_NO_THROW(loop.close());
+}
+
+TEST(RawUdpAllocation, preparedReceiveAndSendNeedNoCppAllocationDuringNativeDelivery) {
+  uv::loop loop;
+  uv::raw::udp receiver{loop}, sender{loop};
+  receiver.bind(uv::ipv4{"127.0.0.1", 0}).throw_if_error();
+  sender.bind(uv::ipv4{"127.0.0.1", 0}).throw_if_error();
+  const auto target = receiver.sockname().value().to_v4();
+  std::array<char, 65536> storage{};
+  std::array<char, 256> capture{};
+  char payload = 'a';
+  int packets = 0, completions = 0;
+  bool completion_ok = false;
+  uv::status stopped;
+  uv::raw::udp::allocate_callback allocator = [&, capture](uv::raw::udp&, std::size_t) {
+    storage[0] = capture[0];
+    return uv::buffer_view{storage.data(), storage.size()};
+  };
+  uv::raw::udp::receive_callback receive = [&, capture](uv::raw::udp &self, uv::udp_receive_result result) {
+    if (!result.empty_event()) {
+      packets += 1 + capture[0];
+      stopped = self.receive_stop();
+    }
+  };
+  uv::raw::udp_send_request request;
+  uv::raw::udp_send_request::callback sent = [&, capture](uv::raw::udp_send_request &self, uv::status status) {
+    completions += 1 + capture[0];
+    completion_ok = status.has_value() && !self.pending();
+  };
+#if UVPP_HAS_UDP_TRY_SEND2
+  uv::udp_send_batch batch;
+  batch.add(uv::buffer_view{&payload, 1}, target);
+  uv::send_many_now_result batch_result{UV_EINVAL};
+#endif
+  uv::status started, submitted;
+  {
+    allocation_failure no_cpp_allocation{0};
+    started = receiver.receive_start(std::move(allocator), std::move(receive));
+    submitted = sender.send(request, uv::buffer_view{&payload, 1}, target, std::move(sent));
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds{5};
+    while ((packets == 0 || completions == 0) && std::chrono::steady_clock::now() < deadline)
+      loop.run(uv::run_mode::nowait);
+#if UVPP_HAS_UDP_TRY_SEND2
+    batch_result = sender.send_many_now(batch);
+#endif
+  }
+  EXPECT_TRUE(started);
+  EXPECT_TRUE(submitted);
+  EXPECT_TRUE(stopped);
+  EXPECT_EQ(packets, 1);
+  EXPECT_EQ(completions, 1);
+  EXPECT_TRUE(completion_ok);
+#if UVPP_HAS_UDP_TRY_SEND2
+  EXPECT_TRUE(batch_result.ok());
+  EXPECT_EQ(batch_result.datagrams_sent(), 1u);
+#endif
+  receiver.close(); sender.close(); loop.run();
+  EXPECT_FALSE(request.pending());
+  EXPECT_NO_THROW(loop.close());
 }

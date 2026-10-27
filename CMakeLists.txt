@@ -1,10 +1,16 @@
 cmake_minimum_required(VERSION 3.14)
 
-file(READ "${CMAKE_CURRENT_SOURCE_DIR}/VERSION" _uvpp_version)
-string(STRIP "${_uvpp_version}" _uvpp_version)
+include(cmake/uvppVersion.cmake)
+uvpp_resolve_version("${CMAKE_CURRENT_SOURCE_DIR}")
+
+message(STATUS "uvpp package version: ${UVPP_PACKAGE_VERSION} (${UVPP_VERSION_SOURCE})")
+message(STATUS "uvpp build identity: ${UVPP_BUILD_IDENTITY}")
+if(UVPP_GIT_DESCRIBE)
+  message(STATUS "uvpp Git describe: ${UVPP_GIT_DESCRIBE}")
+endif()
 
 project(uvpp
-  VERSION ${_uvpp_version}
+  VERSION ${UVPP_PACKAGE_VERSION}
   DESCRIPTION "Header-only C++20 wrapper around libuv"
   LANGUAGES CXX
 )
@@ -69,3 +75,50 @@ install(
     cmake/FindLibUV.cmake
   DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/uvpp
 )
+
+# Repository validation is opt-in: consumers need neither Google Test nor examples.
+option(UVPP_BUILD_TESTS "Build the repository test suites" OFF)
+option(UVPP_BUILD_EXAMPLES "Build the repository examples" OFF)
+
+# Internal, opt-in usage requirements for repository validation executables.
+if(MSVC)
+  add_library(uvpp-validation-options INTERFACE)
+  target_compile_options(uvpp-validation-options INTERFACE
+    /W4
+    /permissive-
+    /Zc:__cplusplus
+    /utf-8
+  )
+  target_compile_definitions(uvpp-validation-options INTERFACE
+    NOMINMAX
+    WIN32_LEAN_AND_MEAN
+  )
+endif()
+
+if(UVPP_BUILD_TESTS)
+  enable_testing()
+  find_package(GTest CONFIG REQUIRED)
+  file(GLOB UVPP_TEST_SOURCES CONFIGURE_DEPENDS tests/test-*.cpp)
+  add_executable(uvpp-tests tests/main.cpp ${UVPP_TEST_SOURCES})
+  add_executable(uvpp-udp-allocation tests/main.cpp tests/udp-allocation.cpp)
+  foreach(target uvpp-tests uvpp-udp-allocation)
+    target_link_libraries(${target} PRIVATE uvpp::uvpp GTest::gtest)
+    if(MSVC)
+      target_link_libraries(${target} PRIVATE uvpp-validation-options)
+    endif()
+    add_test(NAME ${target} COMMAND ${target})
+    set_tests_properties(${target} PROPERTIES TIMEOUT 300)
+  endforeach()
+endif()
+
+if(UVPP_BUILD_EXAMPLES)
+  file(GLOB UVPP_EXAMPLE_SOURCES CONFIGURE_DEPENDS examples/*.cpp)
+  foreach(source IN LISTS UVPP_EXAMPLE_SOURCES)
+    get_filename_component(name "${source}" NAME_WE)
+    add_executable(uvpp-example-${name} "${source}")
+    target_link_libraries(uvpp-example-${name} PRIVATE uvpp::uvpp)
+    if(MSVC)
+      target_link_libraries(uvpp-example-${name} PRIVATE uvpp-validation-options)
+    endif()
+  endforeach()
+endif()

@@ -1,253 +1,188 @@
-# Ownership and Lifetime
-
-## Handles
-
-libuv handles are address-stable. Once initialized, a handle's native address must not change while libuv may refer to it.
-
-Therefore v2 handles should be:
-
-```cpp
-handle(const handle&) = delete;
-handle& operator=(const handle&) = delete;
-handle(handle&&) = delete;
-handle& operator=(handle&&) = delete;
-```
-
-This is stricter than typical C++ value types, but it reflects libuv's lifecycle accurately.
-
-## Closing
-
-`close()` is asynchronous in libuv. A destructor cannot safely call `uv_close()` and then destroy the object immediately.
-
-v2 should avoid pretending that handle destruction automatically completes close.
-
-Valid patterns:
-
-- stack handle closed before `loop.run()` exits;
-- heap handle deletes itself in the close callback;
-- owning wrapper schedules close and keeps state alive until the close callback;
-- higher-level RAII owner type separate from the low-level handle.
-
-The low-level handle destructor does not call `uv_close()`. Destroying a handle while libuv can still reference it is a user lifetime error.
-
-## Borrowed Callback Results
-
-Some handle callback result objects expose data borrowed from libuv or from caller-provided callback storage for the duration of the callback.
-
-Examples:
-
-- `fs_event_result::filename()` is a borrowed string view;
-- `fs_poll_result::previous()` and `fs_poll_result::current()` are borrowed stat pointers;
-- `read_result::bytes()`, `read_result::storage()`, and `read_result::raw_buffer()` refer to the buffer returned by the stream allocation callback;
-- `udp_receive_result::bytes()`, `udp_receive_result::storage()`, and `udp_receive_result::raw_buffer()` refer to the buffer returned by the UDP allocation callback;
-- `udp_receive_result::address()` is the source address pointer passed by libuv.
-
-Copy those values inside the callback if they must survive it.
-
-```cpp
-stream.read_start(allocator, [](uv::tcp&, uv::read_result read) {
-  if (!read || read.eof()) {
-    return;
-  }
-
-  std::vector<std::byte> payload{read.bytes().begin(), read.bytes().end()};
-});
-```
-
-```cpp
-udp.receive_start(allocator, [](uv::udp&, uv::udp_receive_result received) {
-  if (!received || received.empty_event()) {
-    return;
-  }
-
-  std::vector<std::byte> payload{received.bytes().begin(), received.bytes().end()};
-
-  sockaddr_storage peer{};
-  if (auto *addr = received.address()) {
-    std::memcpy(&peer, addr, sizeof(peer));
-  }
-});
-```
-
-This is deliberately different from `uv::fs::read_result`, which owns an `owned_buffer` in the public `uv::fs` API.
-
-## Requests
-
-Requests have operation-specific lifetimes. The request must outlive the asynchronous operation that uses it.
-
-Low-level API:
-
-```cpp
-write_request req;
-tcp.write(req, buffers, callback);
-```
-
-Higher-level API:
-
-```cpp
-tcp.async_write(buffers, callback);
-```
-
-The higher-level API may allocate operation state internally. That cost must be visible in the API name or documentation.
-
-`fs::raw::request` is a special case because libuv uses `uv_fs_t` for every filesystem operation and requires `uv_fs_req_cleanup()` after completion. The raw API keeps that cleanup explicit. The callback must call `req.cleanup()` after consuming the result and before reusing or destroying the request. `req.scoped_cleanup()` is an opt-in stack guard for that call.
-
-The public `uv::fs` API owns the raw request internally, cleans it automatically, and returns scalar or owned result values. Use `fs::raw` when the caller needs exact libuv control, request reuse, caller-owned buffers, static callbacks, or request-scoped directory iteration.
-
-## Raw Filesystem Ranges
-
-Raw filesystem results may expose range syntax without taking ownership of the
-data they iterate.
-
-`fs::raw::scandir_result` models libuv's `uv_fs_scandir_next()` protocol. Its
-range is single-pass and consumes the underlying scandir cursor:
-
-```cpp
-uv::fs::raw::scandir(loop, req, path, 0,
-  [](uv::fs::raw::request& req, uv::fs::raw::scandir_result result) {
-    auto cleanup = req.scoped_cleanup();
-
-    for (auto entry : result) {
-      std::string name{entry.name()};
-    }
-  });
-```
-
-The entry names are borrowed from the `uv_fs_t` request and remain valid only
-until request cleanup. Copy names that must outlive the callback or cleanup
-guard.
-
-`fs::raw::readdir_result::entries(buffer)` ranges over the entries libuv filled
-in a caller-owned `directory_read_buffer` for that completion:
-
-```cpp
-for (auto entry : result.entries(buffer)) {
-  std::string name{entry.name()};
-}
-```
-
-Those entry names are borrowed from the read buffer and remain valid only while
-the buffer is alive and before it is reused by another `readdir` call. The range
-must not imply ownership; it is only a safer spelling for the bounded index loop
-over `result.count()`.
-
-## Buffers
-
-Separate owning buffers from non-owning views. The v2 taxonomy is:
-
-- `buffer_view`: non-owning `uv_buf_t`-compatible view used by low-level libuv-facing APIs;
-- `owned_buffer`: owns bytes and can explicitly produce a `buffer_view`;
-- `std::span<std::byte>` for generic byte ranges.
-
-Do not provide a single `buffer::cleanup()` style API in v2. Ownership should be represented by type, not by convention.
-
-`owned_buffer` is a convenience owner, not an asynchronous operation owner. A `buffer_view` produced by `owned_buffer::view()` remains valid only while the `owned_buffer` is alive and has not been resized or destroyed.
-
-```cpp
-owned_buffer storage{4096};
-auto view = storage.view();
-```
-
-For asynchronous writes and UDP sends, the memory referenced by the submitted `buffer_view` or byte span must outlive the operation completion callback. Low-level APIs do not copy buffer contents.
-
-```cpp
-owned_buffer payload{4};
-std::memcpy(payload.data(), "ping", 4);
-auto view = payload.view();
-
-write_request req;
-stream.write(req, view, [](write_request&, result status) {
-  // payload must still be alive here
-});
-```
-
-For read and UDP receive allocation callbacks, returning a `buffer_view` does not transfer ownership to uvpp. The allocator must ensure that the backing storage remains valid until the corresponding read/receive callback has run and released or reused it.
-
-## Immediate Batch Metadata
-
-Immediate low-level APIs that operate on multiple native items must not allocate
-batch metadata internally. Their signatures should make every borrowed array
-and address lifetime visible.
-
-For UDP `send_many_now()`, the payload buffers, the arrays of buffer pointers,
-the per-datagram buffer counts, and the destination address pointers are all
-borrowed for the duration of the call. The wrapper must not store those pointers
-after `uv_udp_try_send2()` returns, and it must not allocate replacement arrays
-inside the call.
-
-`udp_send_batch` is the higher-level value that explicitly owns reusable
-metadata arrays. It still borrows payload bytes and destination addresses; the
-type name and documentation do not imply copied payloads or owned addresses.
-
-## Callback State
-
-Runtime callbacks require storage. The owner should be clear:
-
-- persistent handle callbacks are owned by the handle;
-- one-shot request callbacks are owned by the request;
-- high-level convenience operations own their internal state until completion.
-
-Static callback mode does not own callback state.
-
-## User Data
-
-`uv_handle_t::data` and `uv_req_t::data` are non-owning application pointers. The `uv` API exposes them through `user_data<T>()`, but does not manage their lifetime.
-
-Valid low-level pattern:
-
-```cpp
-session state;
-client.user_data(state);
-
-client.read_start(allocator, [](tcp& client, read_result read) {
-  auto* state = client.user_data<session>();
-});
-```
-
-The stored object must outlive every callback that may read it. Clearing the field only removes the pointer; it does not destroy the pointed object.
-
-The typed API does not make libuv's `void*` type-safe. Retrieving a different type than the one stored is undefined user behavior and should be documented as such. A future high-level owner may add stronger typing, but the low-level layer should not add per-object storage for it.
-
-## Loop
-
-`loop` can be:
-
-- owning: contains `uv_loop_t raw_` and initializes/closes it;
-- non-owning view: references an external `uv_loop_t`, such as `uv_default_loop()`.
-
-The two concepts should be explicit if the implementation needs both:
-
-```cpp
-class loop;
-class loop_view;
-```
-
-An owning `loop` should not be confused with the process-wide default loop.
-
-The initial low-level `loop` destructor does not call `uv_loop_close()`. Users must call `loop.close()` explicitly once all handles and requests associated with the loop are closed and the loop is no longer alive.
-
-`loop.close()` maps directly to `uv_loop_close()`: it succeeds only when libuv considers the loop closable, and throws `uv::error` on immediate failure. The destructor intentionally provides no hidden cleanup fallback because that would obscure leaked active handles.
-
-`loop.walk(callback)` and `loop.handles()` expose handles through `handle_view`.
-Those views are non-owning pointers to the underlying `uv_handle_t` objects.
-They remain valid only while the native handle remains alive; do not keep them
-past handle close/destruction unless the application independently guarantees
-the native handle lifetime.
-
-`handle_view::as<T>()` is a low-level recovery helper for handles known to have
-been created by uvpp as `T`. Calling it with the wrong wrapper type, or with a
-handle not created by uvpp, is undefined user behavior.
-
-## Deallocation Rules
-
-The low-level layer should never delete user objects implicitly unless the API clearly documents ownership transfer.
-
-Prefer explicit close callbacks:
-
-```cpp
-client.close([](tcp& client) {
-  delete &client;
-});
-```
-
-A future high-level layer may provide safer owners, but it should be built on top of the low-level wrappers.
+# Ownership and lifetime
+
+## Native storage
+
+All native handles remain address-stable through close completion. Existing
+low-level wrappers own inline native storage, disable copying/moving, and require
+explicit close without a destructor fallback. These wrappers are still awaiting
+the complete `uv::raw` namespace migration.
+
+Implemented high-level TCP/pipe connections/listeners, UDP sockets, files, and
+processes
+move ownership of stable storage. Their native addresses and callback reconstruction
+remain valid after a move. Named native accessors borrow; they do not transfer
+close authority or permit replacing an operation's callback slots.
+
+`signal_source` also moves stable native storage. It starts one signal subscription
+at construction, owns the libuv callback independently of any individual `next()`
+wait, and retains state through native close completion. Direct destruction begins
+that close without driving a nested loop. Its one pending notification is a bounded
+coalescing policy, not a payload queue.
+
+## Close and destruction
+
+High-level owners do not share one destructor algorithm. Each resource family
+defines its own termination protocol, while all families preserve the same
+lifetime invariants:
+
+- native storage survives until the native terminal callback or request cleanup;
+- borrowed inputs survive actual completion, not merely a cancellation request;
+- operation and cancellation slots are released before user code resumes;
+- cancellation request, native cancellation, completion, and reclamation are
+  distinct events;
+- one owner retains cleanup authority, while native access and views only borrow;
+- no destructor drives the loop recursively.
+
+A destructor may initiate asynchronous cleanup only when doing so preserves the
+family's borrowed-data and external-resource semantics. Otherwise the family must
+diagnose a contract violation or retain its state until cleanup becomes legal.
+This is why network owners, files, signals, and processes deliberately have
+different destruction behavior without weakening the common invariants.
+
+The owners expose awaitable `close()`, initiating `request_close()`, and explicit
+`uv::ops::close(owner)`. They share one internal close transition and retain storage
+through the native callback. Connection/UDP active borrowed I/O rejects close with
+`UV_EBUSY`; listener close quiesces its pending accept before native close.
+An exported TCP connection also remains pinned during IPC write completion.
+
+Direct-owner destruction initiates asynchronous close when preconditions hold.
+Destroying owners with incompatible active I/O, or listeners with pending accept,
+is a terminating violation. Destructors never drive the loop. The application
+retains and drives the loop until all native close callbacks finish.
+
+The process owner has a stricter precondition: it cannot start native close until
+libuv has reported child exit. Destruction before exit retains stable process
+state through the exit callback and starts close only then; it neither kills the
+child nor runs a nested loop. `wait()` has one cancellable coroutine consumer
+slot, while the exit result itself remains retained for later waits.
+
+`uv::fs::file` is a request-based exception: `uv_fs_close` has a completion
+status. Submission failure leaves its descriptor open. After a native close
+completion, even an error completion, the descriptor identity is terminal and
+cannot be retried safely. Direct destruction diagnoses an unclosed file rather
+than starting unobserved request cleanup.
+
+Raw async/signal/poll/fs-event/timer/idle/prepare/check may be default-constructed without a native
+registration. Their native `loop` pointers track successful initialization and
+remain set after close; reinitialization is rejected. Before init, destruction needs no native cleanup
+and close is inert (no close callback delivery). After successful init, the
+normal explicit-close/storage-retention obligations apply even without a start.
+Only use borrowed views after initialization. This contract currently applies to
+raw async/signal/poll/fs-event/timer/idle/prepare/check; other raw handles retain constructor
+initialization. Signal native init failure precedes handle registration and leaves
+no handle to close; loop-side infrastructure, if any, is retained by the loop.
+
+## Tasks, views, and bytes
+
+Cold tasks acquire a loop at spawn or child await. A `spawn_handle<T>` observes a
+root frame and supports same-loop join; active destruction requests stop while an
+internal completion baton retains the root through actual completion. Task scopes
+own child execution and must settle before destruction.
+Termination is an implementation-stage diagnostic, not the v3 target. The target
+is for active destruction to request cooperative stop, retain execution and native
+operation state through actual completion, and route failures that can no longer
+be observed through the handle. That target is not yet implemented; its retention,
+reclamation, and unobserved-failure mechanisms must be completed before the
+public task contract is frozen.
+
+Borrowed views never become another resource owner. Scope views retain validity
+bookkeeping, not native lifetime; cleanup invalidates them before releasing storage.
+Coroutine frames and operation state do not retain external payloads. Writes/sends
+borrow bytes unchanged through actual completion; reads borrow mutable storage.
+Cancellation alone releases neither the slot nor the bytes.
+
+The high-level DNS resolver has no persistent owner. Its one-shot coroutine
+awaiter owns a stable `uv_getaddrinfo_t`, copied node/service/`resolve_options`, and
+the native result list until its terminal callback. That callback releases the
+task-stop registration before resuming the task; only then may frame destruction
+free the native list. A failed `uv_cancel` leaves this storage intact until the
+ordinary completion callback.
+
+## Low-level implementation boundaries
+
+Caller-owned requests must survive native completion and cleanup.
+`uv::raw::fs::request` requires explicit cleanup after completion or immediate
+native submission failure, before reuse. Filesystem convenience operation state may own a request and
+result without owning the opened file. `file_descriptor` remains a copyable
+integer wrapper, not an asynchronous file owner. Raw directory handles require
+explicit close. Do not extend network scope behavior to those resources without
+a dedicated lifetime contract.
+
+Callback filesystem `read` and `write` own their request state but borrow their
+caller-supplied byte spans through completion. `read_owned` and `write_copy` are
+the explicit allocation and copy variants. libuv may retain copied buffer
+descriptors internally; uvpp does not use that to extend the lifetime of the
+underlying bytes.
+
+For `uv::raw` wrappers, native `data` is a non-owning application pointer. Typed
+getters do not perform runtime type checking. High-level owners and internal
+operation state may instead reserve it for uvpp callback reconstruction or other
+implementation storage. TCP/pipe connections and listeners, UDP sockets, signal
+sources, and high-level processes use it to point to their stable state, never
+the movable public owner. The pointer remains valid through native close, including
+constructor-failure cleanup; internal connect/write/send requests also reserve
+their own `data` through completion. Their native accessors are borrowing
+interoperability escape hatches: callers must not overwrite `data`, replace uvpp-owned callbacks,
+or independently close or manage the native lifetime. `loop_view` and walked
+`handle_view` values likewise borrow; wrapper recovery is valid only for the exact
+low-level wrapper representation, never for foreign handles or high-level native
+state.
+
+## Experimental v3 resource-scope cleanup
+
+`uv::co::resource_scope` owns TCP/pipe connections and listeners, UDP sockets,
+and files.
+Its cold `finish()` task borrows the scope. Construction has no state effect;
+startup checks loop affinity before transitioning from `open` or `interrupted`
+to `active`. Starting cleanup seals adoption permanently. An overlapping attempt
+throws without changing the active attempt; `finished` is idempotent after the
+same affinity check.
+
+Cleanup runs serially, listeners before dependent resources. Each successful
+record invalidates borrowed access after native close completion, releases owner
+storage, and is immediately retired. Empty slots in the record vector preserve
+ordering without repeated vector erasure and are skipped on retry. The vector is
+cleared on full success (`finished`). Any exception during the cleanup pass,
+including record-task or waiter allocation failure, sets `interrupted` and is
+propagated. Remaining records retain ownership; completed cleanup is not rolled
+back. A retry joins an already-started native close through the existing close
+protocol rather than submitting it twice.
+
+Active incompatible borrowed I/O is a recoverable `std::logic_error`: the caller
+must settle/join that work before retrying. Listener accept retains its distinct
+quiescence protocol. No blanket cancellation, background cleanup, or nested loop
+is introduced. Destruction with remaining resources terminates, including after
+an observed cleanup failure. Merely creating an unstarted finish task does not
+satisfy asynchronous exit, and that task must not outlive the scope it borrows.
+
+Current handle close has no native completion error. Files use `uv_fs_close`:
+their scope record releases the terminal owner before propagating a completion
+error, so a retry only retires that record and never repeats close. Cleanup is
+fail-fast, with no aggregate-error type; callers preserve primary task failures
+separately. Generic cleanup-error aggregation remains proposed in
+[011](../proposals/011-resource-scopes.md).
+
+## Per-wait descriptor readiness
+
+`poll_source` moves stable native storage and borrows its fd/socket. The owner
+never releases that descriptor. Destruction marks the source terminal, stops
+polling, cancels its waiter, and retains state through native close; it never
+runs a nested loop. Native `data` points to the stable owner state. A loop must
+survive and be driven through cleanup, even though an inactive source does not
+keep that loop alive. Scope adoption remains deferred.
+
+Raw poll init failures synchronously undo any incomplete native registration
+before returning status or throwing from a constructor. They require no handle
+close and preserve stable storage/application data. This rollback occurs before
+requests exist; it is not a facility for resetting successful or closed handles.
+The caller retains ownership of descriptors/sockets, including native nonblocking
+side effects left by an unsuccessful init.
+
+Raw TCP stays non-copyable/non-movable with application-owned native `data`.
+Successful `open(socket)` transfers socket close responsibility to the handle;
+failed open does not transfer ownership, though native side effects may remain.
+Init failure requires no handle close because libuv already undoes its registration
+and socket acquisition. Successful init requires explicit ordinary/reset close
+and native storage retention until completion. Close releases handle-owned stream
+captures but never releases caller-owned connect/write/shutdown requests early.
+See [raw TCP lifetime and transitional scope](../user/networking/raw-tcp.md).

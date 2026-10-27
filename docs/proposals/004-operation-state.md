@@ -1,0 +1,356 @@
+# Shared Asynchronous Operation State
+
+Status: partially implemented.
+
+Architecture: [000 — V3 architecture](000-v3-architecture.md).
+
+Target: v3 development on `main`.
+
+This proposal is not completely implemented or an API-freeze commitment. Names
+outside the implementation-progress section remain provisional.
+
+## Motivation and current behavior
+
+Requests already provide submission rollback helpers and one-shot callback
+extraction; the public filesystem API owns operation state. Separate coroutine
+implementations could duplicate these subtle contracts and drift from callbacks.
+
+## Proposed design
+
+Build a small internal operation protocol shared by ergonomic `uv`, explicit-result
+`uv::ops`, and callback/coroutine
+frontends: prepare inputs, submit, record completion, clean native resources, and
+deliver the result exactly once. The protocol owns or explicitly borrows every
+input needed after submission. Raw wrapper `data` remains application-owned;
+high-level owners and internal operation state may reserve it for reconstruction.
+
+Document family-specific state transitions, including submission failure without
+a future callback. Clear request callback slots and obsolete input storage before
+calling user code, so supported resubmission from completion remains safe.
+
+Extend terminal slot-release ordering to subscriptions and event sources, using
+their own repeated-event protocol. Once an operation or subscription is terminal,
+quiesce its native source and release all callback-slot ownership before invoking
+user callbacks or resuming user coroutines. For read/receive subscriptions this
+includes the allocation and read/receive slots. Terminal causes include EOF,
+terminal error, completed cancellation, and explicit stop. A cancellation request
+alone is not terminal completion, and an ordinary `next()` result does not release
+the slots of a persistent subscription.
+
+Slot release and storage reclamation are distinct: retain the state and buffers
+still required by in-flight native callbacks or a currently executing trampoline.
+The old completion path must never clear or modify slots acquired by a replacement
+subscription after user delivery. Complete slot cleanup before delivery and make
+any remaining callback unwinding independent of the replacement's state. Each
+family must define the quiescence point that makes slot reuse safe.
+
+Keep the libuv binding in raw primitives or narrow internal helpers; `uv::co`
+must not reimplement it. Error facade selection must not alter native submission,
+ownership, or cleanup. Define deferred or policy-aware initiation so native
+submission errors cannot escape the explicit-result channel during construction.
+All frontends operate on the same `uv::loop` without a required dispatcher.
+
+Separate result materialization from raw cleanup: owned results survive cleanup;
+borrowed results retain their documented owner and validity interval. Do not apply
+filesystem cleanup rules mechanically to streams, DNS, or handle close.
+
+Complete all internal work that needs the state before calling a user callback or
+resuming a coroutine: delivery may destroy that state. Specify whether initiation
+can complete inline and ensure the awaiter cannot be resumed twice or accessed
+after destruction. All C trampolines remain exception boundaries.
+
+## Implementation and costs
+
+Keep native storage and conversion in the existing small storage base, preserving
+its layout assertions and native-to-wrapper round-trip tests for raw wrappers.
+High-level/internal state may reserve native `data` and should use it when it
+avoids an artificial layout dependency. Prefer stable state pointers for persistent
+owners; one-shot operations may instead use `native_storage` when that is simpler
+without unnecessary constraints. Low-level request
+ownership remains caller-controlled. Coroutine requests can reside in stable frame
+storage when that frame is guaranteed to survive native completion; otherwise use
+explicit separately owned state. Do not assume allocation elision.
+
+Share narrow helpers and invariants, not a universal virtual operation hierarchy.
+Repeated subscriptions need their own protocol rather than a reused one-shot state
+machine. Frontend-specific delivery should not introduce an intermediate
+`std::function` when a direct continuation is sufficient.
+
+## Alternatives and open questions
+
+- Compare helper functions with a constrained operation-state concept.
+- Determine which result factories can fail and how that failure is delivered.
+- Specify setup rollback when allocating input storage fails before submission.
+- Choose inline versus queued continuation policy with the scheduler proposal.
+
+## Implementation progress and validation
+
+Current request helpers and filesystem operation owners implement parts of the
+mechanism. The experimental TCP connect awaiter owns stable `uv_connect_t` and
+`uv_tcp_t` storage, distinguishes submission from completion errors, and closes
+before delivering a failed connection. It is a family-specific prototype, not yet
+a common coroutine frontend.
+
+TCP/pipe connection and listener states, UDP sockets, signal sources, and
+high-level processes now bind native handle `data` to their stable owner state.
+Connect requests bind request `data` to that same state; shared stream-write and
+UDP-send requests bind it to their stable awaiter at submission. Their callbacks
+no longer depend on member offsets, first-member casts, or standard-layout state.
+Bindings survive owner moves and remain available through native close, including
+failed construction and provisional accept/IPC-child cleanup. Raw wrapper recovery
+continues to use layout without consuming application `data`. This introduces no
+additional storage allocation and changes no operation-slot or payload-lifetime
+protocol.
+
+The internal `sleep_awaiter` now binds timer `data` to its stable coroutine-frame
+awaiter after successful initialization and before start. Timer and close callbacks
+recover through that pointer, including cancellation and start-failure cleanup.
+The first-member cast and standard-layout assertion are removed. This is a
+family-specific simplification, not a requirement to migrate every internal
+one-shot operation to `data`.
+
+DNS resolution is a second request-family prototype. Its awaiter owns stable
+`uv_getaddrinfo_t` storage and copied node/service/`resolve_options` through native
+completion without consuming `uv_req_t::data`. It releases its stop registration
+before task delivery, frees the native `addrinfo` list when the awaiter is
+destroyed, and materializes an owned `vector<address_info>` only after callback
+delivery has made the request terminal. The throwing and `uv::ops` result
+facades share this state machine; C++ allocation during input copy or value
+materialization remains outside the native operational result channel.
+
+TCP and pipe now share private stream-operation awaiters backed by a common
+`stream_io_state`. Each family provides only its native `uv_stream_t`, execution
+loop, I/O-slot state, and explicit native-handle recovery through
+`uv_handle_t::data`. The common one-shot `read_some()` protocol checks
+state, affinity, and pre-existing stop; claims allocation/read slots; starts the
+native source; then registers cancellation. Data, EOF, errors, and completed
+cancellation quiesce with `uv_read_stop()`, release allocation/read and
+cancellation slots, and only then resume the task. Zero-byte notifications remain
+armed. An unexpected stop failure terminates rather than releasing a callback slot
+that a later native callback could use after its coroutine frame has gone away.
+
+The shared borrowed `write()` similarly performs state, affinity, and
+pre-existing-stop checks, claims one `uv_write_t` slot, and clears it on submission
+failure or native completion before resumption. It stores the native buffer view,
+not the bytes it borrows. The read and write slots are independent, so a stream
+permits one operation in each direction while rejecting a competing operation in
+the same direction with `UV_EBUSY`; the current contract is documented in
+[the design notes](../design/io-concurrency.md). TCP and pipe retain only their family-specific
+connect/accept/endpoint behavior around that common stream protocol; pipe's close
+state machine separately snapshots joined close waiters before the first user
+resumption.
+
+The experimental IPC-pipe `write_with_handle()` uses that same exclusive write
+protocol, submitting `uv_write2()` only after it has pinned the sent TCP owner's
+stable state. Submission failure and completion release both the pipe write slot
+and this export pin before user delivery. `receive_handle(buffer)` is a separate
+one-shot read protocol: it reserves the future TCP state before `uv_read_start()`,
+continues through byte notifications until libuv exposes at least one pending
+native handle, then validates and adopts TCP handles with `uv_accept()` before
+quiescing and releasing read/cancellation slots. This is deliberately not a
+message-framing API: byte callbacks and pending handles have no one-to-one
+association. The caller buffer accumulates every byte received while waiting; its
+returned count must not be interpreted as the payload belonging to an adopted
+handle. Filling that buffer before a handle arrives fails with `UV_ENOBUFS`. The callback drains
+the entire native pending queue into the move-only `receive_handle_result` value;
+`take_tcp()` then extracts one high-level owner at a time. This avoids depending
+on a future byte notification to expose a queued sibling. An unsupported pending
+type, or a native adoption failure, fails closed with an error and closes the
+pipe; an initialized child that cannot be adopted is also closed before its task
+receives the error. The awaiter reserves the first child before the read; a burst
+may require additional high-level owner allocations in the native callback. Those
+allocations are guarded and turn into `UV_ENOMEM` plus fail-closed cleanup rather
+than allowing an exception to escape libuv. The result never exposes a raw pointer.
+
+TCP and pipe listeners share a private `accept_slot` for their persistent
+`uv_listen()` sources. The slot owns only the exclusive one-shot high-level claim
+and its delivery/cancellation function pointers. A notification or cleanup first
+detaches all three slot pointers, then invokes family-specific delivery or
+cancellation; a resumed coroutine may therefore destroy listener state without a
+later slot dereference. Each listener still constructs its own provisional child,
+calls `uv_accept()`, and owns its child-close path. An accept error closes that
+initialized storage before task delivery; success transfers it to the resumed
+task as the family-specific connection owner. Listener destruction while an
+accept is active is an explicit experimental contract violation until scopes and
+cancellation can complete the operation safely. A notification with no active
+waiter is deliberately ignored in this one-shot slice: it neither accepts nor
+queues a connection. The eventual scoped server must replace that limitation with
+an explicit queue/backpressure policy.
+
+The first `uv_accept()` following a successful libuv connection notification is
+guaranteed to succeed, so a deterministic native accept-failure integration test
+requires a fault-injection seam not present in this prototype. The current suite
+instead verifies an accepted peer that closes immediately, while the error path
+remains specified and isolated for future fault injection.
+
+Scoped cooperative cancellation now gives the TCP one-shot read and accept
+awaiters an internal registration. Stop quiesces read with `uv_read_stop()` or
+releases the listener accept claim, then clears the registration/claimed slots
+before resuming with `UV_ECANCELED`; cancelled accept also closes its initialized
+but untransferred client storage before delivery. TCP write has no physical native
+cancellation here: it checks a pre-existing stop before submission but otherwise
+retains its claim and borrowed buffer through write completion.
+
+TCP owner operations also verify that the awaiting task inherited the exact loop
+recorded by the owner. This is a high-level affinity check; raw APIs remain
+caller-controlled.
+
+TCP, pipe, and UDP owners now use a private `async_close_state` for their common
+internal close bookkeeping rather than awaiters directly around `uv_close()`.
+Its state-owned continuation storage makes a repeated cleanup request join an
+already submitted close. A coroutine waiter is copied into that storage before
+suspension; the native callback snapshots every waiter, marks the state closed,
+then resumes from the snapshot. It therefore neither allocates nor follows links
+in another coroutine frame after the first user resumption, and only then releases
+state whose owner was destroyed. The family still owns native storage, pre-close
+quiescence, and the actual `uv_close()` call. Internal completion entry points
+check loop affinity. The public owner `close()` operation is a separate facade
+over this mechanism, with its contract specified in
+[002](002-async-ownership.md).
+
+`signal_source` uses the same close-completion bookkeeping while retaining a
+family-specific repeated-event slot. Its native signal callback exchanges the
+current delivery slot before resuming a waiter. Stop completion clears that slot
+without stopping the subscription; source close stops native delivery, clears the
+slot, delivers `UV_ECANCELED`, then begins native close. A one-value pending slot
+is owned by the source between waits and coalesces repeated notifications.
+
+Validate failure at each setup stage, native submission failure, absent callbacks,
+resubmission from completion, destruction from completion, owned-result extraction,
+and exactly-once cleanup. Exercise DNS, filesystem, write, and close before calling
+the internal protocol stable. Compare allocation counts with the existing paths.
+For subscriptions, validate immediate replacement from terminal user delivery on
+EOF, error, cancellation, and stop; ordinary-event slot retention; setup rollback;
+and late callbacks that neither resume twice nor clear replacement slots. Test both
+callback and coroutine frontends, including destruction during terminal delivery.
+
+## Poll-source implementation progress
+
+`poll_source` uses shared close bookkeeping and a family-specific one-waiter
+slot. Success, native callback error, and cancellation stop polling and exchange
+the slot before user delivery. Native start failure unregisters cancellation and
+releases the slot synchronously. No pending-event queue is used; a new mask is
+selected at the next await. See [`poll_source.hpp`](../../include/uvpp/poll_source.hpp).
+
+The [cross-family observations after poll](../design/operation-state.md#observed-after-poll)
+confirm exclusive-consumer detach-before-delivery, but do not justify a shared
+public event-source abstraction. The private
+[`one_shot_callback_slot<Args...>`](../../include/uvpp/detail/one_shot_callback_slot.hpp)
+now shares claim, ownership tests, release, and detach-before-delivery across
+signal, poll, and process states. Null contexts and callbacks are rejected without
+changing the slot, including in builds with assertions disabled. It stores only a
+context and a noexcept function pointer; payloads are forwarded without retention. Native arming,
+`cancel_waiter()`, pending-event policy, retained payloads, and close remain
+family-specific. The listener's existing `accept_slot` additionally
+detaches a separate cancellation callback and retains its own cleanup protocol.
+[Focused slot tests](../../tests/test-one-shot-callback-slot.cpp) exercise ownership,
+reentrant replacement, destruction during delivery, and payload forwarding.
+
+## Filesystem-event implementation progress
+
+`fs_event_source` uses the shared one-shot waiter and owner-close protocols.
+Its native callback detaches the waiter before delivery without stopping the
+persistent subscription. Close marks state terminal and stops native delivery
+before cancelling the waiter; storage survives reentrant owner release.
+See the [implemented contract](../user/fs-events.md). Resource-scope adoption
+and broader platform/cost validation remain open.
+
+
+## Raw watcher migration progress
+
+Raw signal/poll/fs-event share private subscription bookkeeping for callback
+commitment after accepted native start, native stop/close before capture release,
+and terminal extraction before delivery. An old callable is retained after
+rejected reconfiguration only while native delivery remains active. Runtime/static
+switching and reentrant stop/restart preserve generation ownership. One-shot
+signal delivery quiesces a persistent native registration before invoking the
+user; poll/fs-event failures also quiesce and release before delivery. This does
+not change the distinct high-level source policies or create a common public
+watcher abstraction. See [callback strategy](../design/callback-strategy.md).
+
+
+## Raw timer and loop-phase migration progress
+
+`uv::raw::{timer,idle,prepare,check}` now share migrated raw watcher storage,
+explicit start/stop status and native queries, successful replacement commitment,
+and capture release on stop/close. Timer one-shot completion extracts its callable
+before user delivery; repeated callbacks retain mutable state. Timer `again`
+requires an active subscription, and `set_repeat` reports duration/closing errors
+as status. Raw duration validation and unsigned chrono getters are documented.
+Idle/prepare/check restart native delivery to support active runtime/static
+replacement. The shared loop, high-level coroutine sleep, and application-owned
+raw `data` contracts remain unchanged. See [the implemented user contract](../user/raw-watchers.md#timers)
+and [lifecycle tests](../../tests/test-raw-loop-watchers.cpp). Broader platform,
+allocation-failure, and performance validation remain open; this is not an API
+freeze or a high-level owner expansion.
+
+
+## Raw async migration progress
+
+The caller-owned wrapper is now `uv::raw::async`, with explicit `send` and callback
+setter status/results. Its fixed native trampoline supports runtime/static
+replacement, including reentrant replacement, without native reinitialization.
+It shares raw callback/close/query machinery, adds one static function pointer,
+and preserves application-owned native `data` and stable storage. Initialization
+activates the handle immediately. Explicit init returns status and loop-taking
+constructors unwrap it; no start/stop API, queue, lock,
+or producer endpoint is added. Only send is cross-thread safe. The caller must
+prevent new sends and synchronize every in-flight send before close; send does not
+read loop-thread closing state or promise a recoverable after-close error.
+High-level `loop_posting` retains its independent synchronized native protocol.
+See [the implemented user contract](../user/async.md) and
+[raw async tests](../../tests/test-raw-async.cpp). Broader native platform,
+allocation-failure, and performance gates remain open.
+
+## Raw stream subscription progress
+
+The persistent `uv::raw::stream` slice now pairs allocation/read callback ownership
+across native buffer loans. Stop/replacement releases the active generation while
+an outstanding loan keeps its original pair through final read delivery, the next
+native allocation, or close completion. Terminal reads stop before user delivery;
+normal/reset close retires pending pairs before user close callbacks. Callback
+preparation can throw independently of native status failures. Reader/listener
+reentrancy and runtime/static replacement are covered by
+[stream tests](../../tests/test-raw-stream.cpp). Request migration is recorded below; buffer pools and
+higher-level flow control remain separate work. See the
+[implemented contract](../user/networking/raw-stream.md).
+
+## Raw stream/TCP request progress
+
+Connect/write/shutdown requests now live separately in `uv::raw`, with immovable
+application-owned storage and `pending()` state. Stream write/shutdown and TCP
+connect return submission statuses. Pending reuse is `UV_EBUSY`; native rejection
+retains no new callback and produces no completion. Runtime/static selection is
+extracted and pending cleared before delivery, allowing reentrant reuse without
+old completion clobbering it. Handle close retains request/payload lifetimes until
+native completion. Typed immediate write/read outcomes remain distinct. Pipe-specific connect/IPC interfaces now return statuses over the shared request
+state; see the pipe progress section below. See the
+[implemented request contract](../user/networking/raw-requests.md) and
+[real request tests](../../tests/test-raw-stream-requests.cpp).
+
+## Raw pipe progress
+
+The caller-owned pipe wrapper is now `uv::raw::pipe`, with explicit status init,
+throwing loop constructors, native-loop initialization tracking, common stream
+close cleanup, status bind/open/configuration/connect and runtime/static IPC
+submission. Name queries retain string payloads as results and preserve native
+binary-name lengths; C++ allocations and legacy name copies retain exception
+contracts. Counts/types and immediate write progress remain typed observations.
+Raw request pending/reuse/completion and borrowed payload/exported-handle lifetimes
+are shared with stream/TCP. High-level pipe owners are unchanged. The [raw UDP migration](../user/networking/raw-udp.md), including send/receive/request protocols, is now implemented. See [implemented pipe behavior](../user/networking/raw-pipe.md)
+and [raw pipe tests](../../tests/test-raw-pipe.cpp).
+
+## Raw UDP I/O progress
+
+The [implemented raw UDP contract](../user/networking/raw-udp.md) now covers
+status receive start/stop and asynchronous send submission, separate
+`uv::raw::udp_send_request`, runtime/static callback replacement/reuse and close.
+Paired subscription loans preserve allocator-owned storage through native delivery
+and recvmmsg notifications actually delivered by libuv. Stop/replacement/close
+from a chunk do not force remaining chunks or FREE; native callback fields are
+left to libuv. If FREE is suppressed, the pending pair is retained until the next
+allocation or close completion. Native receive errors quiesce before delivery. Immediate sends and suffix batches preserve
+byte/datagram progress and would-block without hidden C++ operation metadata.
+See [real native tests](../../tests/test-raw-udp-io.cpp) and the
+[isolated allocation tests](../../tests/udp-allocation.cpp). Broader proposal work
+remains open; high-level UDP owners and their operation state are unchanged.

@@ -8,7 +8,7 @@ on:
         required: true
         type: string
       run_tests:
-        description: Run GCC and Clang tests again instead of requiring existing CI checks
+        description: Re-run GCC, Clang, and ASan/UBSan instead of requiring existing CI checks
         required: false
         type: boolean
         default: false
@@ -40,9 +40,9 @@ jobs:
           UVPP_VERSION: ${{ inputs.version }}
         run: |
           version="$UVPP_VERSION"
-          if ! printf '%s\n' "$version" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+([-.][0-9A-Za-z.-]+)?$'; then
+          if ! printf '%s\n' "$version" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?(\+[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?$'; then
             echo "Invalid version: $version"
-            echo "Expected semver-like value, example: 2.0.0 or 2.0.0-rc.1"
+            echo "Expected semantic version, example: 2.0.0 or 2.0.0-rc.1"
             exit 1
           fi
 
@@ -52,7 +52,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           api="repos/$GITHUB_REPOSITORY/commits/$GITHUB_SHA/check-runs"
-          for check in GCC Clang; do
+          for check in "GCC" "Clang" "ASan / UBSan"; do
             conclusion="$(gh api "$api" --jq ".check_runs[] | select(.name == \"$check\") | .conclusion" | tail -n 1)"
             if [ "$conclusion" != "success" ]; then
               echo "Required CI check is not successful for $GITHUB_SHA: $check ($conclusion)"
@@ -64,28 +64,46 @@ jobs:
 
       - name: Run validation tests
         if: ${{ inputs.run_tests }}
-        run: make clean test-all
+        run: |
+          make clean
+          make test-all
+          make test-asan-ubsan
 
       - name: Build package
         env:
           UVPP_VERSION: ${{ inputs.version }}
         run: make package VERSION="$UVPP_VERSION"
 
-      - name: Commit VERSION
-        id: commit_version
+      - name: Extract package
         env:
           UVPP_VERSION: ${{ inputs.version }}
         run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add VERSION
-          if git diff --cached --quiet; then
-            echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
-          else
-            git commit -m "Release $UVPP_VERSION"
-            git push origin HEAD:"$GITHUB_REF_NAME"
-            echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
-          fi
+          mkdir -p release-test
+          tar -xzf "dist/uvpp-$UVPP_VERSION.tar.gz" -C release-test
+
+      - name: Configure, build, and install package
+        env:
+          UVPP_VERSION: ${{ inputs.version }}
+          UVPP_INSTALL_PREFIX: ${{ runner.temp }}/uvpp
+        run: |
+          cmake -S "release-test/uvpp-$UVPP_VERSION" -B release-test/uvpp-build
+          cmake --build release-test/uvpp-build
+          cmake --install release-test/uvpp-build --prefix "$UVPP_INSTALL_PREFIX"
+
+      - name: Compile external CMake consumer
+        env:
+          UVPP_VERSION: ${{ inputs.version }}
+          UVPP_INSTALL_PREFIX: ${{ runner.temp }}/uvpp
+        run: |
+          cmake -S "release-test/uvpp-$UVPP_VERSION/examples/cmake-consumer" \
+            -B release-test/external-consumer-build \
+            -DCMAKE_PREFIX_PATH="$UVPP_INSTALL_PREFIX"
+          cmake --build release-test/external-consumer-build
+
+      - name: Generate checksums
+        env:
+          UVPP_VERSION: ${{ inputs.version }}
+        run: make checksums VERSION="$UVPP_VERSION"
 
       - name: Create release tag
         env:
@@ -106,7 +124,7 @@ jobs:
         with:
           tag_name: v${{ inputs.version }}
           name: uvpp ${{ inputs.version }}
-          target_commitish: ${{ steps.commit_version.outputs.sha }}
+          target_commitish: ${{ github.sha }}
           prerelease: ${{ contains(inputs.version, '-') }}
           generate_release_notes: true
           fail_on_unmatched_files: true

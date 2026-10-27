@@ -13,6 +13,7 @@
 #include "uvpp/core/loop.hpp"
 #include "uvpp/core/version.hpp"
 #include "uvpp/handles/stream.hpp"
+#include "uvpp/detail/initializable_handle.hpp"
 #include "uvpp/requests/connect.hpp"
 
 namespace uv {
@@ -44,174 +45,229 @@ namespace uv {
   }
 #endif
 
-  class pipe final : public stream<pipe, uv_pipe_t> {
+}
+
+namespace uv::raw {
+
+  class pipe final : public detail::initializable_handle<pipe, uv_pipe_t, stream<pipe, uv_pipe_t>> {
+    using base = detail::initializable_handle<pipe, uv_pipe_t, stream<pipe, uv_pipe_t>>;
   public:
-    explicit pipe(loop &l, bool ipc = false) {
-      throw_if_error(uv_pipe_init(l.native(), native(), ipc ? 1 : 0));
+    pipe() noexcept = default;
+    explicit pipe(loop &l, bool ipc = false) : pipe(l.view(), ipc) {}
+    explicit pipe(loop_view l, bool ipc = false) { init(l, ipc).throw_if_error(); }
+
+    status init(loop &l, bool ipc = false) noexcept { return init(l.view(), ipc); }
+    status init(loop_view l, bool ipc = false) noexcept {
+      if (initialized()) return status::from_native(UV_EALREADY);
+      // Both native backends initialize without a fallible post-registration
+      // step. No TCP/poll rollback or extra native lifetime allocation is needed.
+      return status::from_native(uv_pipe_init(l.native(), native(), ipc ? 1 : 0));
     }
 
-    explicit pipe(loop_view l, bool ipc = false) {
-      throw_if_error(uv_pipe_init(l.native(), native(), ipc ? 1 : 0));
-    }
-
-    void bind(std::string_view name) {
+    status bind(std::string_view name) {
 #if UVPP_HAS_PIPE_BIND2
-      throw_if_error(uv_pipe_bind2(native(), name.data(), name.size(), 0));
+      return bind(name, 0);
 #else
+      if (!ready()) return status::from_native(UV_EBADF);
+      if (name.empty() || name.find('\0') != std::string_view::npos) return status::from_native(UV_EINVAL);
       std::string storage{name};
-      throw_if_error(uv_pipe_bind(native(), storage.c_str()));
+      return status::from_native(uv_pipe_bind(native(), storage.c_str()));
 #endif
     }
 
 #if UVPP_HAS_PIPE_BIND2
-    void bind(std::string_view name, unsigned int flags) {
-      throw_if_error(uv_pipe_bind2(native(), name.data(), name.size(), flags));
+    status bind(std::string_view name, unsigned int flags) noexcept {
+      if (!ready()) return status::from_native(UV_EBADF);
+      if (name.empty()) return status::from_native(UV_EINVAL);
+      return status::from_native(uv_pipe_bind2(native(), name.data(), name.size(), flags));
     }
 
-    void bind(std::string_view name, pipe_name_flag flag) {
-      bind(name, static_cast<unsigned int>(flag));
+    status bind(std::string_view name, pipe_name_flag flag) noexcept {
+      return bind(name, static_cast<unsigned int>(flag));
     }
 #endif
 
-    std::string sockname() const {
+    result<std::string> sockname() const {
+      if (!ready()) return result<std::string>{make_error_code(UV_EBADF)};
       return get_name([this](char *buffer, std::size_t *size) {
         return uv_pipe_getsockname(native(), buffer, size);
       });
     }
 
-    std::string peername() const {
+    result<std::string> peername() const {
+      if (!ready()) return result<std::string>{make_error_code(UV_EBADF)};
       return get_name([this](char *buffer, std::size_t *size) {
         return uv_pipe_getpeername(native(), buffer, size);
       });
     }
 
-    void connect(connect_request &request, std::string_view name, connect_request::callback callback) {
+    status connect(connect_request &request, std::string_view name, connect_request::callback callback) {
 #if UVPP_HAS_PIPE_CONNECT2
-      detail::submit_request(request, std::move(callback), [&] {
-        return uv_pipe_connect2(request.native(), native(), name.data(), name.size(), 0, &pipe::connect_trampoline);
-      });
+      return connect(request, name, 0, std::move(callback));
 #else
-      request.set_callback(std::move(callback));
-      std::string storage{name};
-      uv_pipe_connect(request.native(), native(), storage.c_str(), &pipe::connect_trampoline);
+      return detail::stream_request_submission::submit(request, std::move(callback), [&] {
+        if (!ready()) return int{UV_EBADF};
+        if (name.empty() || name.find('\0') != std::string_view::npos) return int{UV_EINVAL};
+        std::string storage{name};
+        uv_pipe_connect(request.native(), native(), storage.c_str(), connect_request::trampoline);
+        return 0; // Legacy native connect is void; failure arrives at completion.
+      });
 #endif
     }
 
 #if UVPP_HAS_PIPE_CONNECT2
-    void connect(connect_request &request, std::string_view name, unsigned int flags,
-                 connect_request::callback callback) {
-      detail::submit_request(request, std::move(callback), [&] {
-        return uv_pipe_connect2(request.native(), native(), name.data(), name.size(),
-                                flags, &pipe::connect_trampoline);
+    status connect(connect_request &request, std::string_view name, unsigned int flags,
+                   connect_request::callback callback) noexcept {
+      return detail::stream_request_submission::submit(request, std::move(callback), [&]() noexcept {
+        if (!ready()) return int{UV_EBADF};
+        if (name.empty()) return int{UV_EINVAL};
+        return uv_pipe_connect2(request.native(), native(), name.data(), name.size(), flags, connect_request::trampoline);
       });
     }
 
-    void connect(connect_request &request, std::string_view name, pipe_name_flag flag,
-                 connect_request::callback callback) {
-      connect(request, name, static_cast<unsigned int>(flag), std::move(callback));
+    status connect(connect_request &request, std::string_view name, pipe_name_flag flag,
+                   connect_request::callback callback) noexcept {
+      return connect(request, name, static_cast<unsigned int>(flag), std::move(callback));
     }
 #endif
 
     template<auto Callback>
-    void connect_static(connect_request &request, std::string_view name) {
+      requires std::invocable<decltype(Callback), connect_request&, uv::status>
+    status connect_static(connect_request &request, std::string_view name) {
 #if UVPP_HAS_PIPE_CONNECT2
-      connect_static<Callback>(request, name, 0);
+      return connect_static<Callback>(request, name, 0);
 #else
-      std::string storage{name};
-      uv_pipe_connect(request.native(), native(), storage.c_str(), [](uv_connect_t *raw, int status) noexcept {
-        detail::invoke_static_callback<Callback>(connect_request::from_native(raw), result{status});
+      return detail::stream_request_submission::submit_static<Callback>(request, [&] {
+        if (!ready()) return int{UV_EBADF};
+        if (name.empty() || name.find('\0') != std::string_view::npos) return int{UV_EINVAL};
+        std::string storage{name};
+        uv_pipe_connect(request.native(), native(), storage.c_str(), connect_request::trampoline);
+        return 0;
       });
 #endif
     }
 
 #if UVPP_HAS_PIPE_CONNECT2
     template<auto Callback>
-    void connect_static(connect_request &request, std::string_view name, unsigned int flags) {
-      throw_if_error(uv_pipe_connect2(request.native(), native(), name.data(), name.size(), flags,
-        [](uv_connect_t *raw, int status) noexcept {
-          detail::invoke_static_callback<Callback>(connect_request::from_native(raw), result{status});
-        }));
+      requires std::invocable<decltype(Callback), connect_request&, uv::status>
+    status connect_static(connect_request &request, std::string_view name, unsigned int flags) noexcept {
+      return detail::stream_request_submission::submit_static<Callback>(request, [&]() noexcept {
+        if (!ready()) return int{UV_EBADF};
+        if (name.empty()) return int{UV_EINVAL};
+        return uv_pipe_connect2(request.native(), native(), name.data(), name.size(), flags, connect_request::trampoline);
+      });
     }
 
     template<auto Callback>
-    void connect_static(connect_request &request, std::string_view name, pipe_name_flag flag) {
-      connect_static<Callback>(request, name, static_cast<unsigned int>(flag));
+      requires std::invocable<decltype(Callback), connect_request&, uv::status>
+    status connect_static(connect_request &request, std::string_view name, pipe_name_flag flag) noexcept {
+      return connect_static<Callback>(request, name, static_cast<unsigned int>(flag));
     }
 #endif
 
-    void open(uv_file file) {
-      throw_if_error(uv_pipe_open(native(), file));
+    status open(uv_file file) noexcept {
+      if (!ready()) return status::from_native(UV_EBADF);
+      return status::from_native(uv_pipe_open(native(), file));
     }
 
-    void pending_instances(int count) noexcept {
+    status pending_instances(int count) noexcept {
+      if (!ready()) return status::from_native(UV_EBADF);
+      if (count <= 0) return status::from_native(UV_EINVAL);
       uv_pipe_pending_instances(native(), count);
+      return {};
     }
 
     int pending_count() const noexcept {
-      return uv_pipe_pending_count(const_cast<uv_pipe_t *>(native()));
+      return initialized() ? uv_pipe_pending_count(const_cast<uv_pipe_t *>(native())) : 0;
     }
 
     handle_type pending_type() const noexcept {
-      return static_cast<handle_type>(uv_pipe_pending_type(const_cast<uv_pipe_t *>(native())));
+      return initialized() ? static_cast<handle_type>(uv_pipe_pending_type(const_cast<uv_pipe_t *>(native())))
+                           : handle_type::unknown;
     }
 
-    void chmod(int flags) {
-      throw_if_error(uv_pipe_chmod(native(), flags));
+    status chmod(int flags) noexcept {
+      if (!ready()) return status::from_native(UV_EBADF);
+      return status::from_native(uv_pipe_chmod(native(), flags));
     }
 
-    void chmod(pipe_chmod_flag flag) {
-      chmod(static_cast<int>(flag));
-    }
+    status chmod(pipe_chmod_flag flag) noexcept { return chmod(static_cast<int>(flag)); }
 
     template<stream_handle SendHandle>
-    void write_with_handle(write_request &request, std::span<const buffer_view> buffers,
-                           SendHandle &send_handle, write_request::callback callback) {
-      detail::submit_request(request, std::move(callback), [&] {
-        return uv_write2(request.native(), native_stream(),
-                         reinterpret_cast<const uv_buf_t *>(buffers.data()),
-                         detail::checked_buffer_count(buffers.size()),
-                         send_handle.native_stream(),
+    status write_with_handle(write_request &request, std::span<const buffer_view> buffers,
+                             SendHandle &send_handle, write_request::callback callback) noexcept {
+      return detail::stream_request_submission::submit(request, std::move(callback), [&]() noexcept {
+        if (const auto code = check_export(send_handle); code < 0) return code;
+        if (!this->valid_buffers(buffers)) return int{UV_EINVAL};
+        return uv_write2(request.native(), this->native_stream(), reinterpret_cast<const uv_buf_t *>(buffers.data()),
+                         detail::narrow_buffer_count_unchecked(buffers.size()), send_handle.native_stream(),
                          write_request::trampoline);
       });
     }
 
     template<stream_handle SendHandle>
-    write_now_result write_with_handle_now(std::span<const buffer_view> buffers,
-                                           SendHandle &send_handle) noexcept {
-      if (!detail::buffer_count_fits(buffers.size())) {
-        return write_now_result{UV_EINVAL};
-      }
-      return write_now_result{uv_try_write2(native_stream(),
-        reinterpret_cast<const uv_buf_t *>(buffers.data()),
-        detail::narrow_buffer_count_unchecked(buffers.size()),
-        send_handle.native_stream())};
+    status write_with_handle(write_request &request, const buffer_view &buffer, SendHandle &send_handle,
+                             write_request::callback callback) noexcept {
+      return write_with_handle(request, std::span<const buffer_view>{&buffer, 1}, send_handle, std::move(callback));
+    }
+
+    template<auto Callback, stream_handle SendHandle>
+      requires std::invocable<decltype(Callback), write_request&, uv::status>
+    status write_with_handle_static(write_request &request, std::span<const buffer_view> buffers,
+                                    SendHandle &send_handle) noexcept {
+      return detail::stream_request_submission::submit_static<Callback>(request, [&]() noexcept {
+        if (const auto code = check_export(send_handle); code < 0) return code;
+        if (!this->valid_buffers(buffers)) return int{UV_EINVAL};
+        return uv_write2(request.native(), this->native_stream(), reinterpret_cast<const uv_buf_t *>(buffers.data()),
+                         detail::narrow_buffer_count_unchecked(buffers.size()), send_handle.native_stream(),
+                         write_request::trampoline);
+      });
+    }
+
+    template<auto Callback, stream_handle SendHandle>
+      requires std::invocable<decltype(Callback), write_request&, uv::status>
+    status write_with_handle_static(write_request &request, const buffer_view &buffer, SendHandle &send_handle) noexcept {
+      return write_with_handle_static<Callback>(request, std::span<const buffer_view>{&buffer, 1}, send_handle);
+    }
+
+    template<stream_handle SendHandle>
+    write_now_result write_with_handle_now(std::span<const buffer_view> buffers, SendHandle &send_handle) noexcept {
+      if (const auto code = check_export(send_handle); code < 0) return write_now_result{code};
+      if (!this->valid_buffers(buffers)) return write_now_result{UV_EINVAL};
+      return write_now_result{uv_try_write2(this->native_stream(), reinterpret_cast<const uv_buf_t *>(buffers.data()),
+                               detail::narrow_buffer_count_unchecked(buffers.size()), send_handle.native_stream())};
+    }
+
+    template<stream_handle SendHandle>
+    write_now_result write_with_handle_now(const buffer_view &buffer, SendHandle &send_handle) noexcept {
+      return write_with_handle_now(std::span<const buffer_view>{&buffer, 1}, send_handle);
     }
 
   private:
-    template<class Getter>
-    static std::string get_name(Getter getter) {
-      std::vector<char> buffer(256);
+    bool ready() const noexcept { return initialized() && !closing(); }
 
-      for (;;) {
-        auto size = buffer.size();
-        auto status = getter(buffer.data(), &size);
-
-        if (status == UV_ENOBUFS) {
-          buffer.resize(size);
-          continue;
-        }
-
-        throw_if_error(status);
-        if (size > 0 && buffer[size - 1] == '\0') {
-          --size;
-        }
-
-        return std::string{buffer.data(), size};
-      }
+    template<stream_handle SendHandle>
+    int check_export(SendHandle &send_handle) const noexcept {
+      if (!ready()) return UV_EBADF;
+      if (!native()->ipc) return UV_EINVAL;
+      auto *target = send_handle.native_stream();
+      if (!target->loop || uv_is_closing(reinterpret_cast<uv_handle_t *>(target))) return UV_EBADF;
+      if (target->type != UV_TCP && target->type != UV_NAMED_PIPE) return UV_EINVAL;
+      return 0;
     }
 
-    static void connect_trampoline(uv_connect_t *raw, int status) noexcept {
-      connect_request::from_native(raw).invoke(status);
+    template<class Getter>
+    static result<std::string> get_name(Getter getter) {
+      std::vector<char> buffer(256);
+      for (;;) {
+        auto size = buffer.size();
+        const auto code = getter(buffer.data(), &size);
+        if (code == UV_ENOBUFS) { buffer.resize(size); continue; }
+        if (code < 0) return result<std::string>{make_error_code(code)};
+        // libuv reports payload length, excluding any terminator. Preserve binary
+        // Linux abstract names, including a meaningful trailing NUL byte.
+        return result<std::string>{std::string{buffer.data(), size}};
+      }
     }
   };
 

@@ -1,20 +1,21 @@
 #include <csignal>
 #include <cstdlib>
 #include <type_traits>
-#include <unistd.h>
+#include "platform-support.hpp"
 
 #include "gtest/gtest.h"
 #include "uvpp/uv.hpp"
 
+#ifndef _WIN32
 TEST(Uvpp2Signal, runsRuntimeCallback) {
   uv::loop loop;
-  uv::signal signal(loop);
+  uv::raw::signal signal(loop);
 
   int marker = 42;
   int called = 0;
 
   signal.user_data(marker);
-  signal.start_oneshot(SIGUSR1, [&](uv::signal &self, uv::signal_number signum) {
+  signal.start_oneshot(SIGUSR1, [&](uv::raw::signal &self, uv::signal_number signum) {
     called++;
     EXPECT_EQ(signum, SIGUSR1);
     EXPECT_EQ(self.user_data<int>(), &marker);
@@ -32,7 +33,7 @@ namespace {
 
 int static_signal_called = 0;
 
-void on_static_signal(uv::signal &signal, uv::signal_number signum) {
+void on_static_signal(uv::raw::signal &signal, uv::signal_number signum) {
   static_signal_called++;
   EXPECT_EQ(signum, SIGUSR1);
   signal.close();
@@ -42,7 +43,7 @@ void on_static_signal(uv::signal &signal, uv::signal_number signum) {
 
 TEST(Uvpp2Signal, runsStaticCallback) {
   uv::loop loop;
-  uv::signal signal(loop);
+  uv::raw::signal signal(loop);
   static_signal_called = 0;
 
   signal.start_oneshot_static<on_static_signal>(SIGUSR1);
@@ -59,14 +60,21 @@ TEST(Uvpp2Poll, reportsReadableFileDescriptor) {
   ASSERT_EQ(::pipe(fds), 0);
 
   uv::loop loop;
-  uv::poll poll(loop, fds[0]);
+  uv::raw::poll poll(loop, fds[0]);
 
-  auto requested = uv::poll_event::readable | uv::poll_event::disconnect;
-  EXPECT_TRUE(requested.has(uv::poll_event::readable));
+  auto requested = uv::poll_event::readable | uv::poll_event::writable;
+#if UVPP_HAS_POLL_DISCONNECT
+  requested |= uv::poll_event::disconnect;
   EXPECT_TRUE(uv::has_poll_event(requested, uv::poll_event::disconnect));
+#endif
+#if UVPP_HAS_POLL_PRIORITIZED
+  requested |= uv::poll_event::prioritized;
+  EXPECT_TRUE(uv::has_poll_event(requested, uv::poll_event::prioritized));
+#endif
+  EXPECT_TRUE(requested.has(uv::poll_event::readable));
 
   int called = 0;
-  poll.start(uv::poll_event::readable, [&](uv::poll &self, uv::poll_result event) {
+  poll.start(uv::poll_event::readable, [&](uv::raw::poll &self, uv::raw::poll_result event) {
     called++;
     EXPECT_TRUE(event);
     EXPECT_TRUE(event.status());
@@ -92,11 +100,11 @@ TEST(Uvpp2Poll, reportsReadableFileDescriptor) {
 
 namespace {
 
-uv::poll *static_poll_handle = nullptr;
+uv::raw::poll *static_poll_handle = nullptr;
 int static_poll_read_fd = -1;
 int static_poll_called = 0;
 
-void on_static_poll(uv::poll &, uv::poll_result event) {
+void on_static_poll(uv::raw::poll &, uv::raw::poll_result event) {
   static_poll_called++;
   EXPECT_TRUE(event);
   EXPECT_TRUE(event.status());
@@ -115,7 +123,7 @@ TEST(Uvpp2Poll, reportsReadableFileDescriptorWithStaticCallback) {
   ASSERT_EQ(::pipe(fds), 0);
 
   uv::loop loop;
-  uv::poll poll(loop, fds[0]);
+  uv::raw::poll poll(loop, fds[0]);
   static_poll_handle = &poll;
   static_poll_read_fd = fds[0];
   static_poll_called = 0;
@@ -135,8 +143,17 @@ TEST(Uvpp2Poll, reportsReadableFileDescriptorWithStaticCallback) {
   close(fds[1]);
 }
 
+#else
+TEST(Uvpp2Poll, posixPipeDescriptor) {
+  GTEST_SKIP() << "Windows uv_poll supports sockets, not POSIX pipe descriptors";
+}
+TEST(Uvpp2Signal, posixSignalDelivery) {
+  GTEST_SKIP() << "SIGUSR1 and raise delivery require POSIX signals";
+}
+#endif
+
 TEST(Uvpp2ProcessOptions, buildsFluentOptions) {
-  auto options = uv::process_options::make("git")
+  auto options = uv::raw::process_options::make("git")
     .arg("status")
     .args({"--short", "--branch"})
     .cwd("/tmp/repo")
@@ -176,7 +193,7 @@ TEST(Uvpp2ProcessOptions, buildsFluentOptions) {
 }
 
 TEST(Uvpp2ProcessOptions, carriesUidAndGid) {
-  auto options = uv::process_options::make("tool")
+  auto options = uv::raw::process_options::make("tool")
     .set_uid(static_cast<uv_uid_t>(123))
     .set_gid(static_cast<uv_gid_t>(456));
 
@@ -188,12 +205,12 @@ TEST(Uvpp2ProcessOptions, carriesUidAndGid) {
 
 TEST(Uvpp2ProcessOptions, acceptsExplicitStdioEntries) {
   auto entries = {
-    uv::process_stdio::ignore(),
-    uv::process_stdio::inherit_fd(1),
-    uv::process_stdio::inherit_fd(2),
+    uv::raw::process_stdio::ignore(),
+    uv::raw::process_stdio::inherit_fd(1),
+    uv::raw::process_stdio::inherit_fd(2),
   };
 
-  auto options = uv::process_options::make("tool").stdio(entries);
+  auto options = uv::raw::process_options::make("tool").stdio(entries);
 
   ASSERT_EQ(options.stdio_entries.size(), 3);
   EXPECT_EQ(options.stdio_entries[0].flags, UV_IGNORE);
@@ -205,9 +222,9 @@ TEST(Uvpp2ProcessOptions, acceptsExplicitStdioEntries) {
 
 TEST(Uvpp2ProcessOptions, buildsPipeStdioEntries) {
   uv::loop loop;
-  uv::pipe output(loop);
+  uv::raw::pipe output(loop);
 
-  auto options = uv::process_options::make("tool")
+  auto options = uv::raw::process_options::make("tool")
     .empty_environment()
     .pipe_stdout(output);
 
@@ -224,14 +241,14 @@ TEST(Uvpp2ProcessOptions, buildsPipeStdioEntries) {
 }
 
 TEST(Uvpp2Process, inheritedEnvironmentIsVisibleToChild) {
-  ::setenv("UVPP_TEST_INHERIT_VAR", "present", 1);
+  uv_os_setenv("UVPP_TEST_INHERIT_VAR", "present");
 
   uv::loop loop;
-  auto options = uv::process_options::make("/bin/sh")
-    .args({"-c", "test -n \"$UVPP_TEST_INHERIT_VAR\""});
+  auto options = uv::raw::process_options::make(uvpp::test::executable_path())
+    .args({"--uvpp-child", "environment", "present"});
 
   int exit_status = -1;
-  uv::process process(loop, options, [&](uv::process &self, uv::process_exit exit) {
+  uv::raw::process process(loop, options, [&](uv::raw::process &self, uv::raw::process_exit exit) {
     exit_status = static_cast<int>(exit.status);
     self.close();
   });
@@ -240,19 +257,19 @@ TEST(Uvpp2Process, inheritedEnvironmentIsVisibleToChild) {
   EXPECT_EQ(exit_status, 0);
   loop.close();
 
-  ::unsetenv("UVPP_TEST_INHERIT_VAR");
+  uv_os_unsetenv("UVPP_TEST_INHERIT_VAR");
 }
 
 TEST(Uvpp2Process, emptyEnvironmentHidesParentVariables) {
-  ::setenv("UVPP_TEST_INHERIT_VAR", "present", 1);
+  uv_os_setenv("UVPP_TEST_INHERIT_VAR", "present");
 
   uv::loop loop;
-  auto options = uv::process_options::make("/bin/sh")
-    .args({"-c", "test -z \"$UVPP_TEST_INHERIT_VAR\""})
+  auto options = uv::raw::process_options::make(uvpp::test::executable_path())
+    .args({"--uvpp-child", "environment", "absent"})
     .empty_environment();
 
   int exit_status = -1;
-  uv::process process(loop, options, [&](uv::process &self, uv::process_exit exit) {
+  uv::raw::process process(loop, options, [&](uv::raw::process &self, uv::raw::process_exit exit) {
     exit_status = static_cast<int>(exit.status);
     self.close();
   });
@@ -261,27 +278,27 @@ TEST(Uvpp2Process, emptyEnvironmentHidesParentVariables) {
   EXPECT_EQ(exit_status, 0);
   loop.close();
 
-  ::unsetenv("UVPP_TEST_INHERIT_VAR");
+  uv_os_unsetenv("UVPP_TEST_INHERIT_VAR");
 }
 
 TEST(Uvpp2Process, reportsExitStatus) {
   uv::loop loop;
 
-  auto options = uv::process_options::make("/bin/sh")
-    .args({"-c", "exit 7"});
+  auto options = uv::raw::process_options::make(uvpp::test::executable_path())
+    .args({"--uvpp-child", "exit", "7"});
 
   bool exited = false;
   bool closed = false;
 
-  uv::process process(loop, options, [&](uv::process &self, uv::process_exit exit) {
+  uv::raw::process process(loop, options, [&](uv::raw::process &self, uv::raw::process_exit exit) {
     exited = true;
     EXPECT_EQ(exit.status, 7);
     EXPECT_EQ(exit.signal, 0);
     EXPECT_GT(self.pid(), 0);
     static_assert(std::is_same_v<decltype(self.pid()), uv_pid_t>);
-    EXPECT_EQ(&self, &uv::process::from_native(self.native()));
-    EXPECT_EQ(&self, &uv::process::from_native(self.native_handle()));
-    self.close([&](uv::process &) {
+    EXPECT_EQ(&self, &uv::raw::process::from_native(self.native()));
+    EXPECT_EQ(&self, &uv::raw::process::from_native(self.native_handle()));
+    self.close([&](uv::raw::process &) {
       closed = true;
     });
   });
@@ -298,10 +315,10 @@ TEST(Uvpp2Process, closesNativeHandleAfterSpawnFailure) {
   bool failed = false;
 
   try {
-    uv::process process(
+    uv::raw::process process(
       loop,
-      uv::process_options::make("/nonexistent/uvpp-spawn-failure"),
-      [](uv::process &, uv::process_exit) {});
+      uv::raw::process_options::make("/nonexistent/uvpp-spawn-failure"),
+      [](uv::raw::process &, uv::raw::process_exit) {});
   } catch (const uv::error &) {
     failed = true;
   }
@@ -318,7 +335,7 @@ TEST(Uvpp2Process, closesNativeHandleAfterSpawnFailure) {
 }
 
 TEST(Uvpp2Process, exposesGlobalStdioInheritanceHelper) {
-  auto helper = &uv::process::disable_stdio_inheritance;
+  auto helper = &uv::raw::process::disable_stdio_inheritance;
   (void)helper;
 }
 
@@ -327,11 +344,11 @@ namespace {
 bool static_process_exited = false;
 bool static_process_closed = false;
 
-void on_static_process_exit(uv::process &process, uv::process_exit exit) {
+void on_static_process_exit(uv::raw::process &process, uv::raw::process_exit exit) {
   static_process_exited = true;
   EXPECT_EQ(exit.status, 3);
   EXPECT_EQ(exit.signal, 0);
-  process.close([](uv::process &) {
+  process.close([](uv::raw::process &) {
     static_process_closed = true;
   });
 }
@@ -341,12 +358,12 @@ void on_static_process_exit(uv::process &process, uv::process_exit exit) {
 TEST(Uvpp2Process, reportsExitStatusWithStaticCallback) {
   uv::loop loop;
 
-  auto options = uv::process_options::make("/bin/sh")
-    .args({"-c", "exit 3"});
+  auto options = uv::raw::process_options::make(uvpp::test::executable_path())
+    .args({"--uvpp-child", "exit", "3"});
   static_process_exited = false;
   static_process_closed = false;
 
-  uv::process process(loop, options, uv::process::static_callback<on_static_process_exit>{});
+  uv::raw::process process(loop, options, uv::raw::process::static_callback<on_static_process_exit>{});
 
   loop.run();
 

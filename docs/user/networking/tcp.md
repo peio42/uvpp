@@ -1,0 +1,87 @@
+# TCP
+
+Include `<uvpp/net/tcp_connection.hpp>` and `<uvpp/net/tcp_listener.hpp>`.
+The implemented v3 owners are experimental, move-only, and affine to one loop.
+Moving an owner preserves its native address.
+
+## Connecting and stream I/O
+
+```cpp
+#include <uvpp/net/tcp_connection.hpp>
+
+uv::co::task<void> send_greeting() {
+  auto connection = co_await uv::tcp_connection::connect(
+      uv::ipv4{"127.0.0.1", 8080});
+  co_await connection.write("hello");
+  co_await connection.close();
+}
+```
+
+Spawn the task on a loop as shown in [getting started](../getting-started.md).
+`connect()` also accepts IPv6. It uses the awaiting task's loop and closes failed
+provisional connections before delivering an error.
+
+`write(std::string_view)` borrows its bytes through completion.
+`read_some(std::span<std::byte>)` borrows mutable storage and returns `count()`
+and `eof()`; operational failures throw at the await. One read and one write may
+overlap. A second operation in either direction fails with `UV_EBUSY`.
+Read completion releases the native read slots before resuming the task.
+The same operations have explicit-result forms:
+
+```cpp
+auto read = co_await uv::ops::read_some(connection, buffer);
+if (read) {
+  auto count = read.value().count();
+  auto eof = read.value().eof();
+}
+auto written = co_await uv::ops::write(connection, "hello");
+```
+
+They return `result<tcp_connection::read_some_result>` and `status` respectively,
+including submission failures. EOF remains success. Both also accept borrowed
+connection views and preserve the member operations' buffer and slot contracts.
+Length validation remains C++ setup and may throw before the await.
+See [buffers](../buffers.md) and [errors](../errors.md).
+
+## Accepting
+
+Construct `uv::tcp_listener{loop, address}` to bind and start listening.
+For explicit construction errors, use
+`uv::ops::make_tcp_listener(loop, address, backlog) -> result<tcp_listener>`.
+Both construction forms accept IPv4/IPv6 and default backlog to 64. Move the
+successful result's value into an owner. Native init/bind/listen errors become
+results; C++ allocation failures still throw. After failure following native init,
+keep driving the loop for pending close callbacks; see [errors](../errors.md).
+
+`co_await listener.accept()` returns a distinct `tcp_connection` owner; only one
+accept may be pending. `co_await uv::ops::accept(listener)` instead returns
+`result<tcp_connection>`, transferring the same movable owner on success. Native
+failure or cancellation waits for provisional child close before result delivery.
+Constructor setup and provisional-storage allocation can still throw.
+
+This is a one-shot accept API. Keep an accept waiter armed in server code: the
+prototype ignores native notifications when no waiter is armed, and has no hidden
+accepted-connection queue, `serve(handler)`, or overload policy. Do not treat a
+sequential accept/handle loop as a complete production server abstraction.
+
+## Stop and cleanup
+
+Cooperative stop cancels a pending read or accept with `UV_ECANCELED` after its
+native claims are released. Submitted connect/write work is not physically
+cancelled; keep the owner and borrowed bytes alive through completion.
+
+`co_await connection.close()` waits for native close and rejects active I/O.
+Listener close can quiesce its pending accept but does not close accepted peers.
+Both owners support `uv::ops::close` and adoption into a resource scope.
+Follow [ownership and lifetime](../ownership-and-lifetime.md) on success and
+exception paths; owner destruction may leave native cleanup for the loop to drive.
+
+`native()` and `native_handle()` borrow libuv storage. Its `data` field belongs
+to uvpp; callers must not overwrite it, replace uvpp-owned callbacks, or
+independently close the handle. Moving the owner preserves this storage and its
+callback state. Raw wrappers keep `data` available to application code.
+
+For caller-owned native storage, [raw TCP](raw-tcp.md) provides explicit TCP setup,
+address queries and close/reset. Its [stream subscriptions](raw-stream.md) return
+explicit statuses, as do [connect/write/shutdown requests](raw-requests.md). These raw
+APIs are independent of the high-level owners.

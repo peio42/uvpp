@@ -1,0 +1,32 @@
+changelog:
+  exclude:
+    labels:
+      - skip-changelog
+
+  categories:
+    - title: Breaking changes
+      labels:
+        - breaking-change
+
+    - title: Features
+      labels:
+        - enhancement
+        - feature
+
+    - title: Bug fixes
+      labels:
+        - bug
+        - fix
+
+    - title: Documentation
+      labels:
+        - documentation
+
+    - title: Internal changes
+      labels:
+        - refactor
+        - internal
+
+    - title: Other changes
+      labels:
+        - "*"

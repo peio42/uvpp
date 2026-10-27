@@ -1,16 +1,16 @@
 #include <optional>
-#include <unistd.h>
+#include "platform-support.hpp"
 
 #include "gtest/gtest.h"
 #include "uvpp/uv.hpp"
 
 TEST(Uvpp2Tty, initializesWhenStdoutIsATty) {
-  if (uv_guess_handle(STDOUT_FILENO) != UV_TTY) {
+  if (uv_guess_handle(1) != UV_TTY) {
     GTEST_SKIP() << "stdout is not a tty";
   }
 
   uv::loop loop;
-  uv::tty tty(loop, STDOUT_FILENO, false);
+  uv::tty tty(loop, 1, false);
 
   auto size = tty.size();
   EXPECT_GE(size.width, 0);
@@ -35,7 +35,7 @@ TEST(Uvpp2Tty, exposesVirtualTerminalState) {
     EXPECT_TRUE(state == uv::tty_vterm_state::supported ||
                 state == uv::tty_vterm_state::unsupported);
   } catch (const uv::error &error) {
-    EXPECT_EQ(error.code(), uv::make_error_code(UV_ENOTSUP));
+    EXPECT_EQ(error.code(), static_cast<std::error_code>(uv::make_error_code(UV_ENOTSUP)));
   }
 
   if (prior)

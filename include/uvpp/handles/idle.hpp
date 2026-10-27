@@ -1,52 +1,62 @@
 #pragma once
 
-#include <functional>
+#include <concepts>
 #include <utility>
 
 #include <uv.h>
 
-#include "uvpp/core/callback.hpp"
 #include "uvpp/core/error.hpp"
 #include "uvpp/core/loop.hpp"
-#include "uvpp/handles/handle.hpp"
+#include "uvpp/detail/initializable_raw_watcher.hpp"
 
-namespace uv {
+namespace uv::raw {
 
-  class idle final : public basic_handle<idle, uv_idle_t> {
+  class idle final : public ::uv::detail::initializable_raw_watcher_handle<idle, uv_idle_t> {
   public:
-    using callback = std::function<void(idle&)>;
+    idle() noexcept = default;
 
-    explicit idle(loop &l) {
-      throw_if_error(uv_idle_init(l.native(), native()));
-    }
+    explicit idle(loop &l) : idle(loop_view{l.native()}) {}
 
     explicit idle(loop_view l) {
-      throw_if_error(uv_idle_init(l.native(), native()));
+      init(l).throw_if_error();
     }
 
-    void start(callback cb) {
-      callback_.replace(std::move(cb));
-      throw_if_error(uv_idle_start(native(), &idle::idle_trampoline));
+    status init(loop &l) noexcept { return init(l.view()); }
+
+    status init(loop_view l) noexcept {
+      if (initialized()) return status::from_native(UV_EALREADY);
+      return status::from_native(uv_idle_init(l.native(), native()));
+    }
+
+    status start(callback cb) {
+      return restart(&idle::idle_trampoline, std::move(cb));
     }
 
     template<auto Callback>
-    void start_static() {
-      throw_if_error(uv_idle_start(native(), [](uv_idle_t *raw) noexcept {
-        detail::invoke_static_callback<Callback>(idle::from_native(raw));
-      }));
+      requires std::invocable<decltype(Callback), idle&>
+    status start_static() noexcept {
+      return restart([](uv_idle_t *raw) noexcept {
+        ::uv::detail::invoke_static_callback<Callback>(idle::from_native(raw));
+      });
     }
 
-    void stop() {
-      throw_if_error(uv_idle_stop(native()));
+    status stop() noexcept {
+      if (!initialized() || closing()) return status::from_native(UV_EBADF);
+      return commit_stop(uv_idle_stop(native()));
     }
 
   private:
-    static void idle_trampoline(uv_idle_t *raw) noexcept {
-      auto &self = idle::from_native(raw);
-      self.callback_.invoke([&](callback &callback) { callback(self); });
+    status restart(uv_idle_cb native_callback, callback cb = {}) noexcept {
+      if (!initialized() || closing()) return status::from_native(UV_EBADF);
+      // Native start on an active loop watcher does not replace its callback.
+      const auto stopped = uv_idle_stop(native());
+      if (stopped < 0) return status::from_native(stopped);
+      return commit_start(uv_idle_start(native(), native_callback), std::move(cb));
     }
 
-    detail::persistent_callback_slot<callback> callback_{};
+    static void idle_trampoline(uv_idle_t *raw) noexcept {
+      idle::from_native(raw).deliver();
+    }
   };
 
 }

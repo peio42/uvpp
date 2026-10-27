@@ -1,4 +1,5 @@
-.PHONY: clean build test examples build-gcc build-clang build-all test-gcc test-clang test-all package
+.PHONY: clean build test test-filter examples build-gcc build-clang build-all test-gcc test-clang test-all \
+	test-asan-ubsan test-tsan-posting measure-cleanup package checksums
 
 CXX ?= g++
 CXX_ID ?= $(notdir $(CXX))
@@ -8,6 +9,9 @@ DIST_DIR ?= dist
 CXXFLAGS ?= -Wall -std=c++20 -Iinclude -I..
 DEPFLAGS ?= -MMD -MP
 LDLIBS ?= -luv -pthread -lgtest
+GTEST_ARGS ?=
+TEST_FILTER ?= *
+TEST_RUNNER ?=
 EXAMPLE_LDLIBS ?= -luv -pthread
 
 TEST_SRCS = tests/main.cpp $(wildcard tests/test-*.cpp)
@@ -19,14 +23,17 @@ ALLOCATION_TEST_BIN = $(BUILD_DIR)/tests/udp-allocation
 EXAMPLE_SRCS = $(wildcard examples/*.cpp)
 EXAMPLE_BINS = $(patsubst examples/%.cpp,$(BUILD_DIR)/examples/%,$(EXAMPLE_SRCS))
 EXAMPLE_DEPS = $(addsuffix .d,$(EXAMPLE_BINS))
+METRICS_SRC = benchmarks/resource-scope-cleanup.cpp
+METRICS_BIN = $(BUILD_DIR)/benchmarks/resource-scope-cleanup
+METRICS_DEPS = $(METRICS_BIN).d
+METRICS_LDLIBS ?= -luv -pthread
+SANITIZER_FLAGS = -fsanitize=address,undefined -fno-omit-frame-pointer -g
 
 build: $(TEST_BIN) $(ALLOCATION_TEST_BIN) examples
 
 $(BUILD_DIR)/%.o: %.cpp
 	mkdir -p $(dir $@)
 	$(CXX) $(CXXFLAGS) $(DEPFLAGS) -MF $(@:.o=.d) -c $< -o $@
-
-$(sort $(TEST_OBJS) $(ALLOCATION_TEST_OBJS)): %.o: %.d
 
 $(TEST_BIN): $(TEST_OBJS)
 	mkdir -p $(dir $@)
@@ -44,13 +51,22 @@ $(BUILD_DIR)/examples/%: examples/%.cpp
 
 $(EXAMPLE_BINS): %: %.d
 
-$(TEST_DEPS) $(EXAMPLE_DEPS): ;
+$(METRICS_BIN): $(METRICS_SRC)
+	mkdir -p $(dir $@)
+	$(CXX) $(CXXFLAGS) $(DEPFLAGS) -MF $@.d $< $(METRICS_LDLIBS) -o $@
 
--include $(TEST_DEPS) $(EXAMPLE_DEPS)
+$(TEST_DEPS) $(EXAMPLE_DEPS) $(METRICS_DEPS): ;
+
+-include $(TEST_DEPS) $(EXAMPLE_DEPS) $(METRICS_DEPS)
 
 test: build
-	$(TEST_BIN)
-	$(ALLOCATION_TEST_BIN)
+	$(TEST_RUNNER) $(TEST_BIN) $(GTEST_ARGS)
+	$(TEST_RUNNER) $(ALLOCATION_TEST_BIN) $(GTEST_ARGS)
+
+# Runs only tests selected by a GoogleTest filter.  This is intended for
+# incremental development; test and test-all remain the complete validation.
+test-filter: $(TEST_BIN)
+	$(TEST_RUNNER) $(TEST_BIN) $(GTEST_ARGS) --gtest_filter="$(TEST_FILTER)"
 
 build-gcc:
 	$(MAKE) build CXX=g++ CXX_ID=gcc
@@ -68,22 +84,58 @@ test-clang:
 
 test-all: test-gcc test-clang
 
+# Runs the complete suite with Clang AddressSanitizer and UndefinedBehaviorSanitizer.
+# Leak checking is deliberate: high-level close state must outlive native callbacks
+# but no longer. The separate build directory keeps normal artifacts untouched.
+test-asan-ubsan:
+	ASAN_OPTIONS=detect_leaks=1:halt_on_error=1 UBSAN_OPTIONS=halt_on_error=1:print_stacktrace=1 \
+		$(MAKE) test CXX=clang++ CXX_ID=clang-asan-ubsan \
+		CXXFLAGS="$(CXXFLAGS) $(SANITIZER_FLAGS)" \
+		LDLIBS="$(LDLIBS) $(SANITIZER_FLAGS)"
+
+# Focused ThreadSanitizer coverage; death tests are excluded because they fork.
+# Override TSAN_CXX for another compiler with a supported TSan runtime.
+TSAN_CXX ?= g++
+test-tsan-posting:
+	TSAN_OPTIONS=halt_on_error=1 $(MAKE) test-filter CXX=$(TSAN_CXX) \
+		BUILD_DIR=build/posting-tsan \
+		TEST_SRCS="tests/main.cpp tests/test-loop-posting.cpp" \
+		TEST_FILTER='UvppV3LoopPosting.*' \
+		TEST_RUNNER="timeout 120s" \
+		CXXFLAGS="$(CXXFLAGS) -fsanitize=thread -fno-omit-frame-pointer -g" \
+		LDLIBS="$(LDLIBS) -fsanitize=thread"
+
+# Reports C++ allocations and finish() latency for repeated multi-connection TCP
+# cleanup. It is a measurement command, not a pass/fail performance budget.
+measure-cleanup: $(METRICS_BIN)
+	$(METRICS_BIN)
+
 package:
 	@if [ -z "$(VERSION)" ]; then \
 		echo "VERSION is required, example: make package VERSION=2.0.0"; \
 		exit 1; \
 	fi
-	@if ! printf '%s\n' "$(VERSION)" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+([-.][0-9A-Za-z.-]+)?$$'; then \
+	@if ! printf '%s\n' "$(VERSION)" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?(\+[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?$$'; then \
 		echo "Invalid VERSION: $(VERSION)"; \
-		echo "Expected semver-like value, example: 2.0.0 or 2.0.0-rc.1"; \
+		echo "Expected semantic version, example: 2.0.0 or 2.0.0-rc.1"; \
 		exit 1; \
 	fi
-	printf '%s\n' "$(VERSION)" > VERSION
 	rm -rf $(DIST_DIR)/uvpp-$(VERSION) $(DIST_DIR)/uvpp-$(VERSION).tar.gz $(DIST_DIR)/checksums.txt
 	mkdir -p $(DIST_DIR)/uvpp-$(VERSION)
-	cp -R README.md CMakeLists.txt cmake VERSION include docs examples $(DIST_DIR)/uvpp-$(VERSION)/
+	cp -R README.md CMakeLists.txt cmake include docs examples benchmarks $(DIST_DIR)/uvpp-$(VERSION)/
+	printf '%s\n' "$(VERSION)" > $(DIST_DIR)/uvpp-$(VERSION)/VERSION
 	@if [ -f LICENSE ]; then cp LICENSE $(DIST_DIR)/uvpp-$(VERSION)/; fi
 	tar -czf $(DIST_DIR)/uvpp-$(VERSION).tar.gz -C $(DIST_DIR) uvpp-$(VERSION)
+
+checksums:
+	@if [ -z "$(VERSION)" ]; then \
+		echo "VERSION is required, example: make checksums VERSION=2.0.0"; \
+		exit 1; \
+	fi
+	@if [ ! -f "$(DIST_DIR)/uvpp-$(VERSION).tar.gz" ]; then \
+		echo "Missing package: $(DIST_DIR)/uvpp-$(VERSION).tar.gz"; \
+		exit 1; \
+	fi
 	cd $(DIST_DIR) && sha256sum uvpp-$(VERSION).tar.gz > checksums.txt
 
 clean:

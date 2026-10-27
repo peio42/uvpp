@@ -1,52 +1,62 @@
 #pragma once
 
-#include <functional>
+#include <concepts>
 #include <utility>
 
 #include <uv.h>
 
-#include "uvpp/core/callback.hpp"
 #include "uvpp/core/error.hpp"
 #include "uvpp/core/loop.hpp"
-#include "uvpp/handles/handle.hpp"
+#include "uvpp/detail/initializable_raw_watcher.hpp"
 
-namespace uv {
+namespace uv::raw {
 
-  class prepare final : public basic_handle<prepare, uv_prepare_t> {
+  class prepare final : public ::uv::detail::initializable_raw_watcher_handle<prepare, uv_prepare_t> {
   public:
-    using callback = std::function<void(prepare&)>;
+    prepare() noexcept = default;
 
-    explicit prepare(loop &l) {
-      throw_if_error(uv_prepare_init(l.native(), native()));
-    }
+    explicit prepare(loop &l) : prepare(loop_view{l.native()}) {}
 
     explicit prepare(loop_view l) {
-      throw_if_error(uv_prepare_init(l.native(), native()));
+      init(l).throw_if_error();
     }
 
-    void start(callback cb) {
-      callback_.replace(std::move(cb));
-      throw_if_error(uv_prepare_start(native(), &prepare::prepare_trampoline));
+    status init(loop &l) noexcept { return init(l.view()); }
+
+    status init(loop_view l) noexcept {
+      if (initialized()) return status::from_native(UV_EALREADY);
+      return status::from_native(uv_prepare_init(l.native(), native()));
+    }
+
+    status start(callback cb) {
+      return restart(&prepare::prepare_trampoline, std::move(cb));
     }
 
     template<auto Callback>
-    void start_static() {
-      throw_if_error(uv_prepare_start(native(), [](uv_prepare_t *raw) noexcept {
-        detail::invoke_static_callback<Callback>(prepare::from_native(raw));
-      }));
+      requires std::invocable<decltype(Callback), prepare&>
+    status start_static() noexcept {
+      return restart([](uv_prepare_t *raw) noexcept {
+        ::uv::detail::invoke_static_callback<Callback>(prepare::from_native(raw));
+      });
     }
 
-    void stop() {
-      throw_if_error(uv_prepare_stop(native()));
+    status stop() noexcept {
+      if (!initialized() || closing()) return status::from_native(UV_EBADF);
+      return commit_stop(uv_prepare_stop(native()));
     }
 
   private:
-    static void prepare_trampoline(uv_prepare_t *raw) noexcept {
-      auto &self = prepare::from_native(raw);
-      self.callback_.invoke([&](callback &callback) { callback(self); });
+    status restart(uv_prepare_cb native_callback, callback cb = {}) noexcept {
+      if (!initialized() || closing()) return status::from_native(UV_EBADF);
+      // Native start on an active loop watcher does not replace its callback.
+      const auto stopped = uv_prepare_stop(native());
+      if (stopped < 0) return status::from_native(stopped);
+      return commit_start(uv_prepare_start(native(), native_callback), std::move(cb));
     }
 
-    detail::persistent_callback_slot<callback> callback_{};
+    static void prepare_trampoline(uv_prepare_t *raw) noexcept {
+      prepare::from_native(raw).deliver();
+    }
   };
 
 }

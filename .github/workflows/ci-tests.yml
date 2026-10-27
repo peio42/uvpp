@@ -16,20 +16,106 @@ permissions:
 
 jobs:
   build-and-test:
-    runs-on: ubuntu-latest
-    name: ${{ matrix.compiler.name }}
-
+    runs-on: ${{ matrix.os }}
+    name: ${{ matrix.name }}
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
-        compiler:
-          - name: GCC
+        include:
+          - name: Ubuntu / x64 / GCC
+            os: ubuntu-24.04
             cxx: g++
-            id: gcc
-          - name: Clang
+          - name: Ubuntu / x64 / Clang
+            os: ubuntu-24.04
             cxx: clang++
-            id: clang
+          - name: Windows Server 2022 / x64 / MSVC
+            os: windows-2022
+          - name: macOS 26 / arm64 / Apple Clang
+            os: macos-26
+            cxx: /usr/bin/clang++
 
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Install Linux dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y g++ clang libgtest-dev libuv1-dev ninja-build
+
+      - name: Install macOS dependencies
+        if: runner.os == 'macOS'
+        run: brew install libuv googletest ninja
+
+      - name: Install Windows dependencies
+        if: runner.os == 'Windows'
+        run: vcpkg install libuv:x64-windows gtest:x64-windows
+
+      - name: Configure Linux and macOS
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          cmake -S . -B build/ci -G Ninja \
+            -DCMAKE_CXX_COMPILER=${{ matrix.cxx }} \
+            -DCMAKE_BUILD_TYPE=Debug \
+            -DUVPP_BUILD_TESTS=ON -DUVPP_BUILD_EXAMPLES=ON
+
+      - name: Configure Windows
+        if: runner.os == 'Windows'
+        run: >-
+          cmake -S . -B build/ci -G "Visual Studio 17 2022" -A x64
+          -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake"
+          -DVCPKG_TARGET_TRIPLET=x64-windows
+          -DUVPP_BUILD_TESTS=ON -DUVPP_BUILD_EXAMPLES=ON
+
+      - name: Build tests and examples
+        run: cmake --build build/ci --config Debug --parallel 2
+
+      - name: Run both test executables
+        run: ctest --test-dir build/ci -C Debug --output-on-failure --timeout 300
+
+      - name: Install and relocate package outside the checkout
+        run: |
+          cmake --install build/ci --config Debug --prefix "${{ runner.temp }}/uvpp-stage"
+          cmake -E rename "${{ runner.temp }}/uvpp-stage" "${{ runner.temp }}/uvpp-installed"
+          cmake -E copy_directory examples/cmake-consumer "${{ runner.temp }}/uvpp-consumer"
+
+      - name: Configure external consumer on Linux and macOS
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          cmake -S "${{ runner.temp }}/uvpp-consumer" -B "${{ runner.temp }}/uvpp-consumer-build" -G Ninja \
+            -DCMAKE_CXX_COMPILER=${{ matrix.cxx }} -DCMAKE_BUILD_TYPE=Debug \
+            -DCMAKE_PREFIX_PATH="${{ runner.temp }}/uvpp-installed" \
+            -DUVPP_EXPECTED_INSTALL_PREFIX="${{ runner.temp }}/uvpp-installed"
+
+      - name: Configure external consumer on Windows
+        if: runner.os == 'Windows'
+        run: >-
+          cmake -S "${{ runner.temp }}/uvpp-consumer" -B "${{ runner.temp }}/uvpp-consumer-build"
+          -G "Visual Studio 17 2022" -A x64
+          -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake"
+          -DVCPKG_TARGET_TRIPLET=x64-windows
+          -DCMAKE_PREFIX_PATH="${{ runner.temp }}/uvpp-installed"
+          -DUVPP_EXPECTED_INSTALL_PREFIX="${{ runner.temp }}/uvpp-installed"
+
+      - name: Build external consumer against the installed package
+        run: cmake --build "${{ runner.temp }}/uvpp-consumer-build" --config Debug --parallel 2
+
+      - name: Upload test diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-logs-${{ matrix.os }}-${{ strategy.job-index }}
+          path: build/ci/Testing/Temporary/
+          if-no-files-found: ignore
+
+  asan-ubsan:
+    runs-on: ubuntu-24.04
+    name: Ubuntu / x64 / ASan + UBSan
+    timeout-minutes: 30
     steps:
       - name: Check out repository
         uses: actions/checkout@v6
@@ -37,7 +123,54 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y g++ clang libgtest-dev libuv1-dev
+          sudo apt-get install -y clang libgtest-dev libuv1-dev
 
-      - name: Build and run tests
-        run: make clean test CXX=${{ matrix.compiler.cxx }} CXX_ID=${{ matrix.compiler.id }}
+      - name: Build and run sanitizer tests
+        run: make test-asan-ubsan GTEST_ARGS=--gtest_brief=1
+
+  windows-poll-native:
+    runs-on: windows-2022
+    name: Windows / poll late init / libuv ${{ matrix.libuv }} / ${{ matrix.linkage }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - libuv: 1.45.0
+            linkage: static
+            target: uv_a
+          - libuv: 1.53.0
+            linkage: shared
+            target: uv
+    steps:
+      - name: Check out uvpp
+        uses: actions/checkout@v6
+      - name: Check out audited libuv
+        uses: actions/checkout@v6
+        with:
+          repository: libuv/libuv
+          ref: v${{ matrix.libuv }}
+          path: .ci/libuv
+      - name: Install Google Test
+        run: vcpkg install gtest:x64-windows
+      - name: Configure native fault-injection tests
+        run: >-
+          cmake -S tests/windows-poll-native -B build/poll-native
+          -G "Visual Studio 17 2022" -A x64
+          -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake"
+          -DVCPKG_TARGET_TRIPLET=x64-windows
+          -DUVPP_NATIVE_LIBUV_SOURCE="${{ github.workspace }}/.ci/libuv"
+          -DUVPP_NATIVE_LIBUV_TARGET=${{ matrix.target }}
+      - name: Build native fault-injection tests
+        run: cmake --build build/poll-native --config Debug --parallel 2
+      - name: Exercise real libuv post-registration failure
+        run: ctest --test-dir build/poll-native -C Debug --output-on-failure --timeout 60
+      - name: Upload native test diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: poll-native-${{ matrix.libuv }}-${{ matrix.linkage }}
+          path: |
+            build/poll-native/Testing/Temporary/
+            build/poll-native/poll-native.xml
+          if-no-files-found: ignore

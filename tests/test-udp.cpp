@@ -1,4 +1,5 @@
 #include <array>
+#include <limits>
 #include <cstring>
 #include <memory>
 #include <span>
@@ -9,7 +10,7 @@
 
 namespace {
 
-uv::buffer_view udp_alloc(uv::udp &, std::size_t) {
+uv::buffer_view udp_alloc(uv::raw::udp &, std::size_t) {
   static std::array<char, 1024> storage{};
   return uv::buffer_view{storage.data(), storage.size()};
 }
@@ -18,10 +19,10 @@ uv::buffer_view udp_alloc(uv::udp &, std::size_t) {
 
 TEST(Uvpp2Udp, sendsAndReceivesDatagrams) {
   uv::loop loop;
-  uv::udp server(loop);
-  uv::udp client(loop);
-  uv::udp_send_request client_send_req;
-  uv::udp_send_request server_send_req;
+  uv::raw::udp server(loop);
+  uv::raw::udp client(loop);
+  uv::raw::udp_send_request client_send_req;
+  uv::raw::udp_send_request server_send_req;
 
   int client_send_marker = 1;
   int server_send_marker = 2;
@@ -35,10 +36,10 @@ TEST(Uvpp2Udp, sendsAndReceivesDatagrams) {
   bool server_closed = false;
   bool client_closed = false;
 
-  server.bind(uv::ipv4{"127.0.0.1", 0});
-  client.bind(uv::ipv4{"127.0.0.1", 0}, uv::udp_bind_flag::reuse_address);
+  server.bind(uv::ipv4{"127.0.0.1", 0}).throw_if_error();
+  client.bind(uv::ipv4{"127.0.0.1", 0}, uv::udp_bind_flag::reuse_address).throw_if_error();
 
-  server.receive_start(udp_alloc, [&](uv::udp &udp, uv::udp_receive_result received) {
+  server.receive_start(udp_alloc, [&](uv::raw::udp &udp, uv::udp_receive_result received) {
     if (received.empty_event()) {
       return;
     }
@@ -56,14 +57,14 @@ TEST(Uvpp2Udp, sendsAndReceivesDatagrams) {
 
     static char response[] = "pong";
     uv::buffer_view out{response, 4};
-    udp.send(server_send_req, out, received.address(), [&](uv::udp_send_request &request, uv::result status) {
+    udp.send(server_send_req, out, received.address(), [&](uv::raw::udp_send_request &request, uv::status status) {
       ASSERT_TRUE(status);
       EXPECT_EQ(request.user_data<int>(), &server_send_marker);
       server_send_done = true;
-    });
-  });
+    }).throw_if_error();
+  }).throw_if_error();
 
-  client.receive_start(udp_alloc, [&](uv::udp &udp, uv::udp_receive_result received) {
+  client.receive_start(udp_alloc, [&](uv::raw::udp &udp, uv::udp_receive_result received) {
     if (received.empty_event()) {
       return;
     }
@@ -75,24 +76,24 @@ TEST(Uvpp2Udp, sendsAndReceivesDatagrams) {
     EXPECT_EQ(std::memcmp(bytes.data(), "pong", 4), 0);
     client_read = true;
 
-    udp.close([&](uv::udp &) {
+    udp.close([&](uv::raw::udp &) {
       client_closed = true;
     });
-    server.close([&](uv::udp &) {
+    server.close([&](uv::raw::udp &) {
       server_closed = true;
     });
-  });
+  }).throw_if_error();
 
-  auto bound_addr = server.sockname();
+  auto bound_addr = server.sockname().value();
   uv::ipv4 destination{"127.0.0.1", bound_addr.port()};
 
   static char payload[] = "ping";
   uv::buffer_view out{payload, 4};
-  client.send(client_send_req, out, destination, [&](uv::udp_send_request &request, uv::result status) {
+  client.send(client_send_req, out, destination, [&](uv::raw::udp_send_request &request, uv::status status) {
     ASSERT_TRUE(status);
     EXPECT_EQ(request.user_data<int>(), &client_send_marker);
     client_send_done = true;
-  });
+  }).throw_if_error();
 
   loop.run();
 
@@ -110,7 +111,7 @@ namespace {
 
 bool static_udp_send_done = false;
 
-void on_static_udp_send(uv::udp_send_request &, uv::result status) {
+void on_static_udp_send(uv::raw::udp_send_request &, uv::status status) {
   EXPECT_TRUE(status);
   static_udp_send_done = true;
 }
@@ -119,18 +120,18 @@ void on_static_udp_send(uv::udp_send_request &, uv::result status) {
 
 TEST(Uvpp2Udp, runsStaticSendCallback) {
   uv::loop loop;
-  uv::udp server(loop);
-  uv::udp client(loop);
-  uv::udp_send_request send_req;
+  uv::raw::udp server(loop);
+  uv::raw::udp client(loop);
+  uv::raw::udp_send_request send_req;
   bool server_read = false;
   bool server_closed = false;
   bool client_closed = false;
   static_udp_send_done = false;
 
-  server.bind(uv::ipv4{"127.0.0.1", 0});
-  client.bind(uv::ipv4{"127.0.0.1", 0});
+  server.bind(uv::ipv4{"127.0.0.1", 0}).throw_if_error();
+  client.bind(uv::ipv4{"127.0.0.1", 0}).throw_if_error();
 
-  server.receive_start(udp_alloc, [&](uv::udp &, uv::udp_receive_result received) {
+  server.receive_start(udp_alloc, [&](uv::raw::udp &, uv::udp_receive_result received) {
     if (received.empty_event()) {
       return;
     }
@@ -138,20 +139,20 @@ TEST(Uvpp2Udp, runsStaticSendCallback) {
     ASSERT_TRUE(received);
     ASSERT_TRUE(received.ok());
     server_read = true;
-    server.close([&](uv::udp &) {
+    server.close([&](uv::raw::udp &) {
       server_closed = true;
     });
-    client.close([&](uv::udp &) {
+    client.close([&](uv::raw::udp &) {
       client_closed = true;
     });
-  });
+  }).throw_if_error();
 
-  auto bound_addr2 = server.sockname();
+  auto bound_addr2 = server.sockname().value();
   uv::ipv4 destination{"127.0.0.1", bound_addr2.port()};
 
   static char payload[] = "ping";
   uv::buffer_view out{payload, 4};
-  client.send_static<on_static_udp_send>(send_req, out, destination);
+  client.send_static<on_static_udp_send>(send_req, out, destination).throw_if_error();
 
   loop.run();
 
@@ -165,17 +166,17 @@ TEST(Uvpp2Udp, runsStaticSendCallback) {
 
 TEST(Uvpp2Udp, sendNowSendsBytes) {
   uv::loop loop;
-  uv::udp server(loop);
-  uv::udp client(loop);
+  uv::raw::udp server(loop);
+  uv::raw::udp client(loop);
 
   bool server_read = false;
   bool server_closed = false;
   bool client_closed = false;
 
-  server.bind(uv::ipv4{"127.0.0.1", 0});
-  client.bind(uv::ipv4{"127.0.0.1", 0});
+  server.bind(uv::ipv4{"127.0.0.1", 0}).throw_if_error();
+  client.bind(uv::ipv4{"127.0.0.1", 0}).throw_if_error();
 
-  server.receive_start(udp_alloc, [&](uv::udp &, uv::udp_receive_result received) {
+  server.receive_start(udp_alloc, [&](uv::raw::udp &, uv::udp_receive_result received) {
     if (received.empty_event()) {
       return;
     }
@@ -185,16 +186,16 @@ TEST(Uvpp2Udp, sendNowSendsBytes) {
     ASSERT_EQ(bytes.size(), 4u);
     EXPECT_EQ(std::memcmp(bytes.data(), "ping", 4), 0);
     server_read = true;
-    server.close([&](uv::udp &) {
+    server.close([&](uv::raw::udp &) {
       server_closed = true;
     });
-    client.close([&](uv::udp &) {
+    client.close([&](uv::raw::udp &) {
       client_closed = true;
     });
-  });
+  }).throw_if_error();
 
   std::array payload{'p', 'i', 'n', 'g'};
-  auto bound = server.sockname();
+  auto bound = server.sockname().value();
   auto result = client.send_now(std::as_bytes(std::span{payload}), uv::ipv4{"127.0.0.1", bound.port()});
 
   ASSERT_TRUE(result.ok());
@@ -214,7 +215,7 @@ TEST(Uvpp2Udp, sendNowSendsBytes) {
 
 TEST(Uvpp2Udp, sendNowReportsImmediateErrorWithoutThrowing) {
   uv::loop loop;
-  uv::udp udp(loop);
+  uv::raw::udp udp(loop);
   std::array payload{'f', 'a', 'i', 'l'};
 
   auto result = udp.send_now(std::as_bytes(std::span{payload}));
@@ -233,17 +234,17 @@ TEST(Uvpp2Udp, sendNowReportsImmediateErrorWithoutThrowing) {
 #if UVPP_HAS_UDP_TRY_SEND2
 TEST(Uvpp2Udp, sendManyNowSendsMultipleDatagrams) {
   uv::loop loop;
-  uv::udp server(loop);
-  uv::udp client(loop);
+  uv::raw::udp server(loop);
+  uv::raw::udp client(loop);
 
   int datagrams_read = 0;
   bool server_closed = false;
   bool client_closed = false;
 
-  server.bind(uv::ipv4{"127.0.0.1", 0});
-  client.bind(uv::ipv4{"127.0.0.1", 0});
+  server.bind(uv::ipv4{"127.0.0.1", 0}).throw_if_error();
+  client.bind(uv::ipv4{"127.0.0.1", 0}).throw_if_error();
 
-  server.receive_start(udp_alloc, [&](uv::udp &, uv::udp_receive_result received) {
+  server.receive_start(udp_alloc, [&](uv::raw::udp &, uv::udp_receive_result received) {
     if (received.empty_event()) {
       return;
     }
@@ -260,16 +261,16 @@ TEST(Uvpp2Udp, sendManyNowSendsMultipleDatagrams) {
 
     ++datagrams_read;
     if (datagrams_read == 2) {
-      server.close([&](uv::udp &) {
+      server.close([&](uv::raw::udp &) {
         server_closed = true;
       });
-      client.close([&](uv::udp &) {
+      client.close([&](uv::raw::udp &) {
         client_closed = true;
       });
     }
-  });
+  }).throw_if_error();
 
-  auto bound = server.sockname();
+  auto bound = server.sockname().value();
   uv::ipv4 destination{"127.0.0.1", bound.port()};
 
   std::array first{'o', 'n', 'e', '!'};
@@ -355,6 +356,127 @@ TEST(Uvpp2Udp, sendBatchCopyAssignmentRebuildsPointersForNewStorage) {
   EXPECT_EQ(destination_batch.view().buffers()[0], first_buffer);
 }
 
+TEST(Uvpp2Udp, sendBatchCopiesEmptyLotsAndCanBeReused) {
+  uv::ipv4 address{"127.0.0.1", 1234};
+  std::array payload{'d', 'a', 't', 'a'};
+  std::array buffers{
+      uv::buffer_view{payload.data(), 1},
+      uv::buffer_view{payload.data() + 1, 3}};
+
+  auto expect_empty = [](const uv::udp_send_batch &batch) {
+    EXPECT_TRUE(batch.empty());
+    EXPECT_EQ(batch.size(), 0u);
+    EXPECT_EQ(batch.buffer_count(), 0u);
+    EXPECT_EQ(batch.view().count(), 0u);
+    // Empty vectors may retain storage; their data() need not be null.
+  };
+
+  for (const bool previously_populated : std::array{false, true}) {
+    SCOPED_TRACE(previously_populated);
+    uv::udp_send_batch source;
+    if (previously_populated) {
+      source.add(buffers, address);
+      source.clear();
+    }
+    uv::udp_send_batch constructed{source};
+    uv::udp_send_batch assigned;
+    assigned.add(buffers, address).add(buffers, address);
+    assigned = source;
+
+    expect_empty(source);
+    expect_empty(constructed);
+    expect_empty(assigned);
+
+    for (auto *copy : std::array{&constructed, &assigned}) {
+      copy->add(buffers, address);
+      EXPECT_EQ(copy->size(), 1u);
+      EXPECT_EQ(copy->buffer_count(), buffers.size());
+      const auto view = copy->view();
+      ASSERT_EQ(view.count(), 1u);
+      ASSERT_NE(view.buffers(), nullptr);
+      ASSERT_NE(view.buffer_counts(), nullptr);
+      ASSERT_NE(view.addresses(), nullptr);
+      ASSERT_EQ(view.buffer_counts()[0], buffers.size());
+      ASSERT_NE(view.buffers()[0], nullptr);
+      EXPECT_EQ(view.addresses()[0], address.native_sockaddr());
+      for (std::size_t index = 0; index != buffers.size(); ++index) {
+        EXPECT_EQ(view.buffers()[0][index].base, buffers[index].data());
+        EXPECT_EQ(view.buffers()[0][index].len, buffers[index].size());
+      }
+    }
+    expect_empty(source);
+  }
+}
+
+TEST(Uvpp2Udp, sendBatchCopiesMultipleDatagramsWithMultipleBuffers) {
+  uv::ipv4 first_address{"127.0.0.1", 1234};
+  uv::ipv6 second_address{"::1", 5678};
+  std::array payload{'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l'};
+  std::array first_buffers{
+      uv::buffer_view{payload.data(), 2},
+      uv::buffer_view{payload.data() + 2, 1}};
+  std::array second_buffers{
+      uv::buffer_view{payload.data() + 3, 3},
+      uv::buffer_view{payload.data() + 6, 1},
+      uv::buffer_view{payload.data() + 7, 2}};
+  std::array third_buffers{
+      uv::buffer_view{payload.data() + 9, 1},
+      uv::buffer_view{payload.data() + 10, 2}};
+  const std::array<std::span<const uv::buffer_view>, 3> expected_buffers{
+      first_buffers, second_buffers, third_buffers};
+  const std::array<const sockaddr *, 3> expected_addresses{
+      first_address.native_sockaddr(), second_address.native_sockaddr(), nullptr};
+
+  uv::udp_send_batch source;
+  source.add(first_buffers, first_address)
+        .add(second_buffers, second_address)
+        .add(third_buffers);
+  uv::udp_send_batch constructed{source};
+  uv::udp_send_batch assigned;
+  assigned.add(first_buffers, first_address);
+  assigned = source;
+
+  const auto source_view = source.view();
+  ASSERT_EQ(source_view.count(), expected_buffers.size());
+  for (const auto *copy : std::array{&constructed, &assigned}) {
+    const auto view = copy->view();
+    ASSERT_EQ(view.count(), expected_buffers.size());
+    ASSERT_NE(view.buffers(), nullptr);
+    EXPECT_NE(view.buffers(), source_view.buffers());
+    EXPECT_NE(view.buffer_counts(), source_view.buffer_counts());
+    EXPECT_NE(view.addresses(), source_view.addresses());
+    for (unsigned int index = 0; index != view.count(); ++index) {
+      EXPECT_NE(view.buffers()[index], source_view.buffers()[index]);
+    }
+  }
+
+  // Overwrite the source metadata while the borrowed payload/addresses live on.
+  // Copies must retain their own three-entry table and all seven buffer records.
+  source.clear();
+  source.add(third_buffers, first_address);
+  for (const auto *copy : std::array{&constructed, &assigned}) {
+    EXPECT_FALSE(copy->empty());
+    EXPECT_EQ(copy->size(), expected_buffers.size());
+    EXPECT_EQ(copy->buffer_count(), 7u);
+    const auto view = copy->view();
+    ASSERT_EQ(view.count(), expected_buffers.size());
+    ASSERT_NE(view.buffers(), nullptr);
+    ASSERT_NE(view.buffer_counts(), nullptr);
+    ASSERT_NE(view.addresses(), nullptr);
+    for (unsigned int datagram = 0; datagram != view.count(); ++datagram) {
+      SCOPED_TRACE(datagram);
+      ASSERT_EQ(view.buffer_counts()[datagram], expected_buffers[datagram].size());
+      ASSERT_NE(view.buffers()[datagram], nullptr);
+      EXPECT_EQ(view.addresses()[datagram], expected_addresses[datagram]);
+      for (std::size_t buffer = 0; buffer != expected_buffers[datagram].size(); ++buffer) {
+        SCOPED_TRACE(buffer);
+        EXPECT_EQ(view.buffers()[datagram][buffer].base, expected_buffers[datagram][buffer].data());
+        EXPECT_EQ(view.buffers()[datagram][buffer].len, expected_buffers[datagram][buffer].size());
+      }
+    }
+  }
+}
+
 TEST(Uvpp2Udp, sendBatchClearAllowsReuse) {
   uv::ipv4 destination{"127.0.0.1", 1234};
   std::array payload{'d', 'a', 't', 'a'};
@@ -382,17 +504,17 @@ TEST(Uvpp2Udp, sendBatchClearAllowsReuse) {
 
 TEST(Uvpp2Udp, sendBatchBuildsManySendMetadata) {
   uv::loop loop;
-  uv::udp server(loop);
-  uv::udp client(loop);
+  uv::raw::udp server(loop);
+  uv::raw::udp client(loop);
 
   int datagrams_read = 0;
   bool server_closed = false;
   bool client_closed = false;
 
-  server.bind(uv::ipv4{"127.0.0.1", 0});
-  client.bind(uv::ipv4{"127.0.0.1", 0});
+  server.bind(uv::ipv4{"127.0.0.1", 0}).throw_if_error();
+  client.bind(uv::ipv4{"127.0.0.1", 0}).throw_if_error();
 
-  server.receive_start(udp_alloc, [&](uv::udp &, uv::udp_receive_result received) {
+  server.receive_start(udp_alloc, [&](uv::raw::udp &, uv::udp_receive_result received) {
     if (received.empty_event()) {
       return;
     }
@@ -409,16 +531,16 @@ TEST(Uvpp2Udp, sendBatchBuildsManySendMetadata) {
 
     ++datagrams_read;
     if (datagrams_read == 2) {
-      server.close([&](uv::udp &) {
+      server.close([&](uv::raw::udp &) {
         server_closed = true;
       });
-      client.close([&](uv::udp &) {
+      client.close([&](uv::raw::udp &) {
         client_closed = true;
       });
     }
-  });
+  }).throw_if_error();
 
-  auto bound = server.sockname();
+  auto bound = server.sockname().value();
   uv::ipv4 destination{"127.0.0.1", bound.port()};
 
   std::array first{'o', 'n', 'e', '!'};
@@ -461,10 +583,10 @@ TEST(Uvpp2Udp, sendBatchBuildsManySendMetadata) {
 #if UVPP_HAS_UDP_USING_RECVMMSG
 TEST(Uvpp2Udp, initializesWithSocketFamilyAndRecvmmsgFlag) {
   uv::loop loop;
-  uv::udp udp(loop, uv::udp_socket_family::ipv4, uv::udp_init_flag::recvmmsg);
+  uv::raw::udp udp(loop, uv::udp_socket_family::ipv4, uv::udp_init_flag::recvmmsg);
 
-  udp.bind(uv::ipv4{"127.0.0.1", 0});
-  auto bound = udp.sockname();
+  udp.bind(uv::ipv4{"127.0.0.1", 0}).throw_if_error();
+  auto bound = udp.sockname().value();
   EXPECT_GT(bound.port(), 0);
   (void)udp.using_recvmmsg();
 
@@ -477,10 +599,10 @@ TEST(Uvpp2Udp, initializesWithSocketFamilyAndRecvmmsgFlag) {
 #if UVPP_HAS_UDP_SOURCE_MEMBERSHIP
 TEST(Uvpp2Udp, sourceMembershipReportsInvalidAddresses) {
   uv::loop loop;
-  uv::udp udp(loop, uv::udp_socket_family::ipv4);
+  uv::raw::udp udp(loop, uv::udp_socket_family::ipv4);
 
-  EXPECT_THROW(udp.set_source_membership("not-a-multicast-address", "not-a-source-address",
-                                         uv::membership::join), uv::error);
+  EXPECT_FALSE(udp.set_source_membership("not-a-multicast-address", "not-a-source-address",
+                                         uv::membership::join));
 
   udp.close();
   loop.run();
@@ -490,13 +612,13 @@ TEST(Uvpp2Udp, sourceMembershipReportsInvalidAddresses) {
 
 TEST(Uvpp2Udp, appliesSocketOptions) {
   uv::loop loop;
-  uv::udp udp(loop);
+  uv::raw::udp udp(loop);
 
-  udp.bind(uv::ipv4{"127.0.0.1", 0});
-  udp.set_broadcast(true);
-  udp.set_ttl(64);
-  udp.set_multicast_loop(true);
-  udp.set_multicast_ttl(1);
+  udp.bind(uv::ipv4{"127.0.0.1", 0}).throw_if_error();
+  udp.set_broadcast(true).throw_if_error();
+  udp.set_ttl(64).throw_if_error();
+  udp.set_multicast_loop(true).throw_if_error();
+  udp.set_multicast_ttl(1).throw_if_error();
 
   udp.close();
   loop.run();
@@ -505,14 +627,14 @@ TEST(Uvpp2Udp, appliesSocketOptions) {
 
 TEST(Uvpp2Udp, immediateSendFailureClearsCallback) {
   uv::loop loop;
-  uv::udp udp(loop);
-  uv::udp_send_request request;
+  uv::raw::udp udp(loop);
+  uv::raw::udp_send_request request;
   std::array payload{'f', 'a', 'i', 'l'};
   auto token = std::make_shared<int>(1);
   std::weak_ptr<int> weak = token;
 
-  EXPECT_THROW(udp.send(request, std::as_bytes(std::span{payload}), static_cast<const sockaddr *>(nullptr),
-    [token](uv::udp_send_request&, uv::result) {}), uv::error);
+  EXPECT_FALSE(udp.send(request, std::as_bytes(std::span{payload}), static_cast<const sockaddr *>(nullptr),
+    [token](uv::raw::udp_send_request&, uv::status) {}));
 
   token.reset();
   EXPECT_TRUE(weak.expired());
@@ -520,4 +642,32 @@ TEST(Uvpp2Udp, immediateSendFailureClearsCallback) {
   udp.close();
   loop.run();
   loop.close();
+}
+
+TEST(Uvpp2Udp, receiveStatusNormalizesWideCountsAndPreservesNativeErrors) {
+  for (const auto count : {ssize_t{0}, ssize_t{1}, (std::numeric_limits<ssize_t>::max)()}) {
+    const uv::udp_receive_result received{count, nullptr, nullptr, 0};
+    EXPECT_EQ(received.count(), count);
+    EXPECT_EQ(received.raw_status(), 0);
+    EXPECT_FALSE(received.error_code());
+    EXPECT_TRUE(received.status());
+  }
+  const uv::udp_receive_result failed{UV_EIO, nullptr, nullptr, 0};
+  EXPECT_EQ(failed.count(), UV_EIO);
+  EXPECT_EQ(failed.raw_status(), UV_EIO);
+  EXPECT_EQ(failed.error_code(), uv::make_error_code(UV_EIO));
+  EXPECT_EQ(failed.status().error(), failed.error_code());
+
+  char byte = 'x';
+  const auto buffer = uv_buf_init(&byte, 1);
+  const uv::ipv4 peer{"127.0.0.1", 9};
+  const uv::udp_receive_result datagram{0, &buffer, peer.native_sockaddr(), UV_UDP_PARTIAL};
+  EXPECT_TRUE(datagram.status());
+  EXPECT_FALSE(datagram.empty_event());
+  EXPECT_TRUE(datagram.partial());
+  EXPECT_EQ(datagram.address(), peer.native_sockaddr());
+  EXPECT_EQ(datagram.storage().data(), &byte);
+  const uv::udp_receive_result empty_event{0, &buffer, nullptr, 0};
+  EXPECT_TRUE(empty_event.status());
+  EXPECT_TRUE(empty_event.empty_event());
 }
