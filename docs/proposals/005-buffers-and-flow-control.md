@@ -4,7 +4,7 @@ Status: partially implemented.
 
 Architecture: [000 — V3 architecture](000-v3-architecture.md).
 
-Target: v3 development on this branch.
+Target: v3 development on `main`.
 
 This proposal is not completely implemented or an API-freeze commitment. Names
 outside the implementation-progress section remain provisional.
@@ -177,9 +177,9 @@ The implemented `uv::buffer_view`, `uv::owned_buffer`, native `uv_buf_t`
 construction, and length/count validation now live in
 [`core/buffer.hpp`](../../include/uvpp/core/buffer.hpp). Filesystem operations,
 streams, and network owners include this shared header directly. The former
-`net/buffer.hpp` include path is removed without a forwarding header on the v3
-branch. Namespaces, layouts, ownership, validation behavior, and allocation costs
-are unchanged. This relocation does not implement the remaining owning adapters,
+`net/buffer.hpp` include path was removed without a forwarding header during v3
+development. Namespaces, layouts, ownership, validation behavior, and allocation
+costs are unchanged. This relocation does not implement the remaining owning adapters,
 pools, or flow-control features proposed above.
 
 Standalone inclusion of the new header compiles with GCC and Clang. The buffer

@@ -1,6 +1,6 @@
 # Callback strategy
 
-This page records callback machinery present on the v3 branch and the boundary
+This page records callback machinery present on `main` and the boundary
 with the unfinished raw/high-level migration. See
 [proposal 004](../proposals/004-operation-state.md) for the shared-operation target.
 

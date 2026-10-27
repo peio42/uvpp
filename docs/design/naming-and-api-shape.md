@@ -7,8 +7,8 @@ does not rename existing symbols or settle unfinished lifetime contracts.
 
 ## Scope and evidence
 
-The current branch combines historical low-level APIs with experimental v3
-owners and coroutine operations. Review both, but do not infer the v3 convention
+The current implementation on `main` combines historical low-level APIs with
+experimental v3 owners and coroutine operations. Review both, but do not infer the v3 convention
 from a historical spelling alone. In particular, the old `try_*` error-policy
 rule is migration context. Filesystem now uses `uv::raw::fs`, with explicit
 submission status and caller-controlled cleanup.

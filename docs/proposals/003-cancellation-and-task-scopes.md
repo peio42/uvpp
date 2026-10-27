@@ -4,7 +4,7 @@ Status: partially implemented.
 
 Architecture: [000 — V3 architecture](000-v3-architecture.md).
 
-Target: v3 development on this branch.
+Target: v3 development on `main`.
 
 This proposal is not completely implemented or an API-freeze commitment. Names
 outside the implementation-progress section remain provisional.

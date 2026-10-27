@@ -5,12 +5,14 @@
 uvpp is a header-only C++20 wrapper around [libuv](https://libuv.org/).
 The repository and include root are `uvpp`; the public C++ namespace is `uv`.
 
-This branch develops v3. The available coroutine tasks, scopes, and TCP, pipe,
+`main` develops v3. The available coroutine tasks, scopes, and TCP, pipe,
 and UDP owners are experimental. The complete raw/high-level split and paired
 error surfaces are still being implemented; this is not a stable v3 release.
-The development branch reports project version 3.0.0 as its target API version;
+`main` reports project version 3.0.0 as its target API version;
 only a tagged release is a published stable version.
 See the [v3 user guide](docs/user/index.md) for the available surface and limits.
+
+For the latest stable v2 sources and maintenance, see the [v2 branch](https://github.com/peio42/uvpp/tree/v2) or the [latest release](https://github.com/peio42/uvpp/releases/latest).
 
 The architecture shares one `uv::loop` between low-level operations, high-level
 owners, and `uv::co` tasks. Owners retain stable native storage and asynchronous

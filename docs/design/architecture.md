@@ -1,6 +1,6 @@
 # V3 architecture
 
-This branch implements the architecture accepted in
+`main` implements the architecture accepted in
 [proposal 000](../proposals/000-v3-architecture.md). C++20 and header-only
 integration are baseline requirements. The include root is `uvpp`, and the public
 namespace is `uv`. The architecture is accepted; the complete API is not yet

@@ -29,7 +29,7 @@ as available below are experimental and may change before release.
 
 ## Availability
 
-| Surface | Available on this branch |
+| Surface | Available on `main` |
 | --- | --- |
 | Common execution | `uv::loop`, cold `uv::co::task<T>`, `spawn_handle<T>`, join, cooperative stop, timer sleep |
 | Cross-thread publication | `loop_posting`, copyable producer endpoints, `uv::ops::post`, bounded admission, drain-and-close |

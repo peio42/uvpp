@@ -1,7 +1,7 @@
 # V3 consistency registry
 
 This registry makes migration gaps and family-specific contracts visible in one
-place. **Implemented** means callable and documented on this branch; **target**
+place. **Implemented** means callable and documented on `main`; **target**
 means accepted direction but incomplete surface; **deferred** means deliberately
 outside the current slice. Historical low-level APIs are evidence for migration,
 not the final v3 contract.

@@ -1,6 +1,6 @@
 # Getting started
 
-Use the v3 development checkout with a C++20 compiler, libuv, and pthread.
+Use a checkout of `main` with a C++20 compiler, libuv, and pthread.
 The APIs in this guide are implemented but experimental.
 
 ## A complete program

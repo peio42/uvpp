@@ -5,7 +5,7 @@ direction governs v3 development; implementation
 availability is recorded in [current design](../design/index.md) and the
 [v3 user guides](../user/index.md). Proposed signatures are not callable APIs.
 Except where marked accepted, proposals below are drafts for v3 exploration, not
-an agreed release scope. This branch targets v3.
+an agreed release scope. `main` targets v3.
 
 ## Catalogue
 

@@ -2,7 +2,7 @@
 
 ## Project
 
-uvpp v3 is a header-only C++20 wrapper around libuv. This branch develops the v3
+uvpp v3 is a header-only C++20 wrapper around libuv. `main` develops the v3
 architecture and API; v2 is maintained on its own branch.
 
 The repository and include root use the `uvpp` name. The public C++ API lives in
@@ -18,7 +18,7 @@ uv::loop loop;
 
 - Design and implement toward the v3 contracts below. Read
   `docs/proposals/000-v3-architecture.md` and the relevant specialized proposals.
-  V2 source compatibility does not constrain the target API on this branch.
+  V2 source compatibility does not constrain the target API on `main`.
 - Use `docs/design/`, `docs/user/`, and the relevant code/tests to understand
   implemented behavior. Where they still describe v2, treat that as migration
   context rather than a rule overriding the v3 target.

@@ -1,6 +1,6 @@
 # uvpp v3 documentation
 
-This branch targets v3. The implementation is in progress and its high-level
+`main` targets v3. The implementation is in progress and its high-level
 APIs remain experimental.
 
 - [User guides](user/index.md) describe available v3 APIs and their current limits.

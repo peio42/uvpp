@@ -1,6 +1,6 @@
 # Threading Primitives
 
-Status: existing implementation on the v3 branch; public surface consolidation remains pending.
+Status: existing implementation on `main`; public surface consolidation remains pending.
 
 The wrappers in `include/uvpp/threading/primitives.hpp` expose libuv thread and
 synchronization primitives. They synchronize application state and do not make
