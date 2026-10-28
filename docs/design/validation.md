@@ -28,7 +28,7 @@ and cleanup without a shell. Windows pipes use the native named-pipe namespace;
 Unix socket paths remain short enough for macOS. Coroutine polling uses borrowed
 sockets on every platform, with POSIX-only descriptor checks guarded separately.
 POSIX signal delivery and raw pipe-descriptor polling have explicit Windows skip
-cases. Environment-dependent TTY and symlink skips remain visible.
+cases. Environment-dependent symlink skips remain visible.
 
 Configured jobs do not by themselves establish platform support. Native runner
 results are required for Windows/macOS validation; local Linux results establish
@@ -278,3 +278,17 @@ prepared heap-backed callables through native send/receive delivery and a prepar
 batch with C++ allocation disabled. Focused ASan/UBSan and libuv 1.48 execution
 complement full compiler suites and Windows-target syntax checks. Native
 Windows/macOS runtime behavior remains a CI gate.
+
+## Raw TTY validation
+
+`test-tty.cpp` checks default guards, native invalid-descriptor failure/retry,
+data and address stability, close and typed mode/size operations. Unix tests open
+a pseudo-terminal and exercise actual master-to-slave reads and asynchronous
+slave-to-master writes, plus close during read delivery with retained allocator storage, without requiring CI stdout to be a terminal. A macOS-only
+child exhausts descriptors to exercise native kqueue failure after registration,
+then verifies cleanup and retry. Windows tests open CONIN$/CONOUT$, allocating a
+console if necessary, and exercise real input/output handles, a console input
+record delivered through read callbacks and asynchronous output.
+A non-console Windows descriptor reaches native console interrogation and checks
+failure/retry without stale registration.
+Native macOS/Windows execution is validated by CI.

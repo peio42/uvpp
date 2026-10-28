@@ -354,3 +354,14 @@ byte/datagram progress and would-block without hidden C++ operation metadata.
 See [real native tests](../../tests/test-raw-udp-io.cpp) and the
 [isolated allocation tests](../../tests/udp-allocation.cpp). Broader proposal work
 remains open; high-level UDP owners and their operation state are unchanged.
+
+## Raw TTY progress
+
+`uv::raw::tty` now shares explicit status initialization, stream subscriptions
+and separate write/shutdown requests with other raw stream handles. Mode returns
+status, dimensions retain a typed result, and process-wide reset/virtual-terminal
+operations do not depend on handle lifecycle. Native initialization failure
+cleanup is backend-specific; the wrapper restores the uninitialized sentinel and
+application data without changing libuv registration. See the
+[implemented TTY guide](../user/tty.md) and [native tests](../../tests/test-tty.cpp).
+Broader proposal work remains open.

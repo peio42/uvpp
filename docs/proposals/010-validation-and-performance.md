@@ -867,3 +867,12 @@ ASan/UBSan covers 48 UDP tests; a libuv 1.48 build/run passes 29 raw UDP tests,
 with later batch APIs absent at compile time. Windows-target syntax checks pass
 for UDP I/O tests, allocation tests and the example. Native Windows/macOS runtime
 validation remains delegated to the existing CI; local checks do not claim it.
+
+## Raw TTY progress
+
+The [TTY tests](../../tests/test-tty.cpp) use an actual Unix pseudo-terminal and
+Windows console handles rather than relying on stdout being interactive. They
+cover lifecycle, failure/retry, mode/size, real stream I/O and native descriptor
+ownership. A macOS-specific child forces late kqueue failure after native
+registration and checks retry without a stale loop handle. Windows/macOS runtime
+coverage remains a native CI gate. See [implemented TTY](../user/tty.md).

@@ -2,7 +2,7 @@
 
 Include `<uvpp/handles/stream.hpp>`, normally through a concrete handle header.
 `uv::raw::stream<Derived, Native>` is the shared caller-owned substrate of
-`uv::raw::tcp`, `uv::raw::pipe` and the still-transitional `uv::tty`. There is no
+`uv::raw::tcp`, `uv::raw::pipe` and `uv::raw::tty`. There is no
 `uv::stream` alias. Native handles remain immovable; native `data` belongs to the
 application. High-level TCP/pipe owners have independent storage and APIs.
 
@@ -110,4 +110,4 @@ submission and distinct `uv::raw::{write_request,shutdown_request,connect_reques
 objects. Their pending state and callbacks survive until actual request completion,
 independently of stream subscription cleanup. `write_now` retains its typed
 byte-count / would-block result. [Pipe-specific setup, connect and IPC write](raw-pipe.md) now share these result
-contracts. TTY family-specific migration remains a later slice.
+contracts. [TTY initialization and terminal state](../tty.md) use explicit native statuses and results.

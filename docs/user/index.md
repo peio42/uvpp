@@ -22,6 +22,7 @@ as available below are experimental and may change before release.
 
 - [TCP](networking/tcp.md): connect, accept, stream I/O, and listener limits.
 - [UDP](networking/udp.md): datagram send/receive and truncation.
+- [Raw TTY](tty.md): terminal streams, explicit initialization and process-wide terminal state.
 - [Raw UDP](networking/raw-udp.md): explicit initialization, socket options, paired reception, send requests and immediate batches.
 - [Pipe](networking/pipe.md): local streams and TCP handle passing over IPC.
 - [Raw pipe](networking/raw-pipe.md): explicit initialization, name queries and IPC requests.
@@ -42,6 +43,7 @@ as available below are experimental and may change before release.
 | Process owner | `process`, synchronous spawn, `wait()`, `kill()`, and close after exit; stdio and resource-scope ownership remain deferred |
 | Explicit-result operations | `uv::ops::{read_some,write,accept,recv_from,send_to,close}`, `uv::ops::resolve(...)`, and `uv::ops::fs::{open,read,write,close}` |
 | Raw async notifications | [`uv::raw::async`](async.md), cross-thread result-oriented send, loop-thread runtime/static callback replacement, caller-synchronized close |
+| Raw TTY | [`uv::raw::tty`](tty.md), explicit initialization, terminal mode/size and shared stream operations |
 | Raw TCP handle | [`uv::raw::tcp`](networking/raw-tcp.md), explicit initialization/TCP operations/address results and close/reset; [stream subscriptions](networking/raw-stream.md) use statuses, [request submissions](networking/raw-requests.md) use statuses and explicit pending state |
 | Raw layer | `uv::raw::fs`, `uv::raw::process`, and [raw callback watchers](raw-watchers.md) (`signal`, `poll`, `fs_event`, `timer`, `idle`, `prepare`, `check`) are available; the broader low-level namespace/error-policy migration is unfinished |
 | Filesystem | `uv::fs::{open,read,write,close}` with `uv::ops::fs` result counterparts; directories and broader filesystem operations remain proposed |

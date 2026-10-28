@@ -207,8 +207,7 @@ Normal close is void, while reset close can fail before initiation. Reset runtim
 callback installation is committed only after native success; failure retains
 existing stream slots and releases the rejected close callback.
 
-The stream substrate is now `uv::raw::stream`, also consumed by `uv::raw::pipe` and the still-legacy
-TTY family wrapper. Listen/read start/stop/accept/blocking use statuses;
+The stream substrate is now `uv::raw::stream`, also consumed by `uv::raw::pipe` and `uv::raw::tty`. Listen/read start/stop/accept/blocking use statuses;
 read outcomes keep signed counts, EOF and borrowed buffers. Runtime/static
 subscription selection is committed after successful native start. Read replacement
 stops the old source first: restart failure after successful stop leaves it stopped.
@@ -273,3 +272,21 @@ suffix batches validate metadata and preserve byte/datagram progress and would-b
 without allocating hidden C++ metadata. Typed receive/immediate/batch values stay
 in `uv`. High-level socket storage is unchanged. See
 [the raw UDP contract](../user/networking/raw-udp.md).
+
+## Raw TTY migration
+
+`uv::raw::tty` composes the shared stream substrate with
+`initializable_handle`: default construction, status init, throwing constructor,
+pre-init/closing guards, retained native storage and normal stream close. Native
+mode operations return status, while terminal dimensions retain a typed result.
+Global reset and virtual-terminal state operations do not depend on a handle.
+
+Libuv 1.45, 1.48 and 1.53 Unix/Windows initialization paths were reviewed. Unix
+fails before registration except for macOS select setup, which removes its own
+late registration before returning. Windows failures precede registration. The
+wrapper resets failed native storage and restores application data without queue
+manipulation or additional close. Libuv's native descriptor reopen/duplication,
+flag changes, ownership and any error-side effects remain platform-specific.
+In particular, inspected Windows versions may retain a duplicate of standard fd
+0–2 when later console interrogation fails; uvpp does not alter that native path.
+See [raw terminal streams](../user/tty.md).
