@@ -61,5 +61,9 @@ or initialization precondition. Under `UVPP_HAS_TTY_VTERM_STATE`,
 `uv::raw::tty_set_vterm_state(state)` and
 `uv::raw::tty_get_vterm_state() -> result<tty_vterm_state>` expose libuv's
 process-wide virtual-terminal setting and query. Availability and behavior remain
-backend-dependent; a query may return `UV_ENOTSUP`. These functions do not imply
-that a particular handle is initialized or that terminal settings are local to it.
+backend-dependent; a query may return `UV_ENOTSUP`. On Windows, initialize libuv
+first (for example by constructing a `uv::loop`) before calling the vterm setter
+or getter: the inspected libuv 1.45/1.48/1.53 Windows implementations initialize
+their shared semaphore during library/loop initialization, not in those functions.
+No TTY handle is required. These functions do not imply that terminal settings are
+local to a handle; uvpp does not implicitly create a loop.

@@ -209,8 +209,11 @@ existing stream slots and releases the rejected close callback.
 
 The stream substrate is now `uv::raw::stream`, also consumed by `uv::raw::pipe` and `uv::raw::tty`. Listen/read start/stop/accept/blocking use statuses;
 read outcomes keep signed counts, EOF and borrowed buffers. Runtime/static
-subscription selection is committed after successful native start. Read replacement
-stops the old source first: restart failure after successful stop leaves it stopped.
+listen selection is committed after successful native start. Read replacement
+stops the old source first; its new pair is published during native start so inline
+Windows TTY allocation/error callbacks see it. Rejected native start retires the
+pair unless an inline callback has replaced it; a failure after stop otherwise
+leaves reading stopped.
 The paired allocation/read slot supports generation-tagged checkout across one
 native buffer loan, with inline active/pending storage and no callback copies.
 Terminal read stops before user delivery. Listener errors retain the

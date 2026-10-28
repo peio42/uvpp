@@ -245,6 +245,9 @@ TEST(RawTty, globalTerminalOperationsDoNotNeedAHandle) {
 #endif
   const auto reset = uv::raw::tty_reset_mode();
   EXPECT_TRUE(reset);
+  // Windows libuv initializes the semaphore used by its global vterm functions
+  // during loop/library initialization; no TTY handle is needed.
+  uv::loop loop;
 #if UVPP_HAS_TTY_VTERM_STATE
   const auto prior = uv::raw::tty_get_vterm_state();
   uv::raw::tty_set_vterm_state(uv::tty_vterm_state::supported);
@@ -257,6 +260,7 @@ TEST(RawTty, globalTerminalOperationsDoNotNeedAHandle) {
   }
   if (prior) uv::raw::tty_set_vterm_state(prior.value());
 #endif
+  EXPECT_NO_THROW(loop.close());
 }
 
 #ifndef _WIN32
@@ -430,6 +434,49 @@ TEST(RawTty, nativeNonConsoleFailureLeavesNoRegisteredHandleAndCanRetry) {
   EXPECT_NO_THROW(loop.close());
 }
 
+TEST(RawTty, nativeLineReadAllocatesInlineAndReentrantRestartSurvives) {
+  if (!is_console_child()) {
+    run_console_child(L"RawTty.nativeLineReadAllocatesInlineAndReentrantRestartSurvives");
+    return;
+  }
+  const int input_fd = open_console("CONIN$");
+  ASSERT_GE(input_fd, 0);
+  uv::loop loop;
+  tty input;
+  const auto initialized = input.init(loop, input_fd, true);
+  if (!initialized) _close(input_fd);
+  ASSERT_TRUE(initialized);
+  auto storage = std::make_shared<std::array<char, 32>>();
+  std::weak_ptr<std::array<char, 32>> weak = storage;
+  int terminal_errors = 0, allocations = 0;
+  bool inside_start = true;
+  const auto started = input.read_start([](tty&, std::size_t) { return uv::buffer_view{}; },
+    [&](tty &self, uv::read_result result) {
+      EXPECT_TRUE(inside_start);
+      EXPECT_EQ(result.raw_status(), UV_ENOBUFS);
+      EXPECT_FALSE(self.active());
+      ++terminal_errors;
+      EXPECT_TRUE(self.read_start([&, storage](tty&, std::size_t) {
+        ++allocations;
+        return uv::buffer_view{storage->data(), storage->size()};
+      }, [](tty&, uv::read_result) {}));
+    });
+  inside_start = false;
+  storage.reset();
+  EXPECT_TRUE(started); // libuv accepts the start but delivered ENOBUFS inline.
+  EXPECT_EQ(terminal_errors, 1);
+  EXPECT_EQ(allocations, 1);
+  EXPECT_TRUE(input.active());
+  EXPECT_FALSE(weak.expired());
+  EXPECT_TRUE(input.set_mode(uv::tty_mode::raw));
+  EXPECT_TRUE(input.read_stop());
+  EXPECT_TRUE(input.set_mode(uv::tty_mode::normal));
+  input.close(); loop.run();
+  EXPECT_TRUE(weak.expired());
+  EXPECT_NO_THROW(loop.close());
+  if (input_fd <= 2) _close(input_fd);
+}
+
 TEST(RawTty, nativeConsoleInputAndOutputUseRealHandles) {
 #ifdef _WIN32
   if (!is_console_child()) {
@@ -455,13 +502,15 @@ TEST(RawTty, nativeConsoleInputAndOutputUseRealHandles) {
   EXPECT_TRUE(output.size());
   std::array<char, 16> storage{};
   std::string received;
+  // Start directly in raw mode: a pending line-mode ReadConsoleW can consume
+  // the synthetic key while its cancellation completes.
+  EXPECT_TRUE(input.set_mode(uv::tty_mode::raw));
   EXPECT_TRUE(input.read_start([&](tty&, std::size_t) { return uv::buffer_view{storage.data(), storage.size()}; },
     [&](tty&, uv::read_result result) {
       EXPECT_TRUE(result);
       if (result.count() > 0) received.append(result.storage().data(), static_cast<std::size_t>(result.count()));
     }));
   EXPECT_EQ(input.set_mode(static_cast<uv::tty_mode>(-1)).error(), uv::make_error_code(UV_EINVAL));
-  EXPECT_TRUE(input.set_mode(uv::tty_mode::raw));
   // Use the same real console-input mechanism as libuv's Windows tty tests.
   INPUT_RECORD key{};
   key.EventType = KEY_EVENT;

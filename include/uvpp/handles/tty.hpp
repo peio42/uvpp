@@ -42,6 +42,8 @@ namespace uv::raw {
   }
 
 #if UVPP_HAS_TTY_VTERM_STATE
+  // Windows libuv's vterm semaphore requires prior library/loop initialization;
+  // these process-wide operations do not initialize a loop implicitly.
   inline void tty_set_vterm_state(tty_vterm_state state) noexcept {
     uv_tty_set_vterm_state(static_cast<uv_tty_vtermstate_t>(state));
   }

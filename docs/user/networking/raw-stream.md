@@ -58,12 +58,18 @@ example, a failed individual connection). If the backend has stopped listening,
 its error is terminal: active slot ownership is released before user delivery. Libuv has no listener-stop operation; close stops listening.
 
 A valid `read_start` on an existing subscription stops the old native read source
-before starting the new one. The new pair is installed only on success. If native
-stop fails, the old subscription remains; if restart fails after successful stop,
-the stream stays stopped and the rejected pair is released. Invalid callbacks are
-rejected before stopping the old subscription. Runtime/static replacements share
-this protocol. Successful `read_stop` releases active slot ownership and repeated
-stops succeed according to libuv. Reentrant replacement, stop and close cannot
+before starting the new one. The new pair is available to native callbacks during
+start; if native submission rejects it, the rejected pair is released unless an
+inline callback has already replaced it. If native stop fails, the old subscription
+remains; if restart fails after successful stop, the stream stays stopped unless
+an inline callback has rearmed it. Invalid callbacks are rejected before stopping
+the old subscription. Runtime/static replacements share
+this protocol. Windows TTY line-mode `uv_read_start` can call the allocator before
+`read_start` returns; an empty allocation can also deliver `UV_ENOBUFS` to the
+reader inline. In that case the start may return success even though the terminal
+error was already delivered. Inline reader stop/replacement/close is retained and
+is not overwritten when the original start returns. Successful `read_stop` releases
+active slot ownership and repeated stops succeed according to libuv. Reentrant replacement, stop and close cannot
 restore the executing old callback when it returns; mutable callable state survives
 ordinary repeated notifications.
 

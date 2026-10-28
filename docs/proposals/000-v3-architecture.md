@@ -418,3 +418,14 @@ cleanup is backend-specific; the wrapper restores the uninitialized sentinel and
 application data without changing libuv registration. See the
 [implemented TTY guide](../user/tty.md) and [native tests](../../tests/test-tty.cpp).
 Broader proposal work remains open.
+
+## Inline Windows TTY read startup
+
+Libuv's Windows TTY line-mode `uv_read_start` may synchronously invoke allocation
+and deliver `UV_ENOBUFS`. Raw stream publishes the paired subscription before
+native entry and rolls back a rejected start only if that generation is unchanged.
+Inline stop/rearm/close is therefore preserved. The Windows console child test
+exercises the native inline error and reentrant restart; ordinary stream tests
+continue to cover rejection and borrowed-buffer lifetimes. Global Windows vterm
+operations require prior libuv/loop initialization, not a TTY handle. See the
+[raw stream guide](../user/networking/raw-stream.md) and [TTY guide](../user/tty.md).

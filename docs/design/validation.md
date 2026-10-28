@@ -295,3 +295,10 @@ child with a separate console; failures and timeouts are reported in the parent,
 which checks that its console, standard handles, code pages and available console
 modes are unchanged.
 Native macOS/Windows execution is validated by CI.
+
+Windows TTY line-mode startup can call the allocator inside `uv_read_start` and
+deliver `UV_ENOBUFS` before it returns. The native-console child test verifies
+inline error delivery, reentrant restart and capture retention; a separate raw-mode
+child test injects a console input record without a pending line-mode reader. The
+global-vterm child initializes a loop before calling the native Windows vterm
+functions, which require libuv's process-wide semaphore to be initialized.
