@@ -1,8 +1,10 @@
+#include <algorithm>
 #include <array>
 #include <chrono>
 #include <cstdlib>
 #include <memory>
 #include <string>
+#include <string_view>
 #include <thread>
 #include <type_traits>
 #include <vector>
@@ -15,6 +17,7 @@
 #include <cerrno>
 #include <fcntl.h>
 #include <sys/ioctl.h>
+#include <termios.h>
 #ifdef __APPLE__
 #include <sys/resource.h>
 #endif
@@ -27,6 +30,104 @@ namespace {
 using tty = uv::raw::tty;
 
 #ifdef _WIN32
+class windows_handle {
+public:
+  explicit windows_handle(HANDLE value = nullptr) noexcept : value_{value} {}
+  ~windows_handle() { if (value_ && value_ != INVALID_HANDLE_VALUE) CloseHandle(value_); }
+  windows_handle(const windows_handle&) = delete;
+  windows_handle &operator=(const windows_handle&) = delete;
+  HANDLE get() const noexcept { return value_; }
+private:
+  HANDLE value_;
+};
+
+bool is_console_child() noexcept {
+  const wchar_t *command = GetCommandLineW();
+  return command && std::wstring_view{command}.find(L"--uvpp-tty-console-child") != std::wstring_view::npos;
+}
+
+void run_console_child(const wchar_t *test_name) {
+  // CREATE_NEW_CONSOLE isolates console modes and input as well as AllocConsole
+  // from the parent. Redirect diagnostics so child GTest failures remain visible.
+  const auto input_cp = GetConsoleCP();
+  const auto output_cp = GetConsoleOutputCP();
+  const auto window = GetConsoleWindow();
+  const auto std_input = GetStdHandle(STD_INPUT_HANDLE);
+  const auto std_output = GetStdHandle(STD_OUTPUT_HANDLE);
+  const auto std_error = GetStdHandle(STD_ERROR_HANDLE);
+  DWORD before_input_mode = 0, before_output_mode = 0;
+  const bool has_input_mode = GetConsoleMode(std_input, &before_input_mode) != 0;
+  const bool has_output_mode = GetConsoleMode(std_output, &before_output_mode) != 0;
+
+  SECURITY_ATTRIBUTES attributes{sizeof(SECURITY_ATTRIBUTES), nullptr, TRUE};
+  HANDLE raw_read = nullptr, raw_write = nullptr;
+  ASSERT_TRUE(CreatePipe(&raw_read, &raw_write, &attributes, 0));
+  windows_handle read_pipe{raw_read};
+  windows_handle write_pipe{raw_write};
+  ASSERT_TRUE(SetHandleInformation(read_pipe.get(), HANDLE_FLAG_INHERIT, 0));
+  windows_handle input{CreateFileW(L"NUL", GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE,
+                                   &attributes, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr)};
+  ASSERT_NE(input.get(), INVALID_HANDLE_VALUE);
+  std::array<wchar_t, 32768> executable{};
+  const DWORD length = GetModuleFileNameW(nullptr, executable.data(), static_cast<DWORD>(executable.size()));
+  ASSERT_GT(length, 0u);
+  ASSERT_LT(length, executable.size());
+  std::wstring command = L"\"" + std::wstring{executable.data(), length} + L"\" --gtest_filter=" +
+                         test_name + L" --gtest_brief=1 --uvpp-tty-console-child";
+  STARTUPINFOW startup{};
+  startup.cb = sizeof(startup);
+  startup.dwFlags = STARTF_USESTDHANDLES;
+  startup.hStdInput = input.get();
+  startup.hStdOutput = write_pipe.get();
+  startup.hStdError = write_pipe.get();
+  PROCESS_INFORMATION process{};
+  const BOOL created = CreateProcessW(executable.data(), command.data(), nullptr, nullptr, TRUE,
+                                      CREATE_NEW_CONSOLE, nullptr, nullptr, &startup, &process);
+  ASSERT_TRUE(created) << "CreateProcessW failed: " << GetLastError();
+  windows_handle child{process.hProcess};
+  windows_handle thread{process.hThread};
+
+  std::string output;
+  auto drain = [&] {
+    DWORD available = 0;
+    while (PeekNamedPipe(read_pipe.get(), nullptr, 0, nullptr, &available, nullptr) && available) {
+      std::array<char, 4096> buffer{};
+      DWORD count = 0;
+      const DWORD size = (std::min)(available, static_cast<DWORD>(buffer.size()));
+      if (!ReadFile(read_pipe.get(), buffer.data(), size, &count, nullptr) || !count) break;
+      output.append(buffer.data(), count);
+    }
+  };
+  const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds{30};
+  DWORD wait = WAIT_TIMEOUT;
+  while (wait == WAIT_TIMEOUT && std::chrono::steady_clock::now() < deadline) {
+    drain();
+    wait = WaitForSingleObject(child.get(), 10);
+  }
+  if (wait != WAIT_OBJECT_0) {
+    TerminateProcess(child.get(), 1);
+    WaitForSingleObject(child.get(), 5000);
+  }
+  drain();
+  DWORD exit_code = 0;
+  EXPECT_EQ(wait, WAIT_OBJECT_0) << output;
+  ASSERT_TRUE(GetExitCodeProcess(child.get(), &exit_code));
+  EXPECT_EQ(exit_code, 0u) << output;
+  EXPECT_EQ(GetConsoleCP(), input_cp);
+  EXPECT_EQ(GetConsoleOutputCP(), output_cp);
+  EXPECT_EQ(GetConsoleWindow(), window);
+  EXPECT_EQ(GetStdHandle(STD_INPUT_HANDLE), std_input);
+  EXPECT_EQ(GetStdHandle(STD_OUTPUT_HANDLE), std_output);
+  EXPECT_EQ(GetStdHandle(STD_ERROR_HANDLE), std_error);
+  DWORD after_mode = 0;
+  const bool still_has_input_mode = GetConsoleMode(std_input, &after_mode) != 0;
+  EXPECT_EQ(still_has_input_mode, has_input_mode);
+  if (has_input_mode && still_has_input_mode) { EXPECT_EQ(after_mode, before_input_mode); }
+  const bool still_has_output_mode = GetConsoleMode(std_output, &after_mode) != 0;
+  EXPECT_EQ(still_has_output_mode, has_output_mode);
+  if (has_output_mode && still_has_output_mode) { EXPECT_EQ(after_mode, before_output_mode); }
+}
+
 int open_console(const char *name) {
   HANDLE handle = CreateFileA(name, GENERIC_READ | GENERIC_WRITE,
                               FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr,
@@ -67,6 +168,12 @@ struct pty_pair {
 #endif
 
 TEST(RawTty, defaultStateAndNativeInitFailureAreRetryable) {
+#ifdef _WIN32
+  if (!is_console_child()) {
+    run_console_child(L"RawTty.defaultStateAndNativeInitFailureAreRetryable");
+    return;
+  }
+#endif
   static_assert(std::is_nothrow_default_constructible_v<tty>);
   static_assert(!std::is_copy_constructible_v<tty> && !std::is_move_constructible_v<tty>);
   static_assert(!std::is_convertible_v<tty&, uv_tty_t*>);
@@ -130,6 +237,12 @@ TEST(RawTty, defaultStateAndNativeInitFailureAreRetryable) {
 }
 
 TEST(RawTty, globalTerminalOperationsDoNotNeedAHandle) {
+#ifdef _WIN32
+  if (!is_console_child()) {
+    run_console_child(L"RawTty.globalTerminalOperationsDoNotNeedAHandle");
+    return;
+  }
+#endif
   const auto reset = uv::raw::tty_reset_mode();
   EXPECT_TRUE(reset);
 #if UVPP_HAS_TTY_VTERM_STATE
@@ -154,13 +267,25 @@ TEST(RawTty, pseudoTerminalCarriesRealReadsAndWritesAndReportsSize) {
   requested.ws_col = 80;
   requested.ws_row = 24;
   ASSERT_EQ(ioctl(terminals.slave, TIOCSWINSZ, &requested), 0);
+  termios initial{};
+  ASSERT_EQ(tcgetattr(terminals.slave, &initial), 0);
+  initial.c_lflag |= ICANON | ECHO;
+  ASSERT_EQ(tcsetattr(terminals.slave, TCSANOW, &initial), 0);
   uv::loop loop;
   tty handle{loop, terminals.slave, true};
   terminals.after_init(handle);
+  const int terminal_fd = handle.fileno().value();
+  termios before{};
+  ASSERT_EQ(tcgetattr(terminal_fd, &before), 0);
+  ASSERT_EQ(before.c_lflag & (ICANON | ECHO), static_cast<tcflag_t>(ICANON | ECHO));
+  ASSERT_TRUE(handle.set_mode(uv::tty_mode::raw));
+  termios raw{};
+  ASSERT_EQ(tcgetattr(terminal_fd, &raw), 0);
+  EXPECT_EQ(raw.c_lflag & ICANON, 0u);
+  EXPECT_EQ(raw.c_lflag & ECHO, 0u);
 #if UVPP_HAS_TTY_RAW_VT
   ASSERT_TRUE(handle.set_mode(uv::tty_mode::raw_vt));
 #endif
-  ASSERT_TRUE(handle.set_mode(uv::tty_mode::raw));
   const auto size = handle.size();
   ASSERT_TRUE(size);
   EXPECT_EQ(size.value().width, 80);
@@ -211,6 +336,9 @@ TEST(RawTty, pseudoTerminalCarriesRealReadsAndWritesAndReportsSize) {
   EXPECT_EQ(nread, 4);
   if (nread == 4) { EXPECT_EQ(std::string(output.data(), 4), "pong"); }
   EXPECT_TRUE(handle.set_mode(uv::tty_mode::normal));
+  termios restored{};
+  ASSERT_EQ(tcgetattr(terminal_fd, &restored), 0);
+  EXPECT_EQ(restored.c_lflag & (ICANON | ECHO), before.c_lflag & (ICANON | ECHO));
   handle.close(); loop.run();
   EXPECT_FALSE(request.pending());
   EXPECT_NO_THROW(loop.close());
@@ -265,6 +393,12 @@ TEST(RawTty, closeFromRealReadRetainsAllocatorStorageUntilDeliveryReturns) {
 }
 #else
 TEST(RawTty, nativeNonConsoleFailureLeavesNoRegisteredHandleAndCanRetry) {
+#ifdef _WIN32
+  if (!is_console_child()) {
+    run_console_child(L"RawTty.nativeNonConsoleFailureLeavesNoRegisteredHandleAndCanRetry");
+    return;
+  }
+#endif
   uv::loop loop;
   tty handle;
   int marker = 7;
@@ -297,6 +431,12 @@ TEST(RawTty, nativeNonConsoleFailureLeavesNoRegisteredHandleAndCanRetry) {
 }
 
 TEST(RawTty, nativeConsoleInputAndOutputUseRealHandles) {
+#ifdef _WIN32
+  if (!is_console_child()) {
+    run_console_child(L"RawTty.nativeConsoleInputAndOutputUseRealHandles");
+    return;
+  }
+#endif
   int input_fd = open_console("CONIN$");
   int output_fd = open_console("CONOUT$");
   ASSERT_GE(input_fd, 0);

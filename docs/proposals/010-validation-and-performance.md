@@ -871,8 +871,9 @@ validation remains delegated to the existing CI; local checks do not claim it.
 ## Raw TTY progress
 
 The [TTY tests](../../tests/test-tty.cpp) use an actual Unix pseudo-terminal and
-Windows console handles rather than relying on stdout being interactive. They
-cover lifecycle, failure/retry, mode/size, real stream I/O and native descriptor
+Windows console handles rather than relying on stdout being interactive. Windows
+console scenarios run in isolated child processes with their own console; the
+parent checks its own console state after each child. They cover lifecycle, failure/retry, mode/size, real stream I/O and native descriptor
 ownership. A macOS-specific child forces late kqueue failure after native
 registration and checks retry without a stale loop handle. Windows/macOS runtime
 coverage remains a native CI gate. See [implemented TTY](../user/tty.md).

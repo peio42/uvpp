@@ -290,5 +290,8 @@ then verifies cleanup and retry. Windows tests open CONIN$/CONOUT$, allocating a
 console if necessary, and exercise real input/output handles, a console input
 record delivered through read callbacks and asynchronous output.
 A non-console Windows descriptor reaches native console interrogation and checks
-failure/retry without stale registration.
+failure/retry without stale registration. Each Windows console scenario runs in a
+child with a separate console; failures and timeouts are reported in the parent,
+which checks that its console, standard handles, code pages and available console
+modes are unchanged.
 Native macOS/Windows execution is validated by CI.

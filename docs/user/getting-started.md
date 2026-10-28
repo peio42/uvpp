@@ -106,7 +106,8 @@ The CI matrix selects Ubuntu 24.04 x64 with GCC and Clang, Windows Server 2022
 x64 with MSVC, and macOS 26 ARM64 with Apple Clang, plus Linux ASan/UBSan.
 POSIX signal-delivery and pipe-descriptor polling tests are excluded on Windows
 with explicit skip cases; coroutine polling uses sockets on every platform.
-TTY tests use a pseudo-terminal on Unix and a console on Windows; symlink tests may skip when creation is denied.
+TTY tests use a pseudo-terminal on Unix and an isolated child console on Windows;
+symlink tests may skip when creation is denied.
 A configured job is not a portability guarantee until it passes on its runner.
 
 Each ordinary platform CI job also installs uvpp outside the checkout, relocates
