@@ -62,15 +62,16 @@ completion, even an error completion, the descriptor identity is terminal and
 cannot be retried safely. Direct destruction diagnoses an unclosed file rather
 than starting unobserved request cleanup.
 
-Raw async/signal/poll/fs-event/timer/idle/prepare/check may be default-constructed without a native
-registration. Their native `loop` pointers track successful initialization and
-remain set after close; reinitialization is rejected. Before init, destruction needs no native cleanup
-and close is inert (no close callback delivery). After successful init, the
-normal explicit-close/storage-retention obligations apply even without a start.
-Only use borrowed views after initialization. This contract currently applies to
-raw async/signal/poll/fs-event/timer/idle/prepare/check; other raw handles retain constructor
-initialization. Signal native init failure precedes handle registration and leaves
-no handle to close; loop-side infrastructure, if any, is retained by the loop.
+Raw async/signal/poll/fs-event/timer/idle/prepare/check and TCP/pipe/UDP/TTY
+handles may be default-constructed without a native registration. Their native
+`loop` pointers track successful initialization and remain set after close;
+reinitialization is rejected. Before init, destruction needs no native cleanup
+and close is inert (no close callback delivery). After successful init, normal
+explicit-close/storage-retention obligations apply even without a start. Only use
+borrowed views after initialization. Native initialization failure and descriptor
+side effects vary by family; see the relevant raw guide. Signal failure precedes
+handle registration and leaves no handle to close, while loop infrastructure may
+remain retained by the loop.
 
 ## Tasks, views, and bytes
 

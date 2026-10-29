@@ -26,6 +26,8 @@ namespace uv::detail {
   template<class Callback>
   class persistent_callback_slot {
   public:
+    std::size_t generation() const noexcept { return generation_; }
+
     void replace(Callback callback) {
       callback_ = std::move(callback);
       ++generation_;

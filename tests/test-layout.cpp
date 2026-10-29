@@ -6,7 +6,7 @@
 
 static_assert(uv::stream_handle<uv::raw::tcp>);
 static_assert(uv::stream_handle<uv::raw::pipe>);
-static_assert(uv::stream_handle<uv::tty>);
+static_assert(uv::stream_handle<uv::raw::tty>);
 static_assert(!uv::stream_handle<uv::raw::timer>);
 
 static_assert(uv::detail::native_handle_recoverable<uv::raw::timer>);
@@ -24,7 +24,7 @@ TEST(Uvpp2Layout, reconstructsHandlesFromNativePointers) {
   static_assert(std::is_standard_layout_v<uv::raw::signal::native_storage>);
   static_assert(std::is_standard_layout_v<uv::raw::timer::native_storage>);
   static_assert(std::is_standard_layout_v<uv::raw::tcp::native_storage>);
-  static_assert(std::is_standard_layout_v<uv::tty::native_storage>);
+  static_assert(std::is_standard_layout_v<uv::raw::tty::native_storage>);
   static_assert(std::is_standard_layout_v<uv::raw::udp::native_storage>);
 
   uv::loop loop;
@@ -95,22 +95,6 @@ TEST(Uvpp2Layout, reconstructsHandlesFromNativePointers) {
   close(fds[0]);
   close(fds[1]);
 #endif
-}
-
-TEST(Uvpp2Layout, reconstructsTtyFromNativePointersWhenAvailable) {
-  if (uv_guess_handle(1) != UV_TTY) {
-    GTEST_SKIP() << "stdout is not a tty";
-  }
-
-  uv::loop loop;
-  uv::tty tty(loop, 1, false);
-
-  EXPECT_EQ(&tty, &uv::tty::from_native(tty.native()));
-  EXPECT_EQ(&tty, &uv::tty::from_native(tty.native_handle()));
-
-  tty.close();
-  loop.run();
-  loop.close();
 }
 
 TEST(Uvpp2Layout, reconstructsRequestsFromNativePointers) {

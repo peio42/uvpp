@@ -867,3 +867,29 @@ ASan/UBSan covers 48 UDP tests; a libuv 1.48 build/run passes 29 raw UDP tests,
 with later batch APIs absent at compile time. Windows-target syntax checks pass
 for UDP I/O tests, allocation tests and the example. Native Windows/macOS runtime
 validation remains delegated to the existing CI; local checks do not claim it.
+
+## Raw TTY progress
+
+The [TTY tests](../../tests/test-tty.cpp) use an actual Unix pseudo-terminal and
+Windows console handles rather than relying on stdout being interactive. Windows
+console scenarios run in isolated child processes with their own console; the
+parent checks its own console state after each child. They cover lifecycle, failure/retry, mode/size, real stream I/O and native descriptor
+ownership. A macOS-specific child forces late kqueue failure after native
+registration and checks retry without a stale loop handle. Windows/macOS runtime
+coverage remains a native CI gate. See [implemented TTY](../user/tty.md).
+
+## Inline Windows TTY read startup
+
+Libuv's Windows TTY line-mode `uv_read_start` may synchronously invoke allocation
+and deliver `UV_ENOBUFS`. Raw stream publishes the paired subscription before
+native entry and rolls back a rejected start only if that generation is unchanged.
+Inline stop/rearm/close is therefore preserved. The Windows console child test
+exercises the native inline error and reentrant restart; ordinary stream tests
+continue to cover rejection and borrowed-buffer lifetimes. Global Windows vterm
+operations require prior libuv/loop initialization, not a TTY handle. See the
+[raw stream guide](../user/networking/raw-stream.md) and [TTY guide](../user/tty.md).
+
+Local GCC/Clang suites and the isolated allocation tests pass. Focused
+ASan/UBSan covers TTY, stream and TCP tests; a separate libuv 1.48 build covers
+TTY and stream compatibility. The Windows test code passes cross-compilation
+syntax checks; native execution of the new inline-delivery case remains a CI gate.

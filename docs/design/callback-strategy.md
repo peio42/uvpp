@@ -180,9 +180,12 @@ close has quiesced delivery. Runtime reset close stores its prepared close calla
 only after native initiation succeeds, avoiding callback replacement on failure.
 Handle read/allocator/listener slots are separate from connect/write/shutdown
 request callbacks, which remain retained until their own actual completion.
-Raw stream subscription migration is implemented: native success commits runtime/
-static selection, read replacement stops before restart, and generations prevent
-old callback unwinding from restoring retired state. The allocator and reader are
+Raw stream subscription migration is implemented: listen selection commits on
+native success, while a read pair is published before native start so synchronous
+Windows TTY line allocation/error delivery has its pair. A rejected read start
+retires that pair only if its generation is unchanged. Read replacement stops
+before restart, and generations prevent old callback unwinding from restoring
+retired state or erasing an inline rearm. The allocator and reader are
 one paired slot; a checked-out pair spans native buffer allocation through read
 notification. A pending pair can survive stop/replacement and is released at read
 notification, the next native allocation, or native close completion before user

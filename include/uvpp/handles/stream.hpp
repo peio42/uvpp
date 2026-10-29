@@ -359,10 +359,16 @@ namespace uv::raw {
         auto stopped = read_stop();
         if (!stopped) return stopped;
       }
+      // Windows TTY line reads can allocate and even report ENOBUFS inside
+      // uv_read_start. Publish the pair first so that inline native callbacks
+      // see it; a rejected start must not erase a reentrant replacement.
+      read_subscription_.replace(std::move(next));
+      reading_ = true;
+      const auto generation = read_subscription_.generation();
       auto result = status::from_native(uv_read_start(native_stream(), &stream::alloc_trampoline, &stream::read_trampoline));
-      if (result) {
-        read_subscription_.replace(std::move(next));
-        reading_ = true;
+      if (!result && read_subscription_.generation() == generation) {
+        reading_ = false;
+        read_subscription_.replace({});
       }
       return result;
     }
