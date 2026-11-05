@@ -121,7 +121,7 @@ The current result API is not uniform across all families:
 | Public and raw filesystem results | `status()` returns `uv::status`; `raw_status()` returns zero on success or a negative error | Direct `error_code()`; `raw()` retains native payload/status value |
 | Stream/UDP read results | `status()` returns `uv::status`; `raw_status()` normalizes successful counts to zero; `count()` retains native byte count/status | Direct `error_code()`; borrowed payload and family flags remain available |
 | `raw::fs_event_result`, `raw::poll_result` | `status()` returns `uv::status`; `raw_status()` normalizes success to zero | Direct `error_code()`; typed event payloads remain available |
-| `fs_poll_result` | `status()` returns `uv::status` | `status().error()`; no direct `error_code()` or `raw_status()` |
+| `raw::fs_poll_result` | `status()`, `raw_status()` and `error_code()` preserve native outcomes | Previous/current native stat pointers are borrowed during callback delivery |
 
 The specialized low-level families expose `ok()` and explicit boolean conversion;
 the common result uses `has_value()` instead of `ok()`. Use the payload

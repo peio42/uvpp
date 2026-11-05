@@ -893,3 +893,14 @@ Local GCC/Clang suites and the isolated allocation tests pass. Focused
 ASan/UBSan covers TTY, stream and TCP tests; a separate libuv 1.48 build covers
 TTY and stream compatibility. The Windows test code passes cross-compilation
 syntax checks; native execution of the new inline-delivery case remains a CI gate.
+
+## Raw filesystem polling progress
+
+`uv::raw::fs_poll` now has explicit status initialization and subscription
+operations, typed path results, checked chrono intervals and borrowed native stat
+results. Filesystem errors remain nonterminal. A fixed native callback enables
+reentrant runtime/static replacement for the same path and interval, while
+`UV_EBUSY` prevents mismatched active reconfiguration. After stop, restart is
+passed directly to libuv, including from a callback; its behavior depends on the
+linked libuv version. See [the guide](../user/raw-watchers.md#filesystem-polling)
+and [tests](../../tests/test-raw-fs-poll.cpp). Broader proposal work remains open.

@@ -293,3 +293,16 @@ flag changes, ownership and any error-side effects remain platform-specific.
 In particular, inspected Windows versions may retain a duplicate of standard fd
 0–2 when later console interrogation fails; uvpp does not alter that native path.
 See [raw terminal streams](../user/tty.md).
+
+## Raw filesystem polling
+
+`uv::raw::fs_poll` uses the initializable raw watcher substrate and preserves
+both native stat pointers in callback results. Unlike fs-event and descriptor
+poll, a negative fs-poll notification does not stop the subscription. The native
+active-start call is a successful no-op, so a single fixed native dispatcher
+implements runtime/static selection replacement only when path and converted
+interval match; mismatches return `UV_EBUSY` without changing native state.
+
+After stop, restart is passed directly to libuv, including from a callback.
+The wrapper does not compensate for libuv version-specific restart bugs.
+See [raw watcher usage](../user/raw-watchers.md#filesystem-polling).

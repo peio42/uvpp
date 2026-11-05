@@ -29,7 +29,7 @@ struct static_poll_state {
 
 static_poll_state *current_static_poll = nullptr;
 
-void on_static_fs_poll(uv::fs_poll &poll, uv::fs_poll_result result) {
+void on_static_fs_poll(uv::raw::fs_poll &poll, uv::raw::fs_poll_result result) {
   ASSERT_TRUE(result);
   ASSERT_NE(result.previous(), nullptr);
   ASSERT_NE(result.current(), nullptr);
@@ -104,12 +104,12 @@ TEST(Uvpp2FsPoll, reportsFileChanges) {
   write_text(file, "a");
 
   uv::loop loop;
-  uv::fs_poll watcher(loop);
+  uv::raw::fs_poll watcher(loop);
   uv::raw::timer modifier(loop);
   uv::raw::timer timeout(loop);
   bool changed = false;
 
-  watcher.start(file.string(), 10ms, [&](uv::fs_poll &self, uv::fs_poll_result result) {
+  watcher.start(file.string(), 10ms, [&](uv::raw::fs_poll &self, uv::raw::fs_poll_result result) {
     ASSERT_TRUE(result);
     ASSERT_NE(result.previous(), nullptr);
     ASSERT_NE(result.current(), nullptr);
@@ -128,7 +128,7 @@ TEST(Uvpp2FsPoll, reportsFileChanges) {
     }
   });
 
-  EXPECT_EQ(watcher.path(), file.string());
+  EXPECT_EQ(watcher.path().value(), file.string());
 
   modifier.start(30ms, [&](uv::raw::timer &timer) {
     write_text(file, "changed");
@@ -157,7 +157,7 @@ TEST(Uvpp2FsPoll, runsStaticCallback) {
   write_text(file, "a");
 
   uv::loop loop;
-  uv::fs_poll watcher(loop);
+  uv::raw::fs_poll watcher(loop);
   uv::raw::timer modifier(loop);
   uv::raw::timer timeout(loop);
   static_poll_state state{&modifier, &timeout, false};

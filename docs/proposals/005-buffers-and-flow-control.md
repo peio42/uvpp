@@ -262,3 +262,14 @@ exercises the native inline error and reentrant restart; ordinary stream tests
 continue to cover rejection and borrowed-buffer lifetimes. Global Windows vterm
 operations require prior libuv/loop initialization, not a TTY handle. See the
 [raw stream guide](../user/networking/raw-stream.md) and [TTY guide](../user/tty.md).
+
+## Raw filesystem polling progress
+
+`uv::raw::fs_poll` now has explicit status initialization and subscription
+operations, typed path results, checked chrono intervals and borrowed native stat
+results. Filesystem errors remain nonterminal. A fixed native callback enables
+reentrant runtime/static replacement for the same path and interval, while
+`UV_EBUSY` prevents mismatched active reconfiguration. After stop, restart is
+passed directly to libuv, including from a callback; its behavior depends on the
+linked libuv version. See [the guide](../user/raw-watchers.md#filesystem-polling)
+and [tests](../../tests/test-raw-fs-poll.cpp). Broader proposal work remains open.
