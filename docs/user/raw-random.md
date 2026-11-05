@@ -4,7 +4,9 @@
 synchronously and returns `uv::status`. It needs neither a loop nor request and
 may block while the system obtains entropy. Libuv fills the entire buffer on
 success; on error its contents are unspecified. The wrapper passes native flags
-as zero and does not allocate an output buffer.
+as zero and does not allocate an output buffer. Libuv limits each synchronous
+or asynchronous `uv_random()` operation to `0x7fffffff` bytes; larger buffers
+are rejected immediately with `UV_E2BIG`.
 
 For asynchronous operation, the caller supplies both stable request storage and a
 mutable output buffer:

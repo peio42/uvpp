@@ -333,3 +333,5 @@ portable fixture; other platform validation remains with CI.
 Tests cover synchronous fill, caller-owned output and request storage, runtime and
 static callbacks, reentrant dispatch changes, cancellation and completion,
 rejected overlapping or empty-callback submissions, and callback lifetime.
+On Linux, an optional no-reserve virtual mapping also exercises native
+`UV_E2BIG` rejection and request reuse without allocating the buffer physically.
