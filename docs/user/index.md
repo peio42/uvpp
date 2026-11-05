@@ -28,6 +28,8 @@ as available below are experimental and may change before release.
 - [Raw pipe](networking/raw-pipe.md): explicit initialization, name queries and IPC requests.
 - [DNS](networking/dns.md): raw DNS requests and coroutine resolution with owned results.
 
+- [Raw thread-pool work](raw-work.md): caller-owned work requests, cancellation and completion.
+
 ## Availability
 
 | Surface | Available on `main` |
@@ -42,6 +44,7 @@ as available below are experimental and may change before release.
 | Poll owner | `poll_source`, per-wait `next(mask)`, `uv::ops::next`, and terminal close; descriptor ownership remains with the caller |
 | Process owner | `process`, synchronous spawn, `wait()`, `kill()`, and close after exit; stdio and resource-scope ownership remain deferred |
 | Explicit-result operations | `uv::ops::{read_some,write,accept,recv_from,send_to,close}`, `uv::ops::resolve(...)`, and `uv::ops::fs::{open,read,write,close}` |
+| Raw thread-pool work | [`uv::raw::work_request`](raw-work.md), worker/loop callbacks, explicit submission and cancellation statuses |
 | Raw async notifications | [`uv::raw::async`](async.md), cross-thread result-oriented send, loop-thread runtime/static callback replacement, caller-synchronized close |
 | Raw TTY | [`uv::raw::tty`](tty.md), explicit initialization, terminal mode/size and shared stream operations |
 | Raw TCP handle | [`uv::raw::tcp`](networking/raw-tcp.md), explicit initialization/TCP operations/address results and close/reset; [stream subscriptions](networking/raw-stream.md) use statuses, [request submissions](networking/raw-requests.md) use statuses and explicit pending state |

@@ -52,11 +52,11 @@ struct static_work_state {
   int status = UV_EINVAL;
 };
 
-void static_work_callback(uv::work_request &request) {
+void static_work_callback(uv::raw::work_request &request) {
   request.user_data<static_work_state>()->worked.store(true);
 }
 
-void static_after_work_callback(uv::work_request &request, uv::status status) {
+void static_after_work_callback(uv::raw::work_request &request, uv::status status) {
   auto *state = request.user_data<static_work_state>();
   state->after = true;
   state->status = status.error().native();
@@ -68,17 +68,17 @@ public:
     requests_.reserve(count);
 
     for (std::size_t i = 0; i < count; ++i) {
-      auto request = std::make_unique<uv::work_request>();
-      uv::queue_work(loop, *request,
-        [&](uv::work_request &) {
+      auto request = std::make_unique<uv::raw::work_request>();
+      uv::raw::queue_work(loop, *request,
+        [&](uv::raw::work_request &) {
           started_.fetch_add(1);
           while (!released_.load()) {
             std::this_thread::yield();
           }
         },
-        [](uv::work_request &, uv::status status) {
+        [](uv::raw::work_request &, uv::status status) {
           EXPECT_TRUE(status);
-        });
+        }).throw_if_error();
       requests_.push_back(std::move(request));
     }
   }
@@ -97,7 +97,7 @@ public:
   }
 
 private:
-  std::vector<std::unique_ptr<uv::work_request>> requests_;
+  std::vector<std::unique_ptr<uv::raw::work_request>> requests_;
   std::atomic<bool> released_{false};
   std::atomic<std::size_t> started_{0};
 };
@@ -121,23 +121,23 @@ void static_random_callback(uv::random_request &request, uv::random_result resul
 
 TEST(Uvpp2Threadpool, queueWorkRunsWorkerAndAfterCallbacks) {
   uv::loop loop;
-  uv::work_request request;
+  uv::raw::work_request request;
 
   std::atomic<bool> worked{false};
   bool after = false;
   int status = UV_EINVAL;
 
-  uv::queue_work(loop, request,
-    [&](uv::work_request &callback_request) {
+  uv::raw::queue_work(loop, request,
+    [&](uv::raw::work_request &callback_request) {
       if (&callback_request == &request) {
         worked.store(true);
       }
     },
-    [&](uv::work_request &callback_request, uv::status callback_status) {
+    [&](uv::raw::work_request &callback_request, uv::status callback_status) {
       EXPECT_EQ(&request, &callback_request);
       after = true;
       status = callback_status.error().native();
-    });
+    }).throw_if_error();
 
   loop.run();
 
@@ -151,18 +151,15 @@ TEST(Uvpp2Threadpool, queueWorkRunsWorkerAndAfterCallbacks) {
 
 TEST(Uvpp2Threadpool, queueWorkCancelAfterCompletionFails) {
   uv::loop loop;
-  uv::work_request request;
+  uv::raw::work_request request;
 
-  uv::queue_work(loop, request,
-    [](uv::work_request &) {},
-    [](uv::work_request &, uv::status) {});
+  uv::raw::queue_work(loop, request,
+    [](uv::raw::work_request &) {},
+    [](uv::raw::work_request &, uv::status) {}).throw_if_error();
 
   loop.run();
 
-  EXPECT_THROW(request.cancel(), uv::error);
-  auto ec = request.try_cancel();
-  ASSERT_TRUE(ec);
-  EXPECT_EQ(ec.native(), UV_EBUSY);
+  EXPECT_EQ(request.cancel().error(), uv::make_error_code(UV_EINVAL));
 
   loop.close();
 }
@@ -183,21 +180,31 @@ TEST(Uvpp2Threadpool, queueWorkCancelPendingCompletesWithCanceledStatus) {
     GTEST_SKIP() << "could not occupy every libuv worker thread";
   }
 
-  uv::work_request target;
+  uv::raw::work_request target;
   std::atomic<bool> target_started{false};
   bool target_after = false;
   bool target_canceled = false;
+  auto capture = std::make_shared<int>(1);
+  std::weak_ptr<int> weak = capture;
 
-  uv::queue_work(loop, target,
-    [&](uv::work_request &) {
+  uv::raw::queue_work(loop, target,
+    [&, capture](uv::raw::work_request &) {
       target_started.store(true);
     },
-    [&](uv::work_request &, uv::status status) {
+    [&](uv::raw::work_request &, uv::status status) {
       target_after = true;
       target_canceled = status.error() == uv::make_error_code(UV_ECANCELED);
-    });
+      EXPECT_TRUE(weak.expired());
+    }).throw_if_error();
+  capture.reset();
 
-  EXPECT_FALSE(target.try_cancel());
+  EXPECT_TRUE(target.pending());
+  EXPECT_TRUE(target.cancel());
+  EXPECT_TRUE(target.pending());
+  EXPECT_FALSE(weak.expired());
+  EXPECT_FALSE(target_after);
+  EXPECT_EQ(uv::raw::queue_work(loop, target, [](auto&) {}, [](auto&, auto) {}).error(),
+            uv::make_error_code(UV_EBUSY));
 
   blockers.release();
   loop.run();
@@ -211,11 +218,11 @@ TEST(Uvpp2Threadpool, queueWorkCancelPendingCompletesWithCanceledStatus) {
 
 TEST(Uvpp2Threadpool, queueWorkSupportsStaticCallbacks) {
   uv::loop loop;
-  uv::work_request request;
+  uv::raw::work_request request;
   static_work_state state;
   request.user_data(state);
 
-  uv::queue_work_static<static_work_callback, static_after_work_callback>(loop, request);
+  ASSERT_TRUE((uv::raw::queue_work_static<static_work_callback, static_after_work_callback>(loop, request)));
   loop.run();
 
   EXPECT_TRUE(state.worked.load());

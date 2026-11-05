@@ -911,3 +911,11 @@ Raw DNS tests exercise both callback forms, immediate submission and asynchronou
 completion failures, cancellation, reentrant reuse and native result lifetimes.
 Existing coroutine tests retain coverage of owned `resolve` and `ops::resolve`
 results. Cross-platform CI and broader lifecycle validation remain ongoing.
+
+## Raw thread-pool work progress
+
+`uv::raw::work_request` now exposes explicit queue and cancellation statuses with
+caller-owned stable native storage. Work runs on a pool thread, terminal delivery
+on the loop; callback state is prepared before submission and detached before
+completion. Cancellation retains the request until completion. Tests cover both
+callback forms, reentrant reuse and cancellation. Broader proposal work remains open.

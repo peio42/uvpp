@@ -319,3 +319,10 @@ completion errors, cancellation races, callback release and request reuse from a
 callback. Address-list ownership is exercised beyond callback delivery and
 reverse-name strings are copied before request reuse. The existing coroutine DNS
 tests continue to cover owned high-level results and error policy.
+
+## Raw thread-pool work
+
+Tests exercise worker and loop thread identities, pending and running
+cancellation, retained captures, callback-form transitions, reentrant reuse and
+empty-callback rejection. Thread-pool saturation is bounded by the existing
+portable fixture; other platform validation remains with CI.

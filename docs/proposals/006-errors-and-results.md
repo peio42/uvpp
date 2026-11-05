@@ -620,3 +620,11 @@ Raw DNS submission and cancellation expose statuses separately from completion
 results. Native address lists have explicit move-only ownership; reverse lookup
 strings borrow from the request. `resolve` and `ops::resolve` retain their owned
 result and distinct error policies. Further proposal validation remains open.
+
+## Raw thread-pool work progress
+
+`uv::raw::work_request` now exposes explicit queue and cancellation statuses with
+caller-owned stable native storage. Work runs on a pool thread, terminal delivery
+on the loop; callback state is prepared before submission and detached before
+completion. Cancellation retains the request until completion. Tests cover both
+callback forms, reentrant reuse and cancellation. Broader proposal work remains open.
