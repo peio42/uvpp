@@ -395,3 +395,11 @@ statuses, release their callback claim before delivery, and retain native reques
 storage through completion. Address lists use move-only ownership; reverse-name
 strings borrow from request storage. High-level `resolve` continues to produce
 owned values. Further proposal validation remains open.
+
+## Raw thread-pool work progress
+
+`uv::raw::work_request` now exposes explicit queue and cancellation statuses with
+caller-owned stable native storage. Work runs on a pool thread, terminal delivery
+on the loop; callback state is prepared before submission and detached before
+completion. Cancellation retains the request until completion. Tests cover both
+callback forms, reentrant reuse and cancellation. Broader proposal work remains open.

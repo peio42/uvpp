@@ -68,7 +68,7 @@ thread and return `UV_EBADF`; send has no corresponding admission guarantee.
 `set_callback({})` clears user delivery without stopping the native handle.
 See [raw async notifications](../user/async.md) for callback and close lifetimes.
 
-`uv::queue_work()` is a separate thread-pool mechanism: its work callback runs
+`uv::raw::queue_work()` is a separate thread-pool mechanism: its work callback runs
 on a libuv worker thread, and its after-work callback runs on the loop thread.
 The work callback must follow the same rule as any other external thread: it
 must not access loop-owned handles or requests except through APIs documented as

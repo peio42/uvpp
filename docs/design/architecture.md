@@ -314,3 +314,11 @@ delivery. Submission and cancellation report status; callbacks receive native
 completion status. Address results own the libuv list; reverse name strings
 borrow from request storage. High-level resolution retains its own request and
 materializes independent addresses. See [DNS usage](../user/networking/dns.md).
+
+## Raw thread-pool work
+
+`uv::raw::work_request` retains caller-owned native storage through loop-thread
+completion. Runtime callbacks are installed before `uv_queue_work`, because a
+worker can start before submission returns. Completion clears request state
+before user delivery; accepted cancellation does not imply completion. See the
+[raw work guide](../user/raw-work.md).

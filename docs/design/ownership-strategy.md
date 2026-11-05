@@ -192,3 +192,8 @@ Raw DNS requests retain caller-owned native storage through callback delivery.
 `raw::getaddrinfo_result` owns the native address list, whereas
 `raw::getnameinfo_result` borrows strings in the request; reuse invalidates those
 views. High-level DNS resolution materializes independent address values.
+
+Raw work requests remain caller-owned and address-stable through loop-thread
+completion, including after cancellation. The worker callable is released on
+the worker after execution, or on the loop before delivery when cancelled before
+execution. Completion detaches its callback before invoking user code.

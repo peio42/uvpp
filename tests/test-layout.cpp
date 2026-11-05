@@ -108,7 +108,7 @@ TEST(Uvpp2Layout, reconstructsRequestsFromNativePointers) {
 #endif
   static_assert(std::is_standard_layout_v<uv::raw::shutdown_request::native_storage>);
   static_assert(std::is_standard_layout_v<uv::raw::udp_send_request::native_storage>);
-  static_assert(std::is_standard_layout_v<uv::work_request::native_storage>);
+  static_assert(std::is_standard_layout_v<uv::raw::work_request::native_storage>);
 
   uv::raw::write_request write;
   uv::raw::connect_request connect;
@@ -120,7 +120,7 @@ TEST(Uvpp2Layout, reconstructsRequestsFromNativePointers) {
 #endif
   uv::raw::shutdown_request shutdown;
   uv::raw::udp_send_request udp_send;
-  uv::work_request work;
+  uv::raw::work_request work;
 
   EXPECT_EQ(&write, &uv::raw::write_request::from_native(write.native()));
   EXPECT_EQ(&write, &uv::raw::write_request::from_native(write.native_request()));
@@ -140,6 +140,6 @@ TEST(Uvpp2Layout, reconstructsRequestsFromNativePointers) {
   EXPECT_EQ(&shutdown, &uv::raw::shutdown_request::from_native(shutdown.native_request()));
   EXPECT_EQ(&udp_send, &uv::raw::udp_send_request::from_native(udp_send.native()));
   EXPECT_EQ(&udp_send, &uv::raw::udp_send_request::from_native(udp_send.native_request()));
-  EXPECT_EQ(&work, &uv::work_request::from_native(work.native()));
-  EXPECT_EQ(&work, &uv::work_request::from_native(work.native_request()));
+  EXPECT_EQ(&work, &uv::raw::work_request::from_native(work.native()));
+  EXPECT_EQ(&work, &uv::raw::work_request::from_native(work.native_request()));
 }
