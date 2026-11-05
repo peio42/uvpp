@@ -27,7 +27,7 @@ namespace uv::raw {
 
     uv::status submit(loop_view loop, work_callback work, after_callback after) {
       if (pending_) return uv::status::from_native(UV_EBUSY);
-      if (!work || !after) return uv::status::from_native(UV_EINVAL);
+      if (!work) return uv::status::from_native(UV_EINVAL);
       // A worker may run before uv_queue_work returns. Publish both callbacks
       // before native submission; on acceptance do not touch the worker slot.
       work_ = std::move(work);
@@ -80,7 +80,7 @@ namespace uv::raw {
       auto after = std::move(self.after_);
       self.after_ = {};
       self.pending_ = false;
-      detail::invoke_callback(after, self, uv::status::from_native(code));
+      if (after) detail::invoke_callback(after, self, uv::status::from_native(code));
     }
 
     work_callback work_{};

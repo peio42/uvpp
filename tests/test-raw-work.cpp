@@ -115,13 +115,13 @@ TEST(RawWork, callbackFormsCanBeChangedFromCompletion) {
   loop.close();
 }
 
-TEST(RawWork, invalidCallbacksLeaveRequestReusableAndReleaseCaptures) {
+TEST(RawWork, emptyWorkCallbackLeavesRequestReusableAndReleasesCaptures) {
   uv::loop loop;
   request_type request;
   auto token = std::make_shared<int>(1);
   std::weak_ptr<int> weak = token;
   const auto result = uv::raw::queue_work(loop, request,
-    [token](request_type &) {}, {});
+    {}, [token](request_type &, uv::status) {});
   token.reset();
   EXPECT_EQ(result.error(), uv::make_error_code(UV_EINVAL));
   EXPECT_TRUE(weak.expired());
@@ -131,6 +131,30 @@ TEST(RawWork, invalidCallbacksLeaveRequestReusableAndReleaseCaptures) {
     [&](request_type &, uv::status status) { EXPECT_TRUE(status); done = true; }));
   loop.run();
   EXPECT_TRUE(done);
+  loop.close();
+}
+
+TEST(RawWork, emptyCompletionStillRetiresRequestAndAllowsReuse) {
+  uv::loop loop;
+  request_type request;
+  std::atomic<bool> worked{false};
+  auto token = std::make_shared<int>(1);
+  std::weak_ptr<int> weak = token;
+  ASSERT_TRUE(uv::raw::queue_work(loop, request,
+    [&, token](request_type &) { worked.store(true); }, {}));
+  token.reset();
+  EXPECT_TRUE(wait_until(worked));
+  EXPECT_TRUE(request.pending());
+  loop.run();
+  EXPECT_FALSE(request.pending());
+  EXPECT_TRUE(weak.expired());
+
+  bool completed = false;
+  ASSERT_TRUE(uv::raw::queue_work(loop, request, [](request_type &) {},
+    [&](request_type &, uv::status status) { EXPECT_TRUE(status); completed = true; }));
+  loop.run();
+  EXPECT_TRUE(completed);
+  EXPECT_FALSE(request.pending());
   loop.close();
 }
 

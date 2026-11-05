@@ -1,8 +1,8 @@
 # Raw thread-pool work
 
 `uv::raw::work_request` owns caller-provided, address-stable `uv_work_t` storage.
-`uv::raw::queue_work` submits a runtime work callback and an after-work callback;
-`queue_work_static<Work, After>` uses compile-time callbacks. Both return
+`uv::raw::queue_work` submits a runtime work callback and an optional after-work
+callback; `queue_work_static<Work, After>` uses compile-time callbacks. Both return
 `uv::status` for submission. Runtime callback construction can allocate and throw
 before the operation is submitted; no additional operation allocation is made by
 uvpp. Libuv may allocate or initialize its own thread pool.
@@ -30,18 +30,21 @@ The request and all state borrowed by either callback must stay alive and at a
 stable address until completion is delivered. `pending()` stays true through
 worker execution and until immediately before completion delivery. Submission,
 `pending()` and `cancel()` are loop-thread operations. Submitting a pending
-request returns `UV_EBUSY`; empty runtime callbacks return `UV_EINVAL`. Both
-callbacks are required so the wrapper can expose terminal delivery and release
-its callback storage, even though libuv permits a null after-work callback. A native
-submission error returns its native status and releases both stored callbacks.
+request returns `UV_EBUSY`; an empty work callback returns `UV_EINVAL`. The
+runtime after-work callback may be empty: uvpp still installs an internal native
+completion callback to retire the request and release its callback storage. Drive
+the loop until `pending()` is false before reusing or destroying the request. A
+native submission error returns its native status and releases both stored callbacks.
 
 `request.cancel()` returns the native cancellation status while pending and
 `UV_EINVAL` otherwise. A successful cancellation does not complete the request:
-the work callback will not run, but the completion callback still runs with
-`UV_ECANCELED`. If work has begun or finished, cancellation can return `UV_EBUSY`;
-the completion callback still reports the eventual outcome. Never destroy or
-reuse the request merely because cancellation was requested. Once the completion
-callback begins, the request may be resubmitted or destroyed from it.
+the work callback will not run, but native completion still occurs; if supplied,
+the user completion callback receives `UV_ECANCELED`. If work has begun or
+finished, cancellation can return `UV_EBUSY`; any user completion callback still
+reports the eventual outcome. Never destroy or
+reuse the request merely because cancellation was requested. Once native completion
+has cleared `pending()`, the request may be resubmitted or destroyed; a user
+completion callback may do so from within the callback.
 
 The work callable is moved out and destroyed on the worker after invocation; if
 cancelled before it starts, it is released on the loop before completion delivery.

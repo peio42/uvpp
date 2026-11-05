@@ -206,12 +206,33 @@ TEST(Uvpp2Threadpool, queueWorkCancelPendingCompletesWithCanceledStatus) {
   EXPECT_EQ(uv::raw::queue_work(loop, target, [](auto&) {}, [](auto&, auto) {}).error(),
             uv::make_error_code(UV_EBUSY));
 
+  uv::raw::work_request no_completion;
+  std::atomic<bool> no_completion_started{false};
+  auto second_capture = std::make_shared<int>(1);
+  std::weak_ptr<int> second_weak = second_capture;
+  uv::raw::queue_work(loop, no_completion,
+    [&, second_capture](uv::raw::work_request &) { no_completion_started.store(true); },
+    {}).throw_if_error();
+  second_capture.reset();
+  EXPECT_TRUE(no_completion.cancel());
+  EXPECT_TRUE(no_completion.pending());
+  EXPECT_FALSE(second_weak.expired());
+
   blockers.release();
   loop.run();
 
   EXPECT_FALSE(target_started.load());
   EXPECT_TRUE(target_after);
   EXPECT_TRUE(target_canceled);
+  EXPECT_FALSE(no_completion_started.load());
+  EXPECT_FALSE(no_completion.pending());
+  EXPECT_TRUE(second_weak.expired());
+
+  bool reused = false;
+  ASSERT_TRUE(uv::raw::queue_work(loop, no_completion, [](auto&) {},
+    [&](auto&, uv::status status) { EXPECT_TRUE(status); reused = true; }));
+  loop.run();
+  EXPECT_TRUE(reused);
 
   loop.close();
 }

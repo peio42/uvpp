@@ -324,5 +324,6 @@ tests continue to cover owned high-level results and error policy.
 
 Tests exercise worker and loop thread identities, pending and running
 cancellation, retained captures, callback-form transitions, reentrant reuse and
-empty-callback rejection. Thread-pool saturation is bounded by the existing
+empty-work rejection and retirement without a user completion callback, including
+after cancellation. Thread-pool saturation is bounded by the existing
 portable fixture; other platform validation remains with CI.
