@@ -302,3 +302,13 @@ inline error delivery, reentrant restart and capture retention; a separate raw-m
 child test injects a console input record without a pending line-mode reader. The
 global-vterm child initializes a loop before calling the native Windows vterm
 functions, which require libuv's process-wide semaphore to be initialized.
+
+## Raw filesystem polling
+
+Real temporary-file tests cover native error/recovery, metadata changes, borrowed
+stat values, runtime/static callback replacement, stop, close and restart after
+the loop drains native cleanup. Duration boundaries and callback ownership are
+checked separately. A direct libuv 1.51 probe reproduced an old callback and a
+busy loop after stop/start without waiting; restart during callback also triggered
+a native assertion. Tests therefore preserve the caller-visible cleanup boundary
+rather than accessing the private native context.

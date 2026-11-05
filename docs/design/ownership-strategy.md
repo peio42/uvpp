@@ -62,7 +62,7 @@ completion, even an error completion, the descriptor identity is terminal and
 cannot be retried safely. Direct destruction diagnoses an unclosed file rather
 than starting unobserved request cleanup.
 
-Raw async/signal/poll/fs-event/timer/idle/prepare/check and TCP/pipe/UDP/TTY
+Raw async/signal/poll/fs-event/fs-poll/timer/idle/prepare/check and TCP/pipe/UDP/TTY
 handles may be default-constructed without a native registration. Their native
 `loop` pointers track successful initialization and remain set after close;
 reinitialization is rejected. Before init, destruction needs no native cleanup

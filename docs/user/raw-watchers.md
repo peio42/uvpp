@@ -1,6 +1,6 @@
 # Raw callback watchers
 
-`uv::raw::{signal,poll,fs_event,timer,idle,prepare,check}` provide caller-owned
+`uv::raw::{signal,poll,fs_event,fs_poll,timer,idle,prepare,check}` provide caller-owned
 callbacks on the shared `uv::loop`. Include the corresponding
 `<uvpp/handles/<name>.hpp>` header or `<uvpp/uv.hpp>`.
 
@@ -199,7 +199,57 @@ successful statuses normalize to zero without losing their event payloads.
 
 Filesystem notifications retain libuv's backend-dependent names, flags,
 coalescing, and loss limitations. See [libuv's fs-event documentation](https://docs.libuv.org/en/v1.x/fs_event.html).
-`fs_poll` remains outside this migration slice.
+## Filesystem polling
+
+`uv::raw::fs_poll` provides the same explicit initialization lifecycle as
+`fs_event`: default construction, `init(loop_or_view) -> status`, throwing
+loop constructors, `UV_EALREADY` on repeated init, and `UV_EBADF` for start,
+stop or path before init or while closing. Native storage and application data
+remain stable through close completion. `start(path, interval, callback)` and
+`start_static<Callback>(path, interval)` return `status`; `stop()` is `noexcept`
+and releases the runtime callable after native stop succeeds. `path()` returns
+`result<std::string>` and can throw separately for C++ allocation. Paths with
+embedded NUL return `UV_EINVAL` before native entry.
+
+Intervals use `std::chrono`: finite values of at least 1 ms and less than
+2^32 ms are accepted, truncating fractional milliseconds toward zero. Negative,
+zero, sub-millisecond, non-finite and out-of-range values return `UV_EINVAL`
+without changing an existing subscription. This deliberately rejects zero even
+though libuv converts zero to a 1 ms interval. For matching an active subscription,
+the converted whole-millisecond value is used.
+
+Libuv returns success without changing anything when `uv_fs_poll_start()` is
+called on an active handle. This wrapper uses one native dispatcher so that
+`start` and `start_static` can replace the selected callback, including from a
+callback, when the path and converted interval are unchanged. A different path or
+interval returns `UV_EBUSY` and leaves the old subscription intact. A successful
+replacement releases the old stored callable; an executing callable remains alive
+until it returns. Errors preparing callbacks or path-query storage can throw before
+any selection changes. Matching an active path prepares a temporary writable C++
+string; long paths can allocate. Native libuv also allocates its poll context and
+manages the stat request and timer independently of uvpp callback storage.
+
+To change the watched path or interval, stop first and wait for libuv to finish
+cleaning its old poll context before starting again. Native stop initiates cleanup;
+it does not itself report cleanup completion. In particular, a native stat request
+may still be in flight. On affected libuv versions an immediate restart can deliver
+an old callback or leave the loop busy; an immediate restart from inside the poll
+callback can assert. After `stop()` in a callback, this wrapper returns `UV_EBUSY`
+for `start` until that callback returns. Outside the callback, the caller must
+ensure native cleanup has completed before restarting: for example, on a loop
+without unrelated active work, drive it until `uv_run` reports no remaining work.
+There is no public per-subscription cleanup notification. Closing the handle and
+retaining it through close completion is another explicit lifecycle boundary. uvpp
+does not inspect libuv's private poll context or defer native start/errors.
+
+`raw::fs_poll_result` preserves both borrowed `uv_stat_t` pointers through
+`previous()` and `current()`; use them only during delivery. `previous_status()`
+and `current_status()` produce value snapshots. `status()`, `raw_status()` and
+`error_code()` preserve negative native errors and normalize nonnegative statuses.
+A stat error, such as a missing file, is **not terminal**: libuv keeps polling and
+can report recovery or a different error later. Polling observes file metadata;
+short intervals do not guarantee every filesystem change is observed. See
+[libuv's filesystem polling contract](https://docs.libuv.org/en/v1.x/fs_poll.html).
 
 
 ## Timers
