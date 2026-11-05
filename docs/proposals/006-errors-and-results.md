@@ -613,3 +613,10 @@ reentrant runtime/static replacement for the same path and interval, while
 passed directly to libuv, including from a callback; its behavior depends on the
 linked libuv version. See [the guide](../user/raw-watchers.md#filesystem-polling)
 and [tests](../../tests/test-raw-fs-poll.cpp). Broader proposal work remains open.
+
+## Raw DNS request migration
+
+Raw DNS submission and cancellation expose statuses separately from completion
+results. Native address lists have explicit move-only ownership; reverse lookup
+strings borrow from the request. `resolve` and `ops::resolve` retain their owned
+result and distinct error policies. Further proposal validation remains open.

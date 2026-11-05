@@ -306,3 +306,11 @@ interval match; mismatches return `UV_EBUSY` without changing native state.
 After stop, restart is passed directly to libuv, including from a callback.
 The wrapper does not compensate for libuv version-specific restart bugs.
 See [raw watcher usage](../user/raw-watchers.md#filesystem-polling).
+
+## Raw DNS requests
+
+Raw DNS request storage belongs to the caller and remains stable through terminal
+delivery. Submission and cancellation report status; callbacks receive native
+completion status. Address results own the libuv list; reverse name strings
+borrow from request storage. High-level resolution retains its own request and
+materializes independent addresses. See [DNS usage](../user/networking/dns.md).

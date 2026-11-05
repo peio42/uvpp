@@ -311,3 +311,11 @@ Duration boundaries and callback ownership are checked separately. Immediate
 restart tests require a libuv build containing the upstream fs-poll restart fix.
 Set `UVPP_TEST_FS_POLL_RESTART_FIXED=1` when running the test suite against
 such a build to exercise runtime-to-static and static-to-runtime reentrant restart.
+
+## Raw DNS requests
+
+The DNS tests cover native and static callbacks, immediate submission failure,
+completion errors, cancellation races, callback release and request reuse from a
+callback. Address-list ownership is exercised beyond callback delivery and
+reverse-name strings are copied before request reuse. The existing coroutine DNS
+tests continue to cover owned high-level results and error policy.

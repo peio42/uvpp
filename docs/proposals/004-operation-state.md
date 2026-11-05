@@ -387,3 +387,11 @@ reentrant runtime/static replacement for the same path and interval, while
 passed directly to libuv, including from a callback; its behavior depends on the
 linked libuv version. See [the guide](../user/raw-watchers.md#filesystem-polling)
 and [tests](../../tests/test-raw-fs-poll.cpp). Broader proposal work remains open.
+
+## Raw DNS request migration
+
+Caller-owned `uv::raw` DNS requests now expose explicit submission and cancellation
+statuses, release their callback claim before delivery, and retain native request
+storage through completion. Address lists use move-only ownership; reverse-name
+strings borrow from request storage. High-level `resolve` continues to produce
+owned values. Further proposal validation remains open.

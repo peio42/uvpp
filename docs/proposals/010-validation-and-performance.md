@@ -904,3 +904,10 @@ reentrant runtime/static replacement for the same path and interval, while
 passed directly to libuv, including from a callback; its behavior depends on the
 linked libuv version. See [the guide](../user/raw-watchers.md#filesystem-polling)
 and [tests](../../tests/test-raw-fs-poll.cpp). Broader proposal work remains open.
+
+## Raw DNS validation progress
+
+Raw DNS tests exercise both callback forms, immediate submission and asynchronous
+completion failures, cancellation, reentrant reuse and native result lifetimes.
+Existing coroutine tests retain coverage of owned `resolve` and `ops::resolve`
+results. Cross-platform CI and broader lifecycle validation remain ongoing.

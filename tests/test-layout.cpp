@@ -100,8 +100,8 @@ TEST(Uvpp2Layout, reconstructsHandlesFromNativePointers) {
 TEST(Uvpp2Layout, reconstructsRequestsFromNativePointers) {
   static_assert(std::is_standard_layout_v<uv::raw::write_request::native_storage>);
   static_assert(std::is_standard_layout_v<uv::raw::connect_request::native_storage>);
-  static_assert(std::is_standard_layout_v<uv::getaddrinfo_request::native_storage>);
-  static_assert(std::is_standard_layout_v<uv::getnameinfo_request::native_storage>);
+  static_assert(std::is_standard_layout_v<uv::raw::getaddrinfo_request::native_storage>);
+  static_assert(std::is_standard_layout_v<uv::raw::getnameinfo_request::native_storage>);
   static_assert(std::is_standard_layout_v<uv::raw::fs::request::native_storage>);
 #if UVPP_HAS_RANDOM
   static_assert(std::is_standard_layout_v<uv::random_request::native_storage>);
@@ -112,8 +112,8 @@ TEST(Uvpp2Layout, reconstructsRequestsFromNativePointers) {
 
   uv::raw::write_request write;
   uv::raw::connect_request connect;
-  uv::getaddrinfo_request getaddrinfo;
-  uv::getnameinfo_request getnameinfo;
+  uv::raw::getaddrinfo_request getaddrinfo;
+  uv::raw::getnameinfo_request getnameinfo;
   uv::raw::fs::request fs;
 #if UVPP_HAS_RANDOM
   uv::random_request random;
@@ -126,10 +126,10 @@ TEST(Uvpp2Layout, reconstructsRequestsFromNativePointers) {
   EXPECT_EQ(&write, &uv::raw::write_request::from_native(write.native_request()));
   EXPECT_EQ(&connect, &uv::raw::connect_request::from_native(connect.native()));
   EXPECT_EQ(&connect, &uv::raw::connect_request::from_native(connect.native_request()));
-  EXPECT_EQ(&getaddrinfo, &uv::getaddrinfo_request::from_native(getaddrinfo.native()));
-  EXPECT_EQ(&getaddrinfo, &uv::getaddrinfo_request::from_native(getaddrinfo.native_request()));
-  EXPECT_EQ(&getnameinfo, &uv::getnameinfo_request::from_native(getnameinfo.native()));
-  EXPECT_EQ(&getnameinfo, &uv::getnameinfo_request::from_native(getnameinfo.native_request()));
+  EXPECT_EQ(&getaddrinfo, &uv::raw::getaddrinfo_request::from_native(getaddrinfo.native()));
+  EXPECT_EQ(&getaddrinfo, &uv::raw::getaddrinfo_request::from_native(getaddrinfo.native_request()));
+  EXPECT_EQ(&getnameinfo, &uv::raw::getnameinfo_request::from_native(getnameinfo.native()));
+  EXPECT_EQ(&getnameinfo, &uv::raw::getnameinfo_request::from_native(getnameinfo.native_request()));
   EXPECT_EQ(&fs, &uv::raw::fs::request::from_native(fs.native()));
   EXPECT_EQ(&fs, &uv::raw::fs::request::from_native(fs.native_request()));
 #if UVPP_HAS_RANDOM

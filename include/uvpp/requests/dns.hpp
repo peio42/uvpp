@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cstddef>
+#include <concepts>
 #include <cstring>
 #include <functional>
 #include <iterator>
@@ -16,6 +17,7 @@
 
 #include "uvpp/core/callback.hpp"
 #include "uvpp/core/error.hpp"
+#include "uvpp/core/loop.hpp"
 #include "uvpp/net/socket_address.hpp"
 #include "uvpp/requests/request.hpp"
 
@@ -48,6 +50,8 @@ namespace uv {
     }
 
   }
+
+  namespace raw {
 
   class addrinfo_view {
   public:
@@ -186,142 +190,111 @@ namespace uv {
 
   class getnameinfo_result {
   public:
-    getnameinfo_result() = default;
-    getnameinfo_result(int status, const char *hostname, const char *service)
-      : status_{status},
-        hostname_{hostname ? hostname : ""},
-        service_{service ? service : ""} {}
-
+    getnameinfo_result(int status, const char *hostname, const char *service) noexcept
+      : status_{status}, hostname_{hostname}, service_{service} {}
     bool ok() const noexcept { return status_ >= 0; }
     explicit operator bool() const noexcept { return ok(); }
     uv::status status() const noexcept { return uv::status::from_native(status_); }
     int raw_status() const noexcept { return status_; }
     uv::error_code error_code() const noexcept { return make_error_code(status_); }
-
-    std::string_view hostname() const noexcept { return hostname_; }
-    std::string_view service() const noexcept { return service_; }
-
+    std::string_view hostname() const noexcept { return hostname_ ? hostname_ : ""; }
+    std::string_view service() const noexcept { return service_ ? service_ : ""; }
+    const char *native_hostname() const noexcept { return hostname_; }
+    const char *native_service() const noexcept { return service_; }
   private:
-    int status_ = 0;
-    std::string hostname_;
-    std::string service_;
+    int status_;
+    const char *hostname_;
+    const char *service_;
   };
 
   class getaddrinfo_request final : public basic_request<getaddrinfo_request, uv_getaddrinfo_t> {
   public:
     using callback = std::function<void(getaddrinfo_request&, getaddrinfo_result)>;
-
-    void set_callback(callback cb) {
-      callback_ = std::move(cb);
+    bool pending() const noexcept { return pending_; }
+    uv::status cancel() noexcept {
+      return pending_ ? uv::status::from_native(uv_cancel(native_request())) : uv::status::from_native(UV_EINVAL);
     }
 
-    void cancel() {
-      throw_if_error(uv_cancel(native_request()));
+    uv::status submit(loop_view loop, const char *node, const char *service, const addrinfo *hints, callback cb) {
+      if (pending_) return uv::status::from_native(UV_EBUSY);
+      if (!cb) return uv::status::from_native(UV_EINVAL);
+      const int rc = uv_getaddrinfo(loop.native(), native(), &getaddrinfo_request::complete, node, service, hints);
+      if (rc >= 0) { callback_ = std::move(cb); static_callback_ = nullptr; pending_ = true; }
+      return uv::status::from_native(rc);
     }
-
-    error_code try_cancel() noexcept {
-      return make_error_code(uv_cancel(native_request()));
-    }
-
-    void set_inputs(std::optional<std::string_view> node, std::optional<std::string_view> service,
-                    const addrinfo *hints) {
-      node_ = node ? std::optional<std::string>{std::string{*node}} : std::nullopt;
-      service_ = service ? std::optional<std::string>{std::string{*service}} : std::nullopt;
-      hints_ = hints ? std::optional<addrinfo>{*hints} : std::nullopt;
-    }
-
-    void clear_inputs() noexcept {
-      node_.reset();
-      service_.reset();
-      hints_.reset();
-    }
-
-    const char *node_arg() const noexcept { return node_ ? node_->c_str() : nullptr; }
-    const char *service_arg() const noexcept { return service_ ? service_->c_str() : nullptr; }
-    const addrinfo *hints_arg() const noexcept { return hints_ ? &*hints_ : nullptr; }
-
-    void invoke(int status, addrinfo *addresses) noexcept {
-      auto callback = std::move(callback_);
-      callback_ = {};
-      clear_inputs();
-
-      if (callback) {
-        detail::invoke_callback(callback, *this, getaddrinfo_result{status, addresses});
-      } else if (addresses) {
-        uv_freeaddrinfo(addresses);
-      }
-    }
-
     template<auto Callback>
-    void invoke_static(int status, addrinfo *addresses) noexcept {
-      clear_inputs();
-      detail::invoke_static_callback<Callback>(*this, getaddrinfo_result{status, addresses});
+      requires std::invocable<decltype(Callback), getaddrinfo_request&, getaddrinfo_result>
+    uv::status submit_static(loop_view loop, const char *node, const char *service, const addrinfo *hints) noexcept {
+      if (pending_) return uv::status::from_native(UV_EBUSY);
+      const int rc = uv_getaddrinfo(loop.native(), native(), &getaddrinfo_request::complete, node, service, hints);
+      if (rc >= 0) {
+        callback_ = {};
+        static_callback_ = [](getaddrinfo_request &req, getaddrinfo_result result) noexcept {
+          detail::invoke_static_callback<Callback>(req, std::move(result));
+        };
+        pending_ = true;
+      }
+      return uv::status::from_native(rc);
     }
-
   private:
+    static void complete(uv_getaddrinfo_t *raw, int code, addrinfo *addresses) noexcept {
+      auto &self = from_native(raw);
+      auto callback = std::move(self.callback_);
+      self.callback_ = {};
+      auto static_callback = std::exchange(self.static_callback_, nullptr);
+      self.pending_ = false;
+      getaddrinfo_result result{code, addresses};
+      if (static_callback) static_callback(self, std::move(result));
+      else if (callback) detail::invoke_callback(callback, self, std::move(result));
+    }
     callback callback_{};
-    std::optional<std::string> node_;
-    std::optional<std::string> service_;
-    std::optional<addrinfo> hints_;
+    void (*static_callback_)(getaddrinfo_request&, getaddrinfo_result) noexcept = nullptr;
+    bool pending_ = false;
   };
 
   class getnameinfo_request final : public basic_request<getnameinfo_request, uv_getnameinfo_t> {
   public:
     using callback = std::function<void(getnameinfo_request&, getnameinfo_result)>;
-
-    void set_callback(callback cb) {
-      callback_ = std::move(cb);
+    bool pending() const noexcept { return pending_; }
+    uv::status cancel() noexcept {
+      return pending_ ? uv::status::from_native(uv_cancel(native_request())) : uv::status::from_native(UV_EINVAL);
     }
-
-    void cancel() {
-      throw_if_error(uv_cancel(native_request()));
+    uv::status submit(loop_view loop, const sockaddr *address, int flags, callback cb) {
+      if (pending_) return uv::status::from_native(UV_EBUSY);
+      if (!cb) return uv::status::from_native(UV_EINVAL);
+      const int rc = uv_getnameinfo(loop.native(), native(), &getnameinfo_request::complete, address, flags);
+      if (rc >= 0) { callback_ = std::move(cb); static_callback_ = nullptr; pending_ = true; }
+      return uv::status::from_native(rc);
     }
-
-    error_code try_cancel() noexcept {
-      return make_error_code(uv_cancel(native_request()));
-    }
-
-    void set_address(const sockaddr *addr) noexcept {
-      storage_ = {};
-      if (!addr) {
-        has_address_ = false;
-        return;
-      }
-
-      const auto size = addr->sa_family == AF_INET6 ? sizeof(sockaddr_in6) : sizeof(sockaddr_in);
-      std::memcpy(&storage_, addr, size);
-      has_address_ = true;
-    }
-
-    void clear_address() noexcept {
-      storage_ = {};
-      has_address_ = false;
-    }
-
-    const sockaddr *address_arg() const noexcept {
-      return has_address_ ? reinterpret_cast<const sockaddr *>(&storage_) : nullptr;
-    }
-
-    void invoke(int status, const char *hostname, const char *service) noexcept {
-      auto callback = std::move(callback_);
-      callback_ = {};
-      clear_address();
-
-      if (callback) {
-        detail::invoke_callback(callback, *this, getnameinfo_result{status, hostname, service});
-      }
-    }
-
     template<auto Callback>
-    void invoke_static(int status, const char *hostname, const char *service) noexcept {
-      clear_address();
-      detail::invoke_static_callback<Callback>(*this, getnameinfo_result{status, hostname, service});
+      requires std::invocable<decltype(Callback), getnameinfo_request&, getnameinfo_result>
+    uv::status submit_static(loop_view loop, const sockaddr *address, int flags) noexcept {
+      if (pending_) return uv::status::from_native(UV_EBUSY);
+      const int rc = uv_getnameinfo(loop.native(), native(), &getnameinfo_request::complete, address, flags);
+      if (rc >= 0) {
+        callback_ = {};
+        static_callback_ = [](getnameinfo_request &req, getnameinfo_result result) noexcept {
+          detail::invoke_static_callback<Callback>(req, result);
+        };
+        pending_ = true;
+      }
+      return uv::status::from_native(rc);
     }
-
   private:
+    static void complete(uv_getnameinfo_t *raw, int code, const char *hostname, const char *service) noexcept {
+      auto &self = from_native(raw);
+      auto callback = std::move(self.callback_);
+      self.callback_ = {};
+      auto static_callback = std::exchange(self.static_callback_, nullptr);
+      self.pending_ = false;
+      getnameinfo_result result{code, hostname, service};
+      if (static_callback) static_callback(self, result);
+      else if (callback) detail::invoke_callback(callback, self, result);
+    }
     callback callback_{};
-    sockaddr_storage storage_{};
-    bool has_address_ = false;
+    void (*static_callback_)(getnameinfo_request&, getnameinfo_result) noexcept = nullptr;
+    bool pending_ = false;
   };
 
+  } // namespace raw
 }
