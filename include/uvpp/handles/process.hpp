@@ -6,6 +6,7 @@
 #include <cstdint>
 #include <functional>
 #include <initializer_list>
+#include <limits>
 #include <memory>
 #include <optional>
 #include <span>
@@ -400,32 +401,23 @@ namespace uv::raw {
     using close_callback = std::function<void(process&)>;
 
     template<auto Callback>
+      requires std::invocable<decltype(Callback), process&, process_exit>
     struct static_callback {};
 
-    process(loop &l, const process_options &options, exit_callback cb)
-      : storage_{std::make_unique<storage>(this)} {
-      spawn(l.native(), options, std::move(cb), &process::exit_trampoline);
+    // Stable separately allocated native storage is also needed when a throwing
+    // constructor must retain a failed spawn until the close callback.
+    process() : storage_{std::make_unique<storage>(this)} {}
+    process(loop &l, const process_options &options, exit_callback cb = {}) : process(l.view(), options, std::move(cb)) {}
+    process(loop_view l, const process_options &options, exit_callback cb = {}) : process() {
+      throw_on_spawn_failure(spawn(l, options, std::move(cb)));
     }
-
-    process(loop_view l, const process_options &options, exit_callback cb)
-      : storage_{std::make_unique<storage>(this)} {
-      spawn(l.native(), options, std::move(cb), &process::exit_trampoline);
-    }
-
     template<auto Callback>
-    process(loop &l, const process_options &options, static_callback<Callback>)
-      : storage_{std::make_unique<storage>(this)} {
-      spawn(l.native(), options, {}, [](uv_process_t *raw, int64_t exit_status, int term_signal) noexcept {
-        detail::invoke_static_callback<Callback>(process::from_native(raw), process_exit{exit_status, term_signal});
-      });
-    }
-
+      requires std::invocable<decltype(Callback), process&, process_exit>
+    process(loop &l, const process_options &options, static_callback<Callback> tag) : process(l.view(), options, tag) {}
     template<auto Callback>
-    process(loop_view l, const process_options &options, static_callback<Callback>)
-      : storage_{std::make_unique<storage>(this)} {
-      spawn(l.native(), options, {}, [](uv_process_t *raw, int64_t exit_status, int term_signal) noexcept {
-        detail::invoke_static_callback<Callback>(process::from_native(raw), process_exit{exit_status, term_signal});
-      });
+      requires std::invocable<decltype(Callback), process&, process_exit>
+    process(loop_view l, const process_options &options, static_callback<Callback>) : process() {
+      throw_on_spawn_failure(spawn_static<Callback>(l, options));
     }
 
     process(const process &) = delete;
@@ -435,175 +427,140 @@ namespace uv::raw {
 
     uv_process_t *native() noexcept { return storage_->native(); }
     const uv_process_t *native() const noexcept { return storage_->native(); }
-
-    uv_handle_t *native_handle() noexcept {
-      return reinterpret_cast<uv_handle_t *>(native());
-    }
-
-    const uv_handle_t *native_handle() const noexcept {
-      return reinterpret_cast<const uv_handle_t *>(native());
-    }
-
+    uv_handle_t *native_handle() noexcept { return storage_->native_base(); }
+    const uv_handle_t *native_handle() const noexcept { return storage_->native_base(); }
     handle_view view() noexcept { return handle_view{native_handle()}; }
+    static process &from_native(uv_process_t *raw) noexcept { return *storage::from_native(raw).owner; }
+    static const process &from_native(const uv_process_t *raw) noexcept { return *storage::from_native(raw).owner; }
+    static process &from_native(uv_handle_t *raw) noexcept { return from_native(reinterpret_cast<uv_process_t *>(raw)); }
+    static const process &from_native(const uv_handle_t *raw) noexcept { return from_native(reinterpret_cast<const uv_process_t *>(raw)); }
 
-    static process &from_native(uv_process_t *raw) noexcept {
-      return *storage::from_native(raw).owner;
+    template<class T> void user_data(T *data) noexcept { native_handle()->data = data; }
+    template<class T> void user_data(T &data) noexcept { user_data(&data); }
+    template<class T> T *user_data() noexcept { return static_cast<T *>(native_handle()->data); }
+    template<class T> const T *user_data() const noexcept { return static_cast<const T *>(native_handle()->data); }
+    void clear_user_data() noexcept { native_handle()->data = nullptr; }
+
+    bool initialized() const noexcept { return native_handle()->loop != nullptr; }
+    bool active() const noexcept { return initialized() && uv_is_active(const_cast<uv_handle_t *>(native_handle())) != 0; }
+    bool closing() const noexcept { return initialized() && uv_is_closing(const_cast<uv_handle_t *>(native_handle())) != 0; }
+    bool has_ref() const noexcept { return initialized() && uv_has_ref(const_cast<uv_handle_t *>(native_handle())) != 0; }
+    void ref() noexcept { if (initialized()) uv_ref(native_handle()); }
+    void unref() noexcept { if (initialized()) uv_unref(native_handle()); }
+
+    status spawn(loop &l, const process_options &options, exit_callback cb = {}) {
+      return spawn(l.view(), options, std::move(cb));
     }
-
-    static const process &from_native(const uv_process_t *raw) noexcept {
-      return *storage::from_native(raw).owner;
+    status spawn(loop_view l, const process_options &options, exit_callback cb = {}) {
+      return submit_spawn(l, options, std::move(cb), nullptr);
     }
-
-    static process &from_native(uv_handle_t *raw) noexcept {
-      return from_native(reinterpret_cast<uv_process_t *>(raw));
-    }
-
-    static const process &from_native(const uv_handle_t *raw) noexcept {
-      return from_native(reinterpret_cast<const uv_process_t *>(raw));
-    }
-
-    template<class T>
-    void user_data(T *data) noexcept {
-      native_handle()->data = data;
-    }
-
-    template<class T>
-    void user_data(T &data) noexcept {
-      user_data(&data);
-    }
-
-    template<class T>
-    T *user_data() noexcept {
-      return static_cast<T *>(native_handle()->data);
-    }
-
-    template<class T>
-    const T *user_data() const noexcept {
-      return static_cast<const T *>(native_handle()->data);
-    }
-
-    void clear_user_data() noexcept {
-      native_handle()->data = nullptr;
-    }
-
-    bool active() const noexcept {
-      return uv_is_active(const_cast<uv_handle_t *>(native_handle())) != 0;
-    }
-
-    bool closing() const noexcept {
-      return uv_is_closing(const_cast<uv_handle_t *>(native_handle())) != 0;
-    }
-
-    void close() noexcept {
-      uv_close(native_handle(), nullptr);
-    }
-
-    void close(close_callback callback) noexcept {
-      close_callback_ = std::move(callback);
-      uv_close(native_handle(), &process::close_trampoline);
-    }
-
     template<auto Callback>
-    void close_static() noexcept {
-      uv_close(native_handle(), [](uv_handle_t *raw) noexcept {
-        detail::invoke_static_callback<Callback>(process::from_native(raw));
+      requires std::invocable<decltype(Callback), process&, process_exit>
+    status spawn_static(loop &l, const process_options &options) { return spawn_static<Callback>(l.view(), options); }
+    template<auto Callback>
+      requires std::invocable<decltype(Callback), process&, process_exit>
+    status spawn_static(loop_view l, const process_options &options) {
+      return submit_spawn(l, options, {}, [](process &self, process_exit result) noexcept {
+        detail::invoke_static_callback<Callback>(self, result);
       });
     }
 
-    void ref() noexcept {
-      uv_ref(native_handle());
+    void close() noexcept {
+      if (!initialized() || closing()) return;
+      uv_close(native_handle(), nullptr);
+      storage_->exit_callback_ = {};
+      storage_->static_exit_ = nullptr;
+    }
+    void close(close_callback callback) noexcept {
+      if (!initialized() || closing()) return;
+      close_callback_ = std::move(callback);
+      uv_close(native_handle(), &process::close_trampoline);
+      storage_->exit_callback_ = {};
+      storage_->static_exit_ = nullptr;
+    }
+    template<auto Callback>
+      requires std::invocable<decltype(Callback), process&>
+    void close_static() noexcept {
+      if (!initialized() || closing()) return;
+      uv_close(native_handle(), [](uv_handle_t *raw) noexcept {
+        detail::invoke_static_callback<Callback>(process::from_native(raw));
+      });
+      storage_->exit_callback_ = {};
+      storage_->static_exit_ = nullptr;
     }
 
-    void unref() noexcept {
-      uv_unref(native_handle());
-    }
-
-    bool has_ref() const noexcept {
-      return uv_has_ref(const_cast<uv_handle_t *>(native_handle())) != 0;
-    }
-
-    int send_buffer_size() const {
+    result<int> send_buffer_size() const noexcept {
+      if (!initialized() || closing()) return result<int>{make_error_code(UV_EBADF)};
       int value = 0;
-      throw_if_error(uv_send_buffer_size(const_cast<uv_handle_t *>(native_handle()), &value));
-      return value;
+      const int rc = uv_send_buffer_size(const_cast<uv_handle_t *>(native_handle()), &value);
+      return rc < 0 ? result<int>{make_error_code(rc)} : result<int>{value};
     }
-
-    void send_buffer_size(int value) {
-      throw_if_error(uv_send_buffer_size(native_handle(), &value));
+    status send_buffer_size(int value) noexcept {
+      if (!initialized() || closing()) return status::from_native(UV_EBADF);
+      return status::from_native(uv_send_buffer_size(native_handle(), &value));
     }
-
-    int receive_buffer_size() const {
+    result<int> receive_buffer_size() const noexcept {
+      if (!initialized() || closing()) return result<int>{make_error_code(UV_EBADF)};
       int value = 0;
-      throw_if_error(uv_recv_buffer_size(const_cast<uv_handle_t *>(native_handle()), &value));
-      return value;
+      const int rc = uv_recv_buffer_size(const_cast<uv_handle_t *>(native_handle()), &value);
+      return rc < 0 ? result<int>{make_error_code(rc)} : result<int>{value};
     }
-
-    void receive_buffer_size(int value) {
-      throw_if_error(uv_recv_buffer_size(native_handle(), &value));
+    status receive_buffer_size(int value) noexcept {
+      if (!initialized() || closing()) return status::from_native(UV_EBADF);
+      return status::from_native(uv_recv_buffer_size(native_handle(), &value));
     }
-
-    uv_os_fd_t fileno() const {
+    result<uv_os_fd_t> fileno() const noexcept {
+      if (!initialized() || closing()) return result<uv_os_fd_t>{make_error_code(UV_EBADF)};
       uv_os_fd_t fd{};
-      throw_if_error(uv_fileno(const_cast<uv_handle_t *>(native_handle()), &fd));
-      return fd;
+      const int rc = uv_fileno(const_cast<uv_handle_t *>(native_handle()), &fd);
+      return rc < 0 ? result<uv_os_fd_t>{make_error_code(rc)} : result<uv_os_fd_t>{fd};
     }
-
     uv_pid_t pid() const noexcept {
+      if (!initialized()) return 0;
 #if UVPP_HAS_PROCESS_GET_PID
       return uv_process_get_pid(native());
 #else
       return native()->pid;
 #endif
     }
-
-    void kill(int signum) {
-      throw_if_error(uv_process_kill(native(), signum));
+    status kill(int signum) noexcept {
+      if (!initialized() || closing() || pid() == 0) return status::from_native(UV_EBADF);
+      return status::from_native(uv_process_kill(native(), signum));
     }
-
-    static void kill(uv_pid_t pid, int signum) {
-      throw_if_error(uv_kill(static_cast<int>(pid), signum));
+    static status kill(uv_pid_t pid, int signum) noexcept {
+      return status::from_native(uv_kill(static_cast<int>(pid), signum));
     }
-
-    static void disable_stdio_inheritance() noexcept {
-      uv_disable_stdio_inheritance();
-    }
+    static void disable_stdio_inheritance() noexcept { uv_disable_stdio_inheritance(); }
 
   private:
     struct storage;
     using storage_base = detail::native_storage<storage, uv_process_t, uv_handle_t>;
-
     struct storage : storage_base {
-
       explicit storage(process *owner) noexcept : owner{owner} {}
-
       process *owner = nullptr;
       exit_callback exit_callback_{};
+      void (*static_exit_)(process&, process_exit) noexcept = nullptr;
     };
-
     static_assert(std::is_standard_layout_v<storage_base>);
 
-    void spawn(uv_loop_t *loop, const process_options &options, exit_callback cb, uv_exit_cb exit_cb) {
-      storage_->exit_callback_ = std::move(cb);
-
+    status submit_spawn(loop_view loop, const process_options &options, exit_callback cb,
+                        void (*static_exit)(process&, process_exit) noexcept) {
+      if (initialized()) return status::from_native(UV_EALREADY);
+      if (options.stdio_entries.size() > static_cast<std::size_t>((std::numeric_limits<int>::max)()))
+        return status::from_native(UV_E2BIG);
       std::vector<char *> args;
       args.reserve(options.arguments.size() + 2);
       args.push_back(const_cast<char *>(options.file.c_str()));
-      for (const auto &arg : options.arguments) {
-        args.push_back(const_cast<char *>(arg.c_str()));
-      }
+      for (const auto &arg : options.arguments) args.push_back(const_cast<char *>(arg.c_str()));
       args.push_back(nullptr);
-
       std::vector<char *> env;
       if (!options.inherit_parent_environment) {
         env.reserve(options.environment.size() + 1);
-        for (const auto &entry : options.environment) {
-          env.push_back(const_cast<char *>(entry.c_str()));
-        }
+        for (const auto &entry : options.environment) env.push_back(const_cast<char *>(entry.c_str()));
         env.push_back(nullptr);
       }
-
-      auto raw_options = uv_process_options_t{};
-      raw_options.exit_cb = exit_cb;
+      uv_process_options_t raw_options{};
+      raw_options.exit_cb = &process::exit_trampoline;
       raw_options.file = options.file.c_str();
       raw_options.args = args.data();
       raw_options.env = env.empty() ? nullptr : env.data();
@@ -613,46 +570,50 @@ namespace uv::raw {
       raw_options.stdio = options.stdio_entries.empty() ? nullptr : const_cast<uv_stdio_container_t *>(options.stdio_entries.data());
       raw_options.uid = options.uid;
       raw_options.gid = options.gid;
-
-      auto status = uv_spawn(loop, native(), &raw_options);
-      if (status >= 0) {
-        return;
+      const int rc = uv_spawn(loop.native(), native(), &raw_options);
+      // Libuv can return an error after starting a child (for example, when
+      // opening a stdio stream fails). Preserve its native exit notification.
+      if (rc >= 0 || active()) {
+        storage_->exit_callback_ = std::move(cb);
+        storage_->static_exit_ = static_exit;
       }
-
-      // uv_spawn() can initialize and attach the process handle before a later
-      // spawn step fails. The constructor will now unwind, so transfer this
-      // storage to the close callback instead of leaving the loop with a
-      // pointer into the destroyed process object.
-      if (native_handle()->loop != nullptr) {
+      return status::from_native(rc);
+    }
+    void throw_on_spawn_failure(status result) {
+      if (result) return;
+      if (initialized()) {
         auto failed_storage = std::move(storage_);
         failed_storage->owner = nullptr;
-        uv_close(failed_storage->native_base(),
-                 &process::failed_spawn_close_trampoline);
+        failed_storage->exit_callback_ = {};
+        failed_storage->static_exit_ = nullptr;
+        // If libuv has started a child despite the error, retain the state
+        // until its exit so Unix can reap it before the required native close.
+        if (!uv_is_active(failed_storage->native_base()))
+          uv_close(failed_storage->native_base(), &process::failed_spawn_close_trampoline);
         failed_storage.release();
       }
-
-      throw error(status);
+      result.throw_if_error();
     }
-
     static void exit_trampoline(uv_process_t *raw, int64_t exit_status, int term_signal) noexcept {
       auto &state = storage::from_native(raw);
-      if (state.exit_callback_) {
-        detail::invoke_callback(state.exit_callback_, *state.owner, process_exit{exit_status, term_signal});
+      if (!state.owner) {
+        uv_close(state.native_base(), &process::failed_spawn_close_trampoline);
+        return;
       }
+      auto callback = std::move(state.exit_callback_);
+      state.exit_callback_ = {};
+      auto static_exit = std::exchange(state.static_exit_, nullptr);
+      if (static_exit) static_exit(*state.owner, process_exit{exit_status, term_signal});
+      else if (callback) detail::invoke_callback(callback, *state.owner, process_exit{exit_status, term_signal});
     }
-
     static void close_trampoline(uv_handle_t *raw) noexcept {
       auto &self = process::from_native(raw);
       auto callback = std::move(self.close_callback_);
-      if (callback) {
-        detail::invoke_callback(callback, self);
-      }
+      if (callback) detail::invoke_callback(callback, self);
     }
-
     static void failed_spawn_close_trampoline(uv_handle_t *raw) noexcept {
       delete &storage::from_native(reinterpret_cast<uv_process_t *>(raw));
     }
-
     std::unique_ptr<storage> storage_{};
     close_callback close_callback_{};
   };

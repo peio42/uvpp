@@ -50,7 +50,7 @@ as available below are experimental and may change before release.
 | Raw async notifications | [`uv::raw::async`](async.md), cross-thread result-oriented send, loop-thread runtime/static callback replacement, caller-synchronized close |
 | Raw TTY | [`uv::raw::tty`](tty.md), explicit initialization, terminal mode/size and shared stream operations |
 | Raw TCP handle | [`uv::raw::tcp`](networking/raw-tcp.md), explicit initialization/TCP operations/address results and close/reset; [stream subscriptions](networking/raw-stream.md) use statuses, [request submissions](networking/raw-requests.md) use statuses and explicit pending state |
-| Raw layer | `uv::raw::fs`, `uv::raw::process`, and [raw callback watchers](raw-watchers.md) (`signal`, `poll`, `fs_event`, `fs_poll`, `timer`, `idle`, `prepare`, `check`) are available; the broader low-level namespace/error-policy migration is unfinished |
+| Raw layer | `uv::raw::fs`, [raw process](processes.md#raw-process-handles), and [raw callback watchers](raw-watchers.md) (`signal`, `poll`, `fs_event`, `fs_poll`, `timer`, `idle`, `prepare`, `check`) are available; the broader low-level namespace/error-policy migration is unfinished |
 | Filesystem | `uv::fs::{open,read,write,close}` with `uv::ops::fs` result counterparts; directories and broader filesystem operations remain proposed |
 | Other domains | Threading and utility code exists, but their v3 surfaces have not been consolidated in these guides |
 
