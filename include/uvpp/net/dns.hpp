@@ -41,72 +41,6 @@ namespace uv {
 
   namespace detail {
 
-    inline void getaddrinfo_trampoline(uv_getaddrinfo_t *raw, int status, addrinfo *addresses) noexcept {
-      getaddrinfo_request::from_native(raw).invoke(status, addresses);
-    }
-
-    inline void getnameinfo_trampoline(uv_getnameinfo_t *raw, int status, const char *hostname,
-                                       const char *service) noexcept {
-      getnameinfo_request::from_native(raw).invoke(status, hostname, service);
-    }
-
-    inline void submit_getaddrinfo(loop_view loop, getaddrinfo_request &request,
-                                   std::optional<std::string_view> node,
-                                   std::optional<std::string_view> service,
-                                   const addrinfo *hints,
-                                   getaddrinfo_request::callback callback) {
-      request.set_inputs(node, service, hints);
-      detail::submit_request(request, std::move(callback),
-        [&] {
-          return uv_getaddrinfo(loop.native(), request.native(), getaddrinfo_trampoline,
-                                request.node_arg(), request.service_arg(), request.hints_arg());
-        },
-        [&] { request.clear_inputs(); });
-    }
-
-    template<auto Callback>
-    void submit_getaddrinfo_static(loop_view loop, getaddrinfo_request &request,
-                                   std::optional<std::string_view> node,
-                                   std::optional<std::string_view> service,
-                                   const addrinfo *hints) {
-      request.set_inputs(node, service, hints);
-      detail::submit_with_rollback(
-        [&] {
-          return uv_getaddrinfo(loop.native(), request.native(),
-            [](uv_getaddrinfo_t *raw, int status, addrinfo *addresses) noexcept {
-              getaddrinfo_request::from_native(raw).template invoke_static<Callback>(status, addresses);
-            },
-            request.node_arg(), request.service_arg(), request.hints_arg());
-        },
-        [&] { request.clear_inputs(); });
-    }
-
-    inline void submit_getnameinfo(loop_view loop, getnameinfo_request &request, const sockaddr *addr,
-                                   int flags, getnameinfo_request::callback callback) {
-      request.set_address(addr);
-      detail::submit_request(request, std::move(callback),
-        [&] {
-          return uv_getnameinfo(loop.native(), request.native(), getnameinfo_trampoline,
-                                request.address_arg(), flags);
-        },
-        [&] { request.clear_address(); });
-    }
-
-    template<auto Callback>
-    void submit_getnameinfo_static(loop_view loop, getnameinfo_request &request, const sockaddr *addr,
-                                   int flags) {
-      request.set_address(addr);
-      detail::submit_with_rollback(
-        [&] {
-          return uv_getnameinfo(loop.native(), request.native(),
-            [](uv_getnameinfo_t *raw, int status, const char *hostname, const char *service) noexcept {
-              getnameinfo_request::from_native(raw).template invoke_static<Callback>(status, hostname, service);
-            },
-            request.address_arg(), flags);
-        },
-        [&] { request.clear_address(); });
-    }
-
     // One resolver request lives in its awaiting coroutine frame.  native_storage
     // makes the uv_getaddrinfo_t address stable without using uv_req_t::data,
     // which remains available to applications using the low-level wrapper.
@@ -211,7 +145,7 @@ namespace uv {
         release_cancellation();
         submitted_ = false;
         status_ = status;
-        completion_ = getaddrinfo_result{status, addresses};
+        completion_ = raw::getaddrinfo_result{status, addresses};
         clear_inputs();
 
         auto continuation = std::exchange(continuation_, {});
@@ -238,7 +172,7 @@ namespace uv {
       std::optional<std::string> node_;
       std::optional<std::string> service_;
       std::optional<addrinfo> hints_;
-      getaddrinfo_result completion_{};
+      raw::getaddrinfo_result completion_{};
       std::coroutine_handle<> continuation_{};
       co::detail::cancellation_state *cancellation_ = nullptr;
       co::detail::cancellation_registration cancellation_registration_{};
@@ -323,206 +257,86 @@ namespace uv {
 
   } // namespace ops
 
-  inline void getaddrinfo(loop_view loop, getaddrinfo_request &request,
-                          std::string_view node, std::string_view service,
-                          const addrinfo *hints,
-                          getaddrinfo_request::callback callback) {
-    detail::submit_getaddrinfo(loop, request, std::optional<std::string_view>{node},
-                               std::optional<std::string_view>{service}, hints, std::move(callback));
+  namespace raw {
+    inline status getaddrinfo(loop_view loop, getaddrinfo_request &request,
+                              const char *node, const char *service, const addrinfo *hints,
+                              getaddrinfo_request::callback callback) {
+      return request.submit(loop, node, service, hints, std::move(callback));
+    }
+    inline status getaddrinfo(loop &loop, getaddrinfo_request &request,
+                              const char *node, const char *service, const addrinfo *hints,
+                              getaddrinfo_request::callback callback) {
+      return getaddrinfo(loop.view(), request, node, service, hints, std::move(callback));
+    }
+    inline status getaddrinfo(loop_view loop, getaddrinfo_request &request,
+                              const char *node, const char *service, getaddrinfo_request::callback callback) {
+      return getaddrinfo(loop, request, node, service, nullptr, std::move(callback));
+    }
+    inline status getaddrinfo(loop &loop, getaddrinfo_request &request,
+                              const char *node, const char *service, getaddrinfo_request::callback callback) {
+      return getaddrinfo(loop.view(), request, node, service, nullptr, std::move(callback));
+    }
+    template<auto Callback>
+      requires std::invocable<decltype(Callback), getaddrinfo_request&, getaddrinfo_result>
+    status getaddrinfo_static(loop_view loop, getaddrinfo_request &request,
+                              const char *node, const char *service, const addrinfo *hints = nullptr) noexcept {
+      return request.template submit_static<Callback>(loop, node, service, hints);
+    }
+    template<auto Callback>
+      requires std::invocable<decltype(Callback), getaddrinfo_request&, getaddrinfo_result>
+    status getaddrinfo_static(loop &loop, getaddrinfo_request &request,
+                              const char *node, const char *service, const addrinfo *hints = nullptr) noexcept {
+      return getaddrinfo_static<Callback>(loop.view(), request, node, service, hints);
+    }
+    inline status getnameinfo(loop_view loop, getnameinfo_request &request, const sockaddr *address,
+                              int flags, getnameinfo_request::callback callback) {
+      return request.submit(loop, address, flags, std::move(callback));
+    }
+    inline status getnameinfo(loop &loop, getnameinfo_request &request, const sockaddr *address,
+                              int flags, getnameinfo_request::callback callback) {
+      return getnameinfo(loop.view(), request, address, flags, std::move(callback));
+    }
+    template<class Address>
+      requires requires(const Address &address) { { address.native_sockaddr() } -> std::convertible_to<const sockaddr *>; }
+    status getnameinfo(loop_view loop, getnameinfo_request &request, const Address &address,
+                       int flags, getnameinfo_request::callback callback) {
+      return getnameinfo(loop, request, address.native_sockaddr(), flags, std::move(callback));
+    }
+    template<class Address>
+      requires requires(const Address &address) { { address.native_sockaddr() } -> std::convertible_to<const sockaddr *>; }
+    status getnameinfo(loop &loop, getnameinfo_request &request, const Address &address,
+                       int flags, getnameinfo_request::callback callback) {
+      return getnameinfo(loop.view(), request, address, flags, std::move(callback));
+    }
+    inline status getnameinfo(loop_view loop, getnameinfo_request &request, const socket_address &address,
+                              int flags, getnameinfo_request::callback callback) {
+      return getnameinfo(loop, request, address.native(), flags, std::move(callback));
+    }
+    inline status getnameinfo(loop &loop, getnameinfo_request &request, const socket_address &address,
+                              int flags, getnameinfo_request::callback callback) {
+      return getnameinfo(loop.view(), request, address, flags, std::move(callback));
+    }
+    template<auto Callback>
+      requires std::invocable<decltype(Callback), getnameinfo_request&, getnameinfo_result>
+    status getnameinfo_static(loop_view loop, getnameinfo_request &request, const sockaddr *address, int flags) noexcept {
+      return request.template submit_static<Callback>(loop, address, flags);
+    }
+    template<auto Callback>
+      requires std::invocable<decltype(Callback), getnameinfo_request&, getnameinfo_result>
+    status getnameinfo_static(loop &loop, getnameinfo_request &request, const sockaddr *address, int flags) noexcept {
+      return getnameinfo_static<Callback>(loop.view(), request, address, flags);
+    }
+    template<auto Callback, class Address>
+      requires std::invocable<decltype(Callback), getnameinfo_request&, getnameinfo_result> &&
+               requires(const Address &address) { { address.native_sockaddr() } -> std::convertible_to<const sockaddr *>; }
+    status getnameinfo_static(loop_view loop, getnameinfo_request &request, const Address &address, int flags) noexcept {
+      return getnameinfo_static<Callback>(loop, request, address.native_sockaddr(), flags);
+    }
+    template<auto Callback, class Address>
+      requires std::invocable<decltype(Callback), getnameinfo_request&, getnameinfo_result> &&
+               requires(const Address &address) { { address.native_sockaddr() } -> std::convertible_to<const sockaddr *>; }
+    status getnameinfo_static(loop &loop, getnameinfo_request &request, const Address &address, int flags) noexcept {
+      return getnameinfo_static<Callback>(loop.view(), request, address, flags);
+    }
   }
-
-  inline void getaddrinfo(loop &loop, getaddrinfo_request &request,
-                          std::string_view node, std::string_view service,
-                          const addrinfo *hints,
-                          getaddrinfo_request::callback callback) {
-    getaddrinfo(loop.view(), request, node, service, hints, std::move(callback));
-  }
-
-  inline void getaddrinfo(loop_view loop, getaddrinfo_request &request,
-                          std::string_view node, std::string_view service,
-                          getaddrinfo_request::callback callback) {
-    getaddrinfo(loop, request, node, service, nullptr, std::move(callback));
-  }
-
-  inline void getaddrinfo(loop &loop, getaddrinfo_request &request,
-                          std::string_view node, std::string_view service,
-                          getaddrinfo_request::callback callback) {
-    getaddrinfo(loop.view(), request, node, service, nullptr, std::move(callback));
-  }
-
-  inline void getaddrinfo(loop_view loop, getaddrinfo_request &request,
-                          std::nullptr_t, std::string_view service,
-                          const addrinfo *hints,
-                          getaddrinfo_request::callback callback) {
-    detail::submit_getaddrinfo(loop, request, std::nullopt,
-                               std::optional<std::string_view>{service}, hints, std::move(callback));
-  }
-
-  inline void getaddrinfo(loop &loop, getaddrinfo_request &request,
-                          std::nullptr_t, std::string_view service,
-                          const addrinfo *hints,
-                          getaddrinfo_request::callback callback) {
-    getaddrinfo(loop.view(), request, nullptr, service, hints, std::move(callback));
-  }
-
-  inline void getaddrinfo(loop_view loop, getaddrinfo_request &request,
-                          std::nullptr_t, std::string_view service,
-                          getaddrinfo_request::callback callback) {
-    getaddrinfo(loop, request, nullptr, service, nullptr, std::move(callback));
-  }
-
-  inline void getaddrinfo(loop &loop, getaddrinfo_request &request,
-                          std::nullptr_t, std::string_view service,
-                          getaddrinfo_request::callback callback) {
-    getaddrinfo(loop.view(), request, nullptr, service, nullptr, std::move(callback));
-  }
-
-  inline void getaddrinfo(loop_view loop, getaddrinfo_request &request,
-                          std::string_view node, std::nullptr_t,
-                          const addrinfo *hints,
-                          getaddrinfo_request::callback callback) {
-    detail::submit_getaddrinfo(loop, request, std::optional<std::string_view>{node},
-                               std::nullopt, hints, std::move(callback));
-  }
-
-  inline void getaddrinfo(loop &loop, getaddrinfo_request &request,
-                          std::string_view node, std::nullptr_t,
-                          const addrinfo *hints,
-                          getaddrinfo_request::callback callback) {
-    getaddrinfo(loop.view(), request, node, nullptr, hints, std::move(callback));
-  }
-
-  inline void getaddrinfo(loop_view loop, getaddrinfo_request &request,
-                          std::string_view node, std::nullptr_t,
-                          getaddrinfo_request::callback callback) {
-    getaddrinfo(loop, request, node, nullptr, nullptr, std::move(callback));
-  }
-
-  inline void getaddrinfo(loop &loop, getaddrinfo_request &request,
-                          std::string_view node, std::nullptr_t,
-                          getaddrinfo_request::callback callback) {
-    getaddrinfo(loop.view(), request, node, nullptr, nullptr, std::move(callback));
-  }
-
-  template<auto Callback>
-  void getaddrinfo_static(loop_view loop, getaddrinfo_request &request,
-                          std::string_view node, std::string_view service,
-                          const addrinfo *hints = nullptr) {
-    detail::submit_getaddrinfo_static<Callback>(loop, request, std::optional<std::string_view>{node},
-                                                std::optional<std::string_view>{service}, hints);
-  }
-
-  template<auto Callback>
-  void getaddrinfo_static(loop &loop, getaddrinfo_request &request,
-                          std::string_view node, std::string_view service,
-                          const addrinfo *hints = nullptr) {
-    getaddrinfo_static<Callback>(loop.view(), request, node, service, hints);
-  }
-
-  template<auto Callback>
-  void getaddrinfo_static(loop_view loop, getaddrinfo_request &request,
-                          std::nullptr_t, std::string_view service,
-                          const addrinfo *hints = nullptr) {
-    detail::submit_getaddrinfo_static<Callback>(loop, request, std::nullopt,
-                                                std::optional<std::string_view>{service}, hints);
-  }
-
-  template<auto Callback>
-  void getaddrinfo_static(loop &loop, getaddrinfo_request &request,
-                          std::nullptr_t, std::string_view service,
-                          const addrinfo *hints = nullptr) {
-    getaddrinfo_static<Callback>(loop.view(), request, nullptr, service, hints);
-  }
-
-  template<auto Callback>
-  void getaddrinfo_static(loop_view loop, getaddrinfo_request &request,
-                          std::string_view node, std::nullptr_t,
-                          const addrinfo *hints = nullptr) {
-    detail::submit_getaddrinfo_static<Callback>(loop, request, std::optional<std::string_view>{node},
-                                                std::nullopt, hints);
-  }
-
-  template<auto Callback>
-  void getaddrinfo_static(loop &loop, getaddrinfo_request &request,
-                          std::string_view node, std::nullptr_t,
-                          const addrinfo *hints = nullptr) {
-    getaddrinfo_static<Callback>(loop.view(), request, node, nullptr, hints);
-  }
-
-  inline void getnameinfo(loop_view loop, getnameinfo_request &request, const sockaddr *addr,
-                          int flags, getnameinfo_request::callback callback) {
-    detail::submit_getnameinfo(loop, request, addr, flags, std::move(callback));
-  }
-
-  inline void getnameinfo(loop &loop, getnameinfo_request &request, const sockaddr *addr,
-                          int flags, getnameinfo_request::callback callback) {
-    getnameinfo(loop.view(), request, addr, flags, std::move(callback));
-  }
-
-  inline void getnameinfo(loop_view loop, getnameinfo_request &request, const ipv4 &addr,
-                          int flags, getnameinfo_request::callback callback) {
-    getnameinfo(loop, request, addr.native_sockaddr(), flags, std::move(callback));
-  }
-
-  inline void getnameinfo(loop &loop, getnameinfo_request &request, const ipv4 &addr,
-                          int flags, getnameinfo_request::callback callback) {
-    getnameinfo(loop.view(), request, addr, flags, std::move(callback));
-  }
-
-  inline void getnameinfo(loop_view loop, getnameinfo_request &request, const ipv6 &addr,
-                          int flags, getnameinfo_request::callback callback) {
-    getnameinfo(loop, request, addr.native_sockaddr(), flags, std::move(callback));
-  }
-
-  inline void getnameinfo(loop &loop, getnameinfo_request &request, const ipv6 &addr,
-                          int flags, getnameinfo_request::callback callback) {
-    getnameinfo(loop.view(), request, addr, flags, std::move(callback));
-  }
-
-  inline void getnameinfo(loop_view loop, getnameinfo_request &request, const socket_address &addr,
-                          int flags, getnameinfo_request::callback callback) {
-    getnameinfo(loop, request, addr.native(), flags, std::move(callback));
-  }
-
-  inline void getnameinfo(loop &loop, getnameinfo_request &request, const socket_address &addr,
-                          int flags, getnameinfo_request::callback callback) {
-    getnameinfo(loop.view(), request, addr, flags, std::move(callback));
-  }
-
-  template<auto Callback>
-  void getnameinfo_static(loop_view loop, getnameinfo_request &request, const sockaddr *addr,
-                          int flags) {
-    detail::submit_getnameinfo_static<Callback>(loop, request, addr, flags);
-  }
-
-  template<auto Callback>
-  void getnameinfo_static(loop &loop, getnameinfo_request &request, const sockaddr *addr,
-                          int flags) {
-    getnameinfo_static<Callback>(loop.view(), request, addr, flags);
-  }
-
-  template<auto Callback>
-  void getnameinfo_static(loop_view loop, getnameinfo_request &request, const ipv4 &addr,
-                          int flags) {
-    getnameinfo_static<Callback>(loop, request, addr.native_sockaddr(), flags);
-  }
-
-  template<auto Callback>
-  void getnameinfo_static(loop &loop, getnameinfo_request &request, const ipv4 &addr,
-                          int flags) {
-    getnameinfo_static<Callback>(loop.view(), request, addr, flags);
-  }
-
-  template<auto Callback>
-  void getnameinfo_static(loop_view loop, getnameinfo_request &request, const ipv6 &addr,
-                          int flags) {
-    getnameinfo_static<Callback>(loop, request, addr.native_sockaddr(), flags);
-  }
-
-  template<auto Callback>
-  void getnameinfo_static(loop &loop, getnameinfo_request &request, const ipv6 &addr,
-                          int flags) {
-    getnameinfo_static<Callback>(loop.view(), request, addr, flags);
-  }
-
 }

@@ -10,6 +10,7 @@ does not by itself change the current API contracts.
 - [API principles](api-principles.md): public API shape, naming, native access, user data, and value types.
 - [Naming and API shape](naming-and-api-shape.md): current-code review, established v3 naming rules, and recommendations awaiting consolidation.
 - [API policy decisions](api-policy-decisions.md): concrete naming and result-shape policies for future API additions.
+- [Native semantics and compatibility](native-semantics.md): fidelity to libuv behavior, native bug policy, and wrapper-owned C++ invariants.
 - [Callback strategy](callback-strategy.md): runtime callbacks, static callbacks, callback slots, trampolines, and exception boundaries.
 - [Operation state](operation-state.md): shared terminal-delivery invariants and recurring shapes that must not yet become public abstractions.
 - [V3 consistency registry](v3-consistency-registry.md): per-family raw migration, error surfaces, ownership, cancellation, native access, concurrency, and documentation status.

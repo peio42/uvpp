@@ -187,3 +187,8 @@ and socket acquisition. Successful init requires explicit ordinary/reset close
 and native storage retention until completion. Close releases handle-owned stream
 captures but never releases caller-owned connect/write/shutdown requests early.
 See [raw TCP lifetime and transitional scope](../user/networking/raw-tcp.md).
+
+Raw DNS requests retain caller-owned native storage through callback delivery.
+`raw::getaddrinfo_result` owns the native address list, whereas
+`raw::getnameinfo_result` borrows strings in the request; reuse invalidates those
+views. High-level DNS resolution materializes independent address values.

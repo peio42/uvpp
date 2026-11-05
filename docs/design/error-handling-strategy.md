@@ -130,9 +130,9 @@ successful payloads to zero. Do not replace it with an unchecked narrowing of a
 successful native byte count. Process exit uses a separate `process_exit` struct
 with `status` and `signal` fields, not the libuv submission-error grammar.
 
-An owned value is not necessarily move-only: `getnameinfo_result` owns copyable
-strings, and `owned_buffer` owns a copyable vector. `getaddrinfo_result` uniquely
-owns a native `addrinfo` list and is move-only. Raw `opendir_result` and `directory`
+An owned value is not necessarily move-only: `owned_buffer` owns a copyable
+vector. Raw `getaddrinfo_result` uniquely owns a native `addrinfo` list and is
+move-only; raw `getnameinfo_result` borrows strings from the native request. Raw `opendir_result` and `directory`
 require explicit ownership consumption/close rather than automatic resource close.
 
 ## EOF and Immediate I/O

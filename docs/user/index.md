@@ -26,7 +26,7 @@ as available below are experimental and may change before release.
 - [Raw UDP](networking/raw-udp.md): explicit initialization, socket options, paired reception, send requests and immediate batches.
 - [Pipe](networking/pipe.md): local streams and TCP handle passing over IPC.
 - [Raw pipe](networking/raw-pipe.md): explicit initialization, name queries and IPC requests.
-- [DNS](networking/dns.md): coroutine `getaddrinfo` resolution and result surfaces.
+- [DNS](networking/dns.md): raw DNS requests and coroutine resolution with owned results.
 
 ## Availability
 

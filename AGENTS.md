@@ -82,6 +82,14 @@ uv::loop loop;
 - Follow loop-thread affinity unless an entry point is explicitly cross-thread safe.
 - Do not let exceptions escape from libuv C callbacks.
 
+## Native Semantics and Upstream Bugs
+
+- `uv::raw` must preserve libuv's documented semantics. Do not introduce workarounds for native libuv bugs, including artificial restrictions, hidden retries, callback manipulation, or private-state fixes.
+- C++ ownership, lifetime, and type-safety guarantees remain uvpp's responsibility. Any intentional deviation from libuv's public contract must be justified and documented.
+- **Never silently ignore a suspected libuv bug.** Report the finding to the developer, including the affected operation, observed behavior, expected behavior, and supporting evidence.
+- Investigate suspected bugs with a minimal native libuv reproducer whenever practical. Distinguish confirmed defects from unverified hypotheses.
+- Once confirmed, check for an existing upstream issue or fix; otherwise propose reporting it to libuv. Keep uvpp faithful to the native contract and document affected versions when relevant.
+
 ## API Policies
 
 - Follow proposal 000: raw `uv::raw`, high-level `uv`, and coroutine primitives

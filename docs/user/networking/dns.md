@@ -50,7 +50,7 @@ if (result) {
   }
 } else {
   uv::error_code error = result.error();
-  // Includes UV_ECANCELED when cancellation completed natively.
+  // Includes the native DNS cancellation or completion error.
 }
 ```
 
@@ -75,9 +75,33 @@ inputs, and libuv address list remain alive until the terminal callback has
 released its cancellation registration and resumed the coroutine. A stop request
 is never permission to destroy that state early.
 
-The underlying low-level `getaddrinfo_request` callback API remains separately
-available for caller-owned request storage. It is not the high-level result
-surface documented here.
+## Raw DNS requests
+
+`uv::raw::getaddrinfo_request` and `uv::raw::getnameinfo_request` contain the
+native request. The caller keeps each request address stable and alive until
+its completion callback, even after requesting cancellation. `pending()` is
+cleared before callback delivery, so the request can be reused from the callback.
+An overlapping submission returns `UV_EBUSY`; `cancel()` returns a status and
+is only a cancellation request. Application `data` remains available.
+
+`uv::raw::getaddrinfo` and `uv::raw::getnameinfo` take caller-owned requests,
+a loop and runtime callbacks; `getaddrinfo_static` and `getnameinfo_static` take
+compile-time callbacks. Submission returns `uv::status`, independently of the
+completion result. Callback construction may allocate and throw before entry;
+native failures remain statuses. The raw address lookup takes NUL-terminated
+`const char*` node and service arguments (either may be null, but not both), and
+an optional native `addrinfo` hints pointer. Libuv copies inputs during submission.
+The reverse lookup accepts a native socket address pointer, also copied by libuv.
+
+`raw::getaddrinfo_result` uniquely owns the returned native `addrinfo` list and
+frees it with `uv_freeaddrinfo` on destruction or `reset()`. It can be moved out
+of the callback; its iterators and views borrow from the list. `to_vector()`
+creates owned C++ values and can allocate. The separate `raw::getnameinfo_result`
+contains borrowed host and service strings stored in the native request. Copy
+those strings before reusing or destroying that request. Both results retain the
+native completion status, including cancellation and DNS failures. High-level
+`resolve` keeps its own request and frees the native list transparently after
+producing owned addresses.
 
 ## IPv6 interface identifiers
 
