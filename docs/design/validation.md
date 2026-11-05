@@ -327,3 +327,11 @@ cancellation, retained captures, callback-form transitions, reentrant reuse and
 empty-work rejection and retirement without a user completion callback, including
 after cancellation. Thread-pool saturation is bounded by the existing
 portable fixture; other platform validation remains with CI.
+
+## Raw random bytes
+
+Tests cover synchronous fill, caller-owned output and request storage, runtime and
+static callbacks, reentrant dispatch changes, cancellation and completion,
+rejected overlapping or empty-callback submissions, and callback lifetime.
+On Linux, an optional no-reserve virtual mapping also exercises native
+`UV_E2BIG` rejection and request reuse without allocating the buffer physically.

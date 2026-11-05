@@ -104,7 +104,7 @@ TEST(Uvpp2Layout, reconstructsRequestsFromNativePointers) {
   static_assert(std::is_standard_layout_v<uv::raw::getnameinfo_request::native_storage>);
   static_assert(std::is_standard_layout_v<uv::raw::fs::request::native_storage>);
 #if UVPP_HAS_RANDOM
-  static_assert(std::is_standard_layout_v<uv::random_request::native_storage>);
+  static_assert(std::is_standard_layout_v<uv::raw::random_request::native_storage>);
 #endif
   static_assert(std::is_standard_layout_v<uv::raw::shutdown_request::native_storage>);
   static_assert(std::is_standard_layout_v<uv::raw::udp_send_request::native_storage>);
@@ -116,7 +116,7 @@ TEST(Uvpp2Layout, reconstructsRequestsFromNativePointers) {
   uv::raw::getnameinfo_request getnameinfo;
   uv::raw::fs::request fs;
 #if UVPP_HAS_RANDOM
-  uv::random_request random;
+  uv::raw::random_request random;
 #endif
   uv::raw::shutdown_request shutdown;
   uv::raw::udp_send_request udp_send;
@@ -133,8 +133,8 @@ TEST(Uvpp2Layout, reconstructsRequestsFromNativePointers) {
   EXPECT_EQ(&fs, &uv::raw::fs::request::from_native(fs.native()));
   EXPECT_EQ(&fs, &uv::raw::fs::request::from_native(fs.native_request()));
 #if UVPP_HAS_RANDOM
-  EXPECT_EQ(&random, &uv::random_request::from_native(random.native()));
-  EXPECT_EQ(&random, &uv::random_request::from_native(random.native_request()));
+  EXPECT_EQ(&random, &uv::raw::random_request::from_native(random.native()));
+  EXPECT_EQ(&random, &uv::raw::random_request::from_native(random.native_request()));
 #endif
   EXPECT_EQ(&shutdown, &uv::raw::shutdown_request::from_native(shutdown.native()));
   EXPECT_EQ(&shutdown, &uv::raw::shutdown_request::from_native(shutdown.native_request()));

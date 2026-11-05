@@ -322,3 +322,11 @@ completion. Runtime callbacks are installed before `uv_queue_work`, because a
 worker can start before submission returns. Completion clears request state
 before user delivery; accepted cancellation does not imply completion. See the
 [raw work guide](../user/raw-work.md).
+
+## Raw random bytes
+
+`uv::raw::random_fill_now` returns the synchronous native status without a
+request. Asynchronous random uses caller-owned stable request storage and borrows
+the mutable output buffer until completion, releasing its callback slot before
+delivery. A cancellation request does not end that borrow. See the
+[raw random guide](../user/raw-random.md).
