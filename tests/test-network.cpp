@@ -1,5 +1,6 @@
 #include <uv.h>
 #include <string>
+#include <string_view>
 #include <type_traits>
 #include <vector>
 #include <memory>
@@ -20,6 +21,66 @@ void on_static_getnameinfo(uv::raw::getnameinfo_request &request, uv::raw::getna
   EXPECT_TRUE(result);
   EXPECT_EQ(result.hostname(), "127.0.0.1");
   called = true;
+}
+
+struct dns_transition_state {
+  uv::loop *loop;
+  std::weak_ptr<int> first_capture;
+  int first_calls = 0;
+  int static_calls = 0;
+  int final_calls = 0;
+  int rejected_calls = 0;
+};
+
+void transition_addrinfo_static(uv::raw::getaddrinfo_request &request, uv::raw::getaddrinfo_result result) {
+  auto &state = *request.user_data<dns_transition_state>();
+  EXPECT_TRUE(result);
+  EXPECT_FALSE(request.pending());
+  EXPECT_TRUE(state.first_capture.expired());
+  ++state.static_calls;
+
+  auto capture = std::make_shared<int>(1);
+  std::weak_ptr<int> rejected_capture = capture;
+  const auto rejected = uv::raw::getaddrinfo(*state.loop, request, nullptr, nullptr,
+      [&, capture](auto&, auto) { ++state.rejected_calls; });
+  capture.reset();
+  EXPECT_EQ(rejected.error(), uv::make_error_code(UV_EINVAL));
+  EXPECT_TRUE(rejected_capture.expired());
+  EXPECT_FALSE(request.pending());
+
+  EXPECT_TRUE(uv::raw::getaddrinfo(*state.loop, request, "127.0.0.1", "443",
+      [&](auto &completed, uv::raw::getaddrinfo_result next) {
+        EXPECT_FALSE(completed.pending());
+        EXPECT_TRUE(next);
+        ++state.final_calls;
+      }));
+}
+
+void transition_nameinfo_static(uv::raw::getnameinfo_request &request, uv::raw::getnameinfo_result result) {
+  auto &state = *request.user_data<dns_transition_state>();
+  EXPECT_TRUE(result);
+  EXPECT_EQ(result.service(), "80");
+  EXPECT_FALSE(request.pending());
+  EXPECT_TRUE(state.first_capture.expired());
+  ++state.static_calls;
+
+  auto capture = std::make_shared<int>(1);
+  std::weak_ptr<int> rejected_capture = capture;
+  const auto rejected = uv::raw::getnameinfo(*state.loop, request, nullptr, 0,
+      [&, capture](auto&, auto) { ++state.rejected_calls; });
+  capture.reset();
+  EXPECT_EQ(rejected.error(), uv::make_error_code(UV_EINVAL));
+  EXPECT_TRUE(rejected_capture.expired());
+  EXPECT_FALSE(request.pending());
+
+  uv::ipv4 address{"127.0.0.1", 443};
+  EXPECT_TRUE(uv::raw::getnameinfo(*state.loop, request, address, NI_NUMERICHOST | NI_NUMERICSERV,
+      [&](auto &completed, uv::raw::getnameinfo_result next) {
+        EXPECT_FALSE(completed.pending());
+        EXPECT_TRUE(next);
+        EXPECT_EQ(next.service(), "443");
+        ++state.final_calls;
+      }));
 }
 }
 
@@ -148,11 +209,18 @@ TEST(RawDns, reverseLookupCanResubmitFromItsCallback) {
   uv::raw::getnameinfo_request request;
   uv::ipv4 first{"127.0.0.1", 443};
   uv::ipv4 second{"127.0.0.1", 80};
-  std::string first_service, second_service;
+  std::string first_hostname, first_service, second_service;
   ASSERT_TRUE(uv::raw::getnameinfo(loop, request, first, NI_NUMERICHOST | NI_NUMERICSERV,
       [&](uv::raw::getnameinfo_request &completed, uv::raw::getnameinfo_result result) {
         ASSERT_TRUE(result);
-        first_service = result.service();
+        {
+          const std::string_view hostname = result.hostname();
+          const std::string_view service = result.service();
+          EXPECT_EQ(hostname.data(), completed.native()->host);
+          EXPECT_EQ(service.data(), completed.native()->service);
+          first_hostname.assign(hostname);
+          first_service.assign(service);
+        } // Borrowed views must not be used after the request is reused.
         EXPECT_TRUE(uv::raw::getnameinfo(loop, completed, second, NI_NUMERICHOST | NI_NUMERICSERV,
             [&](auto &, uv::raw::getnameinfo_result next) {
               EXPECT_TRUE(next);
@@ -160,8 +228,60 @@ TEST(RawDns, reverseLookupCanResubmitFromItsCallback) {
             }));
       }));
   loop.run();
+  EXPECT_EQ(first_hostname, "127.0.0.1");
   EXPECT_EQ(first_service, "443");
   EXPECT_EQ(second_service, "80");
+  loop.close();
+}
+
+TEST(RawDns, addressInfoChangesDispatchAcrossReentrantSubmissionsAndRejection) {
+  uv::loop loop;
+  uv::raw::getaddrinfo_request request;
+  dns_transition_state state{&loop};
+  request.user_data(state);
+  auto capture = std::make_shared<int>(1);
+  state.first_capture = capture;
+  ASSERT_TRUE(uv::raw::getaddrinfo(loop, request, "127.0.0.1", "80",
+      [&, capture](auto &completed, uv::raw::getaddrinfo_result result) {
+        EXPECT_TRUE(result);
+        EXPECT_FALSE(completed.pending());
+        ++state.first_calls;
+        EXPECT_TRUE(uv::raw::getaddrinfo_static<transition_addrinfo_static>(
+            loop, completed, "127.0.0.1", "80"));
+      }));
+  capture.reset();
+  loop.run();
+  EXPECT_EQ(state.first_calls, 1);
+  EXPECT_EQ(state.static_calls, 1);
+  EXPECT_EQ(state.final_calls, 1);
+  EXPECT_EQ(state.rejected_calls, 0);
+  EXPECT_FALSE(request.pending());
+  loop.close();
+}
+
+TEST(RawDns, nameInfoChangesDispatchAcrossReentrantSubmissionsAndRejection) {
+  uv::loop loop;
+  uv::raw::getnameinfo_request request;
+  dns_transition_state state{&loop};
+  request.user_data(state);
+  auto capture = std::make_shared<int>(1);
+  state.first_capture = capture;
+  uv::ipv4 address{"127.0.0.1", 80};
+  ASSERT_TRUE(uv::raw::getnameinfo(loop, request, address, NI_NUMERICHOST | NI_NUMERICSERV,
+      [&, capture](auto &completed, uv::raw::getnameinfo_result result) {
+        EXPECT_TRUE(result);
+        EXPECT_FALSE(completed.pending());
+        ++state.first_calls;
+        EXPECT_TRUE(uv::raw::getnameinfo_static<transition_nameinfo_static>(
+            loop, completed, address, NI_NUMERICHOST | NI_NUMERICSERV));
+      }));
+  capture.reset();
+  loop.run();
+  EXPECT_EQ(state.first_calls, 1);
+  EXPECT_EQ(state.static_calls, 1);
+  EXPECT_EQ(state.final_calls, 1);
+  EXPECT_EQ(state.rejected_calls, 0);
+  EXPECT_FALSE(request.pending());
   loop.close();
 }
 
