@@ -109,7 +109,7 @@ struct static_random_state {
   std::size_t size = 0;
 };
 
-void static_random_callback(uv::random_request &request, uv::random_result result) {
+void static_random_callback(uv::raw::random_request &request, uv::raw::random_result result) {
   auto *state = request.user_data<static_random_state>();
   state->called = true;
   state->ok = result.ok();
@@ -258,20 +258,20 @@ TEST(Uvpp2Threadpool, queueWorkSupportsStaticCallbacks) {
 
 TEST(Uvpp2Random, randomFillCompletesAsynchronously) {
   uv::loop loop;
-  uv::random_request request;
+  uv::raw::random_request request;
   std::array<std::byte, 32> bytes{};
 
   bool called = false;
   bool ok = false;
   std::size_t size = 0;
 
-  uv::random_fill(loop, request, std::span<std::byte>{bytes},
-    [&](uv::random_request &callback_request, uv::random_result result) {
+  uv::raw::random_fill(loop, request, std::span<std::byte>{bytes},
+    [&](uv::raw::random_request &callback_request, uv::raw::random_result result) {
       EXPECT_EQ(&request, &callback_request);
       called = true;
       ok = result.ok();
       size = result.bytes().size();
-    });
+    }).throw_if_error();
 
   loop.run();
 
@@ -285,12 +285,12 @@ TEST(Uvpp2Random, randomFillCompletesAsynchronously) {
 
 TEST(Uvpp2Random, randomFillSupportsStaticCallbacks) {
   uv::loop loop;
-  uv::random_request request;
+  uv::raw::random_request request;
   std::array<std::byte, 16> bytes{};
   static_random_state state;
   request.user_data(state);
 
-  uv::random_fill_static<static_random_callback>(loop, request, std::span<std::byte>{bytes});
+  ASSERT_TRUE(uv::raw::random_fill_static<static_random_callback>(loop, request, std::span<std::byte>{bytes}));
   loop.run();
 
   EXPECT_TRUE(state.called);
@@ -317,42 +317,55 @@ TEST(Uvpp2Random, randomFillCancelPendingCompletesWithCanceledStatus) {
     GTEST_SKIP() << "could not occupy every libuv worker thread";
   }
 
-  uv::random_request target;
+  uv::raw::random_request target;
   std::array<std::byte, 32> bytes{};
   bool target_after = false;
   bool target_canceled = false;
 
-  uv::random_fill(loop, target, std::span<std::byte>{bytes},
-    [&](uv::random_request &, uv::random_result result) {
+  uv::raw::random_fill(loop, target, std::span<std::byte>{bytes},
+    [&](uv::raw::random_request &, uv::raw::random_result result) {
       target_after = true;
       target_canceled = result.status().error() == uv::make_error_code(UV_ECANCELED);
-    });
+      EXPECT_TRUE(result.bytes().empty());
+      EXPECT_EQ(result.buffer().data(), bytes.data());
+      EXPECT_EQ(result.buffer().size(), bytes.size());
+    }).throw_if_error();
 
-  EXPECT_FALSE(target.try_cancel());
+  EXPECT_TRUE(target.pending());
+  EXPECT_TRUE(target.cancel());
+  EXPECT_TRUE(target.pending());
+  EXPECT_FALSE(target_after);
 
   blockers.release();
   loop.run();
 
   EXPECT_TRUE(target_after);
   EXPECT_TRUE(target_canceled);
+  EXPECT_FALSE(target.pending());
+  bool reused = false;
+  ASSERT_TRUE(uv::raw::random_fill(loop, target, std::span<std::byte>{bytes},
+    [&](uv::raw::random_request &, uv::raw::random_result result) {
+      EXPECT_TRUE(result);
+      EXPECT_EQ(result.bytes().data(), bytes.data());
+      reused = true;
+    }));
+  loop.run();
+  EXPECT_TRUE(reused);
 
   loop.close();
 }
 
 TEST(Uvpp2Random, randomFillCancelAfterCompletionFails) {
   uv::loop loop;
-  uv::random_request request;
+  uv::raw::random_request request;
   std::array<std::byte, 32> bytes{};
 
-  uv::random_fill(loop, request, std::span<std::byte>{bytes},
-    [](uv::random_request &, uv::random_result) {});
+  uv::raw::random_fill(loop, request, std::span<std::byte>{bytes},
+    [](uv::raw::random_request &, uv::raw::random_result) {}).throw_if_error();
 
   loop.run();
 
-  EXPECT_THROW(request.cancel(), uv::error);
-  auto ec = request.try_cancel();
-  ASSERT_TRUE(ec);
-  EXPECT_EQ(ec.native(), UV_EBUSY);
+  EXPECT_EQ(request.cancel().error(), uv::make_error_code(UV_EINVAL));
 
   loop.close();
 }

@@ -273,3 +273,10 @@ reentrant runtime/static replacement for the same path and interval, while
 passed directly to libuv, including from a callback; its behavior depends on the
 linked libuv version. See [the guide](../user/raw-watchers.md#filesystem-polling)
 and [tests](../../tests/test-raw-fs-poll.cpp). Broader proposal work remains open.
+
+## Raw random migration progress
+
+Raw random fill now separates synchronous status from asynchronous submission
+and completion. The caller owns the mutable output and stable native request;
+cancellation preserves both through completion. Runtime/static callbacks release
+request state before delivery. High-level random ownership is not implemented.

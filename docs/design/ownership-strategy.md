@@ -197,3 +197,8 @@ Raw work requests remain caller-owned and address-stable through loop-thread
 completion, including after cancellation. The worker callable is released on
 the worker after execution, or on the loop before delivery when cancelled before
 execution. Completion detaches its callback before invoking user code.
+
+Raw random fills borrow the caller's mutable buffer. The synchronous borrow ends
+on return; asynchronous request and buffer storage remain alive and stable through
+completion, including after cancellation. Random results contain borrowed views,
+not owned output.

@@ -628,3 +628,10 @@ caller-owned stable native storage. Work runs on a pool thread, terminal deliver
 on the loop; callback state is prepared before submission and detached before
 completion. Cancellation retains the request until completion. Tests cover both
 callback forms, reentrant reuse and cancellation. Broader proposal work remains open.
+
+## Raw random migration progress
+
+Raw random fill now separates synchronous status from asynchronous submission
+and completion. The caller owns the mutable output and stable native request;
+cancellation preserves both through completion. Runtime/static callbacks release
+request state before delivery. High-level random ownership is not implemented.
