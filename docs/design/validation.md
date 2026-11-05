@@ -306,9 +306,8 @@ functions, which require libuv's process-wide semaphore to be initialized.
 ## Raw filesystem polling
 
 Real temporary-file tests cover native error/recovery, metadata changes, borrowed
-stat values, runtime/static callback replacement, stop, close and restart after
-the loop drains native cleanup. Duration boundaries and callback ownership are
-checked separately. A direct libuv 1.51 probe reproduced an old callback and a
-busy loop after stop/start without waiting; restart during callback also triggered
-a native assertion. Tests therefore preserve the caller-visible cleanup boundary
-rather than accessing the private native context.
+stat values, runtime/static callback replacement, stop, close and restart.
+Duration boundaries and callback ownership are checked separately. Immediate
+restart tests require a libuv build containing the upstream fs-poll restart fix.
+Set `UVPP_TEST_FS_POLL_RESTART_FIXED=1` when running the test suite against
+such a build to exercise runtime-to-static and static-to-runtime reentrant restart.

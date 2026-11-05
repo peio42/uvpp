@@ -303,10 +303,6 @@ active-start call is a successful no-op, so a single fixed native dispatcher
 implements runtime/static selection replacement only when path and converted
 interval match; mismatches return `UV_EBUSY` without changing native state.
 
-Native stop does not provide a completion event for its internal stat/timer
-cleanup. Direct experiments with libuv 1.51 reproduce old callback delivery and
-a busy loop after immediate native stop/start, and an assertion when a callback
-restarts the handle. After stop inside delivery, the wrapper rejects restart with
-`UV_EBUSY`; outside delivery the caller must wait for native cleanup. No private
-context inspection, hidden deferred operation, or fabricated submission status is
-used. See [raw watcher usage](../user/raw-watchers.md#filesystem-polling).
+After stop, restart is passed directly to libuv, including from a callback.
+The wrapper does not compensate for libuv version-specific restart bugs.
+See [raw watcher usage](../user/raw-watchers.md#filesystem-polling).

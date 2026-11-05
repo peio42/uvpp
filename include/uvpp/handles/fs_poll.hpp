@@ -73,9 +73,6 @@ namespace uv::raw {
         static_callback_ = nullptr;
         return {};
       }
-      // Native polling may still be unwinding the old completion. Starting a new
-      // native context from that callback is unsafe on released libuv versions.
-      if (delivering_) return status::from_native(UV_EBUSY);
       std::string storage{path};
       const auto result = commit_start(uv_fs_poll_start(native(), &fs_poll::poll_trampoline,
                                                         storage.c_str(), delay.value()), std::move(cb));
@@ -100,7 +97,6 @@ namespace uv::raw {
         static_callback_ = &static_delivery<Callback>;
         return {};
       }
-      if (delivering_) return status::from_native(UV_EBUSY);
       std::string storage{path};
       const auto result = commit_start(uv_fs_poll_start(native(), &fs_poll::poll_trampoline,
                                                         storage.c_str(), delay.value()));
@@ -159,16 +155,13 @@ namespace uv::raw {
     static void poll_trampoline(uv_fs_poll_t *raw, int code,
                                 const uv_stat_t *previous, const uv_stat_t *current) noexcept {
       auto &self = fs_poll::from_native(raw);
-      self.delivering_ = true;
       const auto selected = self.static_callback_;
       if (selected) selected(self, fs_poll_result{code, previous, current});
       else self.deliver(fs_poll_result{code, previous, current});
-      self.delivering_ = false;
     }
 
     unsigned int interval_ = 0;
     void (*static_callback_)(fs_poll&, fs_poll_result) noexcept = nullptr;
-    bool delivering_ = false;
   };
 
 }

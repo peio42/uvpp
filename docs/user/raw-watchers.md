@@ -229,18 +229,10 @@ any selection changes. Matching an active path prepares a temporary writable C++
 string; long paths can allocate. Native libuv also allocates its poll context and
 manages the stat request and timer independently of uvpp callback storage.
 
-To change the watched path or interval, stop first and wait for libuv to finish
-cleaning its old poll context before starting again. Native stop initiates cleanup;
-it does not itself report cleanup completion. In particular, a native stat request
-may still be in flight. On affected libuv versions an immediate restart can deliver
-an old callback or leave the loop busy; an immediate restart from inside the poll
-callback can assert. After `stop()` in a callback, this wrapper returns `UV_EBUSY`
-for `start` until that callback returns. Outside the callback, the caller must
-ensure native cleanup has completed before restarting: for example, on a loop
-without unrelated active work, drive it until `uv_run` reports no remaining work.
-There is no public per-subscription cleanup notification. Closing the handle and
-retaining it through close completion is another explicit lifecycle boundary. uvpp
-does not inspect libuv's private poll context or defer native start/errors.
+To change the watched path or interval, stop first, then start the new
+subscription. Restart is passed directly to libuv, including when called from a
+callback. Use a libuv version containing [the fs-poll restart fix](https://github.com/libuv/libuv/commit/2b4b918d)
+if restarting immediately after stop.
 
 `raw::fs_poll_result` preserves both borrowed `uv_stat_t` pointers through
 `previous()` and `current()`; use them only during delivery. `previous_status()`

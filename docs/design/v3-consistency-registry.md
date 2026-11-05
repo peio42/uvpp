@@ -24,7 +24,7 @@ not the final v3 contract.
 | DNS | callback request wrapper in `uv`; high-level `uv::resolve` | request machinery in `uv::raw`; owned result operation in `uv` | Not migrated | Keep native hints/request ownership out of the high-level surface. |
 | Requests | `uv::raw::{connect_request,write_request,shutdown_request,udp_send_request}`; generic requests still in `uv` | `uv::raw` | Stream/TCP/pipe/UDP request migration implemented; others deferred | Pending guards, explicit submission statuses and pre-delivery slot release implemented. Pipe-specific connect/IPC entry points now share explicit statuses and these raw requests. |
 | Work and random | historical request operations in `uv` | raw request protocol in `uv::raw`; future ergonomic operations in `uv`/`uv::ops` | Not migrated | Decide high-level operation shape before treating current names as final. |
-| Filesystem polling | `uv::raw::fs_poll` | `uv::raw::fs_poll`; future high-level ownership remains separate | Raw migration implemented | Status init/start/stop; borrowed stat outcomes and typed path. Active starts replace callbacks only for matching path/interval; native cleanup must finish before a stopped handle is restarted. |
+| Filesystem polling | `uv::raw::fs_poll` | `uv::raw::fs_poll`; future high-level ownership remains separate | Raw migration implemented | Status init/start/stop; borrowed stat outcomes and typed path. Active starts replace callbacks only for matching path/interval; restart after stop is passed directly to libuv. |
 | Threading primitives | `uv` wrappers | Remains to be classified | Deferred | These are synchronous value/ownership wrappers, not automatically raw async resources. |
 
 Namespace migration must not silently change lifetime, allocation, callback, or

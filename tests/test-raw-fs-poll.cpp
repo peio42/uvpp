@@ -182,7 +182,7 @@ TEST_F(RawFsPoll, invalidDurationsAndPathsKeepActiveSubscription) {
   EXPECT_FALSE(weak.expired());
   EXPECT_TRUE(poll.stop());
   EXPECT_TRUE(weak.expired());
-  loop.run(); // Let libuv retire the stopped native poll context before reusing the handle.
+  loop.run();
   ASSERT_TRUE(poll.start(target, std::chrono::duration<double, std::milli>{1.9}, unused));
   EXPECT_TRUE(poll.stop());
   loop.run();
@@ -202,8 +202,6 @@ void final_poll(watcher &self, event result) {
   EXPECT_TRUE(self.active());
   ++state.final_calls;
   EXPECT_TRUE(self.stop());
-  EXPECT_EQ(self.start(state.first, 5ms, final_poll).error(), uv::make_error_code(UV_EBUSY));
-  EXPECT_EQ(self.start_static<final_poll>(state.first, 5ms).error(), uv::make_error_code(UV_EBUSY));
   state.done = true;
 }
 void static_poll(watcher &self, event result) {
@@ -243,7 +241,7 @@ TEST_F(RawFsPoll, actualNotificationsAllowReentrantCallbackReplacementAndStop) {
   EXPECT_EQ(state.final_calls, 1);
   EXPECT_TRUE(state.old_owner.expired());
   EXPECT_FALSE(poll.active());
-  loop.run(); // Native context cleanup completes before a new path is started.
+  loop.run();
   bool restarted = false;
   ASSERT_TRUE(poll.start(state.second, 5ms, [&](watcher &self, event result) {
     EXPECT_EQ(result.error_code(), uv::make_error_code(UV_ENOENT));
@@ -251,6 +249,49 @@ TEST_F(RawFsPoll, actualNotificationsAllowReentrantCallbackReplacementAndStop) {
     restarted = true;
   }));
   until([&] { return restarted; });
+}
+
+// libuv before commit 2b4b918d cannot safely restart immediately after stop.
+// Opt in only when the linked libuv contains that fix (including backports).
+struct immediate_rearm_state {
+  std::string second, third;
+  int runtime_calls = 0, static_calls = 0, final_calls = 0;
+  bool done = false;
+};
+void immediate_static_poll(watcher &self, event result) {
+  auto &state = *self.user_data<immediate_rearm_state>();
+  EXPECT_EQ(result.error_code(), uv::make_error_code(UV_ENOENT));
+  ++state.static_calls;
+  EXPECT_TRUE(self.stop());
+  const auto started = self.start(state.third, 5ms, [](watcher &next, event value) {
+    auto &current = *next.user_data<immediate_rearm_state>();
+    EXPECT_EQ(value.error_code(), uv::make_error_code(UV_ENOENT));
+    ++current.final_calls;
+    EXPECT_TRUE(next.stop());
+    current.done = true;
+  });
+  EXPECT_TRUE(started);
+  if (!started) state.done = true;
+}
+TEST_F(RawFsPoll, immediateRestartInCallbackWithFixedLibuv) {
+  if (!std::getenv("UVPP_TEST_FS_POLL_RESTART_FIXED"))
+    GTEST_SKIP() << "Requires libuv with fs-poll restart fix 2b4b918d";
+  ASSERT_TRUE(poll.init(loop));
+  immediate_rearm_state state{(dir / "second").string(), (dir / "third").string()};
+  poll.user_data(state);
+  ASSERT_TRUE(poll.start((dir / "first").string(), 5ms, [&](watcher &self, event result) {
+    EXPECT_EQ(result.error_code(), uv::make_error_code(UV_ENOENT));
+    ++state.runtime_calls;
+    EXPECT_TRUE(self.stop());
+    const auto started = self.start_static<immediate_static_poll>(state.second, 5ms);
+    EXPECT_TRUE(started);
+    if (!started) state.done = true;
+  }));
+  until([&] { return state.done; });
+  EXPECT_EQ(state.runtime_calls, 1);
+  EXPECT_EQ(state.static_calls, 1);
+  EXPECT_EQ(state.final_calls, 1);
+  EXPECT_FALSE(poll.active());
 }
 
 TEST_F(RawFsPoll, activeStartPreservesNativePathAndReplacesOnlyMatchingCallback) {
