@@ -345,3 +345,12 @@ stdio pipe to exercise a native error after child creation, including a throwing
 constructor retaining state until exit; it skips if the native backend rejects
 the setup earlier. Existing tests exercise constructor failure and the separate
 high-level owner. Cross-platform runtime coverage remains CI work.
+
+## Threading primitive review
+
+Tests cover count conversion boundaries, chrono conversion including NaN and
+infinity, copy-only and move-only callable ownership, failed callable preparation,
+join/restart and callback exception boundaries. A standalone native reproducer on
+Linux with libuv 1.51.0 and 1.53.1-dev confirmed immediate timeout after the
+`UINT64_MAX` deadline overflows; this is a native behavior, not patched by uvpp.
+Windows large-timeout behavior remains unverified at runtime.

@@ -643,3 +643,10 @@ native spawn failure still leaves initialized storage requiring close; throwing
 construction retains that storage through internal close. Native operations use
 statuses or typed results, while the high-level process owner remains separate.
 Broader proposal work and cross-platform validation remain open.
+
+## Threading primitive classification progress
+
+Synchronous threading owners are classified in `uv`. Count and chrono
+conversions are checked, and thread callable ownership is explicit through
+creation, execution and optional detach. Native large condition-timeout
+limitations are recorded separately; broader proposal work remains open.
