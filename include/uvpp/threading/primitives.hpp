@@ -1,6 +1,7 @@
 #pragma once
 
 #include <chrono>
+#include <cmath>
 #include <concepts>
 #include <cstdint>
 #include <exception>
@@ -17,6 +18,34 @@
 #include "uvpp/core/version.hpp"
 
 namespace uv {
+
+  namespace detail {
+    template<std::integral T>
+      requires (!std::same_as<std::remove_cv_t<T>, bool>)
+    unsigned int threading_count(T value) {
+      if constexpr (std::is_signed_v<T>) {
+        if (value < 0) throw error{UV_EINVAL};
+      }
+      using unsigned_type = std::make_unsigned_t<T>;
+      if constexpr (std::numeric_limits<unsigned_type>::digits > std::numeric_limits<unsigned int>::digits) {
+        if (static_cast<unsigned_type>(value) > (std::numeric_limits<unsigned int>::max)())
+          throw error{UV_EINVAL};
+      }
+      return static_cast<unsigned int>(value);
+    }
+
+    template<class Rep, class Period>
+      requires (std::integral<Rep> || std::floating_point<Rep>)
+    std::uint64_t condition_timeout_ns(std::chrono::duration<Rep, Period> timeout) {
+      const auto ns = std::chrono::duration<long double, std::nano>{timeout}.count();
+      if (std::isnan(ns)) throw error{UV_EINVAL};
+      if (ns <= 0) return 0;
+      // 2^64 is exactly representable even where long double is only double.
+      // Comparing against UINT64_MAX converted to floating point can round up.
+      if (ns >= std::ldexp(1.0L, 64)) return (std::numeric_limits<std::uint64_t>::max)();
+      return static_cast<std::uint64_t>(ns);
+    }
+  }
 
   class mutex final {
   public:
@@ -170,8 +199,12 @@ namespace uv {
   public:
     using raw_type = uv_sem_t;
 
-    explicit semaphore(unsigned int value = 0) {
-      throw_if_error(uv_sem_init(&raw_, value));
+    semaphore() : semaphore(0u) {}
+
+    template<std::integral T>
+      requires (!std::same_as<std::remove_cv_t<T>, bool>)
+    explicit semaphore(T value) {
+      throw_if_error(uv_sem_init(&raw_, detail::threading_count(value)));
     }
 
     semaphore(const semaphore&) = delete;
@@ -242,8 +275,9 @@ namespace uv {
     }
 
     template<class Rep, class Period>
+      requires (std::integral<Rep> || std::floating_point<Rep>)
     bool wait_for(mutex &lock, std::chrono::duration<Rep, Period> timeout) {
-      const int status = uv_cond_timedwait(&raw_, lock.native(), nanoseconds(timeout));
+      const int status = uv_cond_timedwait(&raw_, lock.native(), detail::condition_timeout_ns(timeout));
       if (status == 0) {
         return true;
       }
@@ -254,24 +288,6 @@ namespace uv {
     }
 
   private:
-    template<class Rep, class Period>
-    static uint64_t nanoseconds(std::chrono::duration<Rep, Period> timeout) noexcept {
-      using duration_type = std::chrono::duration<long double, Period>;
-      using nanosecond_type = std::chrono::duration<long double, std::nano>;
-
-      const auto ns = std::chrono::duration_cast<nanosecond_type>(duration_type{timeout}).count();
-      if (ns <= 0) {
-        return 0;
-      }
-
-      constexpr auto max = static_cast<long double>(std::numeric_limits<uint64_t>::max());
-      if (ns >= max) {
-        return std::numeric_limits<uint64_t>::max();
-      }
-
-      return static_cast<uint64_t>(ns);
-    }
-
     raw_type raw_{};
   };
 
@@ -284,8 +300,10 @@ namespace uv {
   public:
     using raw_type = uv_barrier_t;
 
-    explicit barrier(unsigned int count) {
-      throw_if_error(uv_barrier_init(&raw_, count));
+    template<std::integral T>
+      requires (!std::same_as<std::remove_cv_t<T>, bool>)
+    explicit barrier(T count) {
+      throw_if_error(uv_barrier_init(&raw_, detail::threading_count(count)));
     }
 
     barrier(const barrier&) = delete;
@@ -384,6 +402,7 @@ namespace uv {
     }
 
     template<auto Callback>
+      requires std::invocable<decltype(Callback)>
     void run_static() noexcept {
       uv_once(&raw_, []() noexcept {
         detail::invoke_static_callback<Callback>();
@@ -401,7 +420,8 @@ namespace uv {
     thread() = default;
 
     template<class Callback>
-      requires std::invocable<std::decay_t<Callback>&>
+      requires std::invocable<std::decay_t<Callback>&> &&
+               std::constructible_from<std::decay_t<Callback>, Callback&&>
     explicit thread(Callback &&callback) {
       start(std::forward<Callback>(callback));
     }
@@ -425,7 +445,8 @@ namespace uv {
     }
 
     template<class Callback>
-      requires std::invocable<std::decay_t<Callback>&>
+      requires std::invocable<std::decay_t<Callback>&> &&
+               std::constructible_from<std::decay_t<Callback>, Callback&&>
     void start(Callback &&callback) {
       if (joinable_) {
         throw error(UV_EBUSY);
@@ -433,8 +454,14 @@ namespace uv {
 
       using callback_type = std::decay_t<Callback>;
       auto state = std::make_unique<callback_state<callback_type>>(std::forward<Callback>(callback));
-      throw_if_error(uv_thread_create(&raw_, &thread::thread_trampoline, state.get()));
-      state.release();
+      // The new thread may finish before uv_thread_create returns. Transfer
+      // ownership before entering libuv and reclaim it only if creation fails.
+      auto *submitted = state.release();
+      const int status = uv_thread_create(&raw_, &thread::thread_trampoline, submitted);
+      if (status < 0) {
+        delete submitted;
+        throw error{status};
+      }
       joinable_ = true;
     }
 
@@ -477,8 +504,9 @@ namespace uv {
 
     template<class Callback>
     struct callback_state final : callback_state_base {
-      explicit callback_state(Callback cb)
-        : callback(std::move(cb)) {}
+      template<class F>
+      explicit callback_state(F &&cb)
+        : callback(std::forward<F>(cb)) {}
 
       void run() noexcept override {
         detail::invoke_callback(callback);

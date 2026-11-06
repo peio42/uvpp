@@ -1,6 +1,12 @@
 #include <atomic>
 #include <chrono>
+#include <cmath>
+#include <cstdint>
+#include <limits>
+#include <memory>
 #include <mutex>
+#include <stdexcept>
+#include <thread>
 #include <type_traits>
 
 #include "uvpp/core/version.hpp"
@@ -175,6 +181,45 @@ TEST(Uvpp2Threading, conditionVariableTimedWaitReportsTimeout) {
   mutex.unlock();
 }
 
+TEST(Uvpp2Threading, rejectsCountsThatCannotBeRepresentedNatively) {
+  try {
+    uv::semaphore invalid{-1};
+    ADD_FAILURE() << "A negative semaphore count must be rejected";
+  } catch (const uv::error &error) {
+    EXPECT_EQ(error.code().value(), UV_EINVAL);
+  }
+  EXPECT_THROW((uv::barrier{-1}), uv::error);
+  if constexpr (std::numeric_limits<unsigned int>::digits < std::numeric_limits<std::uint64_t>::digits) {
+    const auto too_large = std::uint64_t{(std::numeric_limits<unsigned int>::max)()} + 1;
+    EXPECT_THROW((uv::semaphore{too_large}), uv::error);
+    EXPECT_THROW((uv::barrier{too_large}), uv::error);
+  }
+  EXPECT_THROW((uv::barrier{0}), uv::error);
+  uv::semaphore semaphore{0};
+  EXPECT_FALSE(semaphore.try_wait());
+  uv::barrier barrier{1};
+  EXPECT_EQ(barrier.wait(), uv::barrier_wait_result::serial_thread);
+}
+
+TEST(Uvpp2Threading, timedWaitConversionHandlesFloatingBoundaries) {
+  using nanoseconds = std::chrono::duration<long double, std::nano>;
+  const auto max = (std::numeric_limits<std::uint64_t>::max)();
+  const auto boundary = std::ldexp(1.0L, 64);
+  EXPECT_EQ(uv::detail::condition_timeout_ns(nanoseconds{-1}), 0u);
+  EXPECT_EQ(uv::detail::condition_timeout_ns(nanoseconds{0.9L}), 0u);
+  EXPECT_EQ(uv::detail::condition_timeout_ns(nanoseconds{1.9L}), 1u);
+  EXPECT_EQ(uv::detail::condition_timeout_ns(nanoseconds{boundary}), max);
+  EXPECT_EQ(uv::detail::condition_timeout_ns(nanoseconds{std::numeric_limits<long double>::infinity()}), max);
+  const auto below_boundary = std::nextafter(boundary, 0.0L);
+  EXPECT_EQ(uv::detail::condition_timeout_ns(nanoseconds{below_boundary}),
+            static_cast<std::uint64_t>(below_boundary));
+  uv::mutex mutex;
+  uv::condition_variable condition;
+  std::lock_guard<uv::mutex> lock{mutex};
+  EXPECT_THROW(condition.wait_for(mutex, nanoseconds{std::numeric_limits<long double>::quiet_NaN()}), uv::error);
+  EXPECT_FALSE(condition.wait_for(mutex, nanoseconds{-1}));
+}
+
 TEST(Uvpp2Threading, barrierReleasesAllParticipants) {
   uv::barrier barrier{2};
   std::atomic<int> serial_threads{0};
@@ -253,13 +298,112 @@ TEST(Uvpp2Threading, threadRunsAndJoins) {
   EXPECT_TRUE(ran.load());
 }
 
+TEST(Uvpp2Threading, threadOwnsMoveOnlyCallableUntilWorkerFinishes) {
+  uv::semaphore started, release;
+  auto shared = std::make_shared<int>(42);
+  std::weak_ptr<int> weak = shared;
+  auto value = std::make_unique<int>(7);
+  std::atomic<int> observed{0};
+  uv::thread thread{[&, owner = std::move(shared), value = std::move(value)] {
+    observed.store(*owner + *value);
+    started.post();
+    release.wait();
+  }};
+  EXPECT_EQ(value, nullptr);
+  started.wait();
+  EXPECT_FALSE(weak.expired());
+  EXPECT_EQ(observed.load(), 49);
+  release.post();
+  thread.join();
+  EXPECT_TRUE(weak.expired());
+}
+
+TEST(Uvpp2Threading, callableCopyFailureLeavesThreadReusable) {
+  struct throwing_copy {
+    throwing_copy() = default;
+    throwing_copy(const throwing_copy &) { throw std::runtime_error{"copy"}; }
+    void operator()() const {}
+  } callable;
+  uv::thread thread;
+  EXPECT_THROW(thread.start(callable), std::runtime_error);
+  EXPECT_FALSE(thread.joinable());
+  std::atomic<bool> ran{false};
+  thread.start([&] { ran.store(true); });
+  thread.join();
+  EXPECT_TRUE(ran.load());
+}
+
+TEST(Uvpp2Threading, threadAcceptsCopyOnlyLvalueCallable) {
+  struct copy_only {
+    std::atomic<bool> *ran;
+    explicit copy_only(std::atomic<bool> &value) : ran{&value} {}
+    copy_only(const copy_only &) = default;
+    copy_only(copy_only &&) = delete;
+    void operator()() { ran->store(true); }
+  };
+  std::atomic<bool> ran{false};
+  copy_only callable{ran};
+  uv::thread thread{callable};
+  thread.join();
+  EXPECT_TRUE(ran.load());
+}
+
+TEST(Uvpp2Threading, rejectsRestartWhileJoinableAndCanRestartAfterJoin) {
+  uv::semaphore started, release;
+  uv::thread thread{[&] { started.post(); release.wait(); }};
+  started.wait();
+  EXPECT_THROW(thread.start([] {}), uv::error);
+  EXPECT_TRUE(thread.joinable());
+  release.post();
+  thread.join();
+  std::atomic<bool> reran{false};
+  thread.start([&] { reran.store(true); });
+  thread.join();
+  EXPECT_TRUE(reran.load());
+  EXPECT_THROW(thread.join(), uv::error);
+}
+
+TEST(Uvpp2ThreadingDeathTest, destroyingJoinableThreadTerminates) {
+  EXPECT_DEATH_IF_SUPPORTED({ uv::thread thread{[] {}}; }, "");
+}
+
+TEST(Uvpp2ThreadingDeathTest, exceptionInThreadCallbackTerminates) {
+  EXPECT_DEATH_IF_SUPPORTED({
+    uv::thread thread{[] { throw std::runtime_error{"worker"}; }};
+    thread.join();
+  }, "");
+}
+
 #if UVPP_HAS_THREAD_DETACH
+TEST(Uvpp2Threading, detachedWorkerRetainsCallableBeyondWrapperLifetime) {
+  auto started = std::make_shared<uv::semaphore>();
+  auto release = std::make_shared<uv::semaphore>();
+  auto token = std::make_shared<int>(42);
+  std::weak_ptr<int> weak = token;
+  {
+    uv::thread thread{[started, release, token] {
+      started->post();
+      release->wait();
+    }};
+    token.reset();
+    started->wait();
+    thread.detach();
+    EXPECT_FALSE(thread.joinable());
+  }
+  EXPECT_FALSE(weak.expired());
+  release->post();
+  const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds{5};
+  while (!weak.expired() && std::chrono::steady_clock::now() < deadline)
+    std::this_thread::yield();
+  EXPECT_TRUE(weak.expired());
+}
+
 TEST(Uvpp2Threading, threadCanDetachExplicitly) {
-  uv::semaphore finished;
+  auto finished = std::make_shared<uv::semaphore>();
 
   {
-    uv::thread thread{[&] {
-      finished.post();
+    uv::thread thread{[finished] {
+      finished->post();
     }};
 
     EXPECT_TRUE(thread.joinable());
@@ -267,7 +411,7 @@ TEST(Uvpp2Threading, threadCanDetachExplicitly) {
     EXPECT_FALSE(thread.joinable());
   }
 
-  finished.wait();
+  finished->wait();
 }
 #endif
 

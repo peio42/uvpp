@@ -26,7 +26,7 @@ not the final v3 contract.
 | Work | `uv::raw::work_request`, `uv::raw::queue_work` | Caller-owned raw work request; future higher-level operations remain separate | Raw migration implemented | Work runs on a pool thread; completion and callback release run on the loop. Pending cancellation retains the request until completion. |
 | Random | `uv::raw::random_fill_now`, `random_fill`, `random_request` | Caller-owned raw buffer and asynchronous request | Raw migration implemented | Synchronous status or asynchronous callback; output is borrowed through native completion. |
 | Filesystem polling | `uv::raw::fs_poll` | `uv::raw::fs_poll`; future high-level ownership remains separate | Raw migration implemented | Status init/start/stop; borrowed stat outcomes and typed path. Active starts replace callbacks only for matching path/interval; restart after stop is passed directly to libuv. |
-| Threading primitives | `uv` wrappers | Remains to be classified | Deferred | These are synchronous value/ownership wrappers, not automatically raw async resources. |
+| Threading primitives | `uv::{thread,mutex,recursive_mutex,rwlock,semaphore,condition_variable,barrier,thread_key,once}` | Synchronous owning primitives remain in `uv` | Classification final | Explicit native access; RAII and throwing initialization; thread owns callable state until execution ends. Independent of raw handles and requests. |
 
 Namespace migration must not silently change lifetime, allocation, callback, or
 error policy. Apply it with the relevant family's contract work rather than as a

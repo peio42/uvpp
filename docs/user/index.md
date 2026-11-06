@@ -28,6 +28,7 @@ as available below are experimental and may change before release.
 - [Raw pipe](networking/raw-pipe.md): explicit initialization, name queries and IPC requests.
 - [DNS](networking/dns.md): raw DNS requests and coroutine resolution with owned results.
 
+- [Threading primitives](threading.md): synchronous owners, native thread lifetime and synchronization.
 - [Raw thread-pool work](raw-work.md): caller-owned work requests, cancellation and completion.
 - [Raw random bytes](raw-random.md): synchronous and asynchronous fills of caller-owned buffers.
 
@@ -46,13 +47,14 @@ as available below are experimental and may change before release.
 | Process owner | `process`, synchronous spawn, `wait()`, `kill()`, and close after exit; stdio and resource-scope ownership remain deferred |
 | Explicit-result operations | `uv::ops::{read_some,write,accept,recv_from,send_to,close}`, `uv::ops::resolve(...)`, and `uv::ops::fs::{open,read,write,close}` |
 | Raw random bytes | [`uv::raw::random_fill_now` and `random_fill`](raw-random.md), caller-owned buffers and requests |
+| Threading | [`uv` synchronous primitives](threading.md), native thread ownership and synchronization |
 | Raw thread-pool work | [`uv::raw::work_request`](raw-work.md), worker/loop callbacks, explicit submission and cancellation statuses |
 | Raw async notifications | [`uv::raw::async`](async.md), cross-thread result-oriented send, loop-thread runtime/static callback replacement, caller-synchronized close |
 | Raw TTY | [`uv::raw::tty`](tty.md), explicit initialization, terminal mode/size and shared stream operations |
 | Raw TCP handle | [`uv::raw::tcp`](networking/raw-tcp.md), explicit initialization/TCP operations/address results and close/reset; [stream subscriptions](networking/raw-stream.md) use statuses, [request submissions](networking/raw-requests.md) use statuses and explicit pending state |
 | Raw layer | `uv::raw::fs`, [raw process](processes.md#raw-process-handles), and [raw callback watchers](raw-watchers.md) (`signal`, `poll`, `fs_event`, `fs_poll`, `timer`, `idle`, `prepare`, `check`) are available; the broader low-level namespace/error-policy migration is unfinished |
 | Filesystem | `uv::fs::{open,read,write,close}` with `uv::ops::fs` result counterparts; directories and broader filesystem operations remain proposed |
-| Other domains | Threading and utility code exists, but their v3 surfaces have not been consolidated in these guides |
+| Other domains | Utility code exists, but its v3 surface has not been fully consolidated in these guides |
 
 Do not infer that a header's presence establishes the final v3 API. In particular,
 there is no documented v3 `write_copy`, `read_exactly`, general detached task,
