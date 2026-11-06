@@ -298,3 +298,11 @@ close without cancellation. Destruction and failed-start rollback retain storage
 through native completion, including reentrant owner release.
 See the [implemented contract](../user/fs-events.md). Resource-scope adoption
 and broader platform/cost validation remain open.
+
+## Raw process review progress
+
+Raw process now supports default construction and status-returning spawn. A
+native spawn failure still leaves initialized storage requiring close; throwing
+construction retains that storage through internal close. Native operations use
+statuses or typed results, while the high-level process owner remains separate.
+Broader proposal work and cross-platform validation remain open.

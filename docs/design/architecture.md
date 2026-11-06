@@ -330,3 +330,14 @@ request. Asynchronous random uses caller-owned stable request storage and borrow
 the mutable output buffer until completion, releasing its callback slot before
 delivery. A cancellation request does not end that borrow. See the
 [raw random guide](../user/raw-random.md).
+
+## Raw process spawn
+
+Raw process storage remains separately allocated so a throwing constructor can
+retain a native handle through close after a failed spawn. Default construction
+and status-returning spawn expose that lifecycle to callers: native spawn failure
+still initializes the handle, and the caller closes it before releasing storage.
+If a late stdio failure leaves a child active, the exit callback remains installed;
+a throwing constructor retains the state through exit and then closes it.
+The high-level process owner retains its distinct state and error policy. See the
+[process guide](../user/processes.md#raw-process-handles).

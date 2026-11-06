@@ -202,3 +202,8 @@ Raw random fills borrow the caller's mutable buffer. The synchronous borrow ends
 on return; asynchronous request and buffer storage remain alive and stable through
 completion, including after cancellation. Random results contain borrowed views,
 not owned output.
+
+Raw process spawn uses caller-owned wrapper storage retained through close, even
+when native spawn fails. The wrapper allocates stable native storage so a failed
+throwing constructor can hand it to an internal close callback. Runtime exit
+callables are detached before delivery; a raw close does not reap a running child.

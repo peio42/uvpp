@@ -335,3 +335,13 @@ static callbacks, reentrant dispatch changes, cancellation and completion,
 rejected overlapping or empty-callback submissions, and callback lifetime.
 On Linux, an optional no-reserve virtual mapping also exercises native
 `UV_E2BIG` rejection and request reuse without allocating the buffer physically.
+
+## Raw process spawn
+
+Tests cover default state, native spawn failure and explicit close, repeated spawn
+rejection, runtime/static exit and close callbacks, capture release, native error
+results and user data preservation. A Linux test uses an invalid already-open
+stdio pipe to exercise a native error after child creation, including a throwing
+constructor retaining state until exit; it skips if the native backend rejects
+the setup earlier. Existing tests exercise constructor failure and the separate
+high-level owner. Cross-platform runtime coverage remains CI work.

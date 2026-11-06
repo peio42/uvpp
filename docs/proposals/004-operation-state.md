@@ -410,3 +410,11 @@ Raw random fill now separates synchronous status from asynchronous submission
 and completion. The caller owns the mutable output and stable native request;
 cancellation preserves both through completion. Runtime/static callbacks release
 request state before delivery. High-level random ownership is not implemented.
+
+## Raw process review progress
+
+Raw process now supports default construction and status-returning spawn. A
+native spawn failure still leaves initialized storage requiring close; throwing
+construction retains that storage through internal close. Native operations use
+statuses or typed results, while the high-level process owner remains separate.
+Broader proposal work and cross-platform validation remain open.
