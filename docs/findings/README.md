@@ -11,6 +11,10 @@ available, and relevant upstream issue or fix references. Separate observations
 from hypotheses and source inspection from runtime validation. Use `unknown`
 where evidence is not yet available.
 
+Severity uses this audit scale: `P1` blocks common builds or risks broad loss of
+correctness; `P2` affects a specific operation or its resource lifecycle; `P3`
+is a lower-impact API consistency or contract clarity issue.
+
 Statuses describe the current state, not an assumption about upstream acceptance:
 
 - `suspected`: evidence suggests an issue, but the defect or its scope needs confirmation.
@@ -24,5 +28,12 @@ separate platform-specific confidence levels even when it has a single overall s
 
 ## Findings
 
+- [Raw v3 audit summary](raw-v3-audit-summary.md) — scope, priorities, and unresolved follow-up.
+- [Raw filesystem polling is unavailable in libuv 1.53](raw-fs-poll-libuv-1.53.md) — confirmed source-level build incompatibility.
+- [Raw filesystem requests do not reject pending reuse](raw-fs-request-pending-reuse.md) — confirmed missing guard across runtime and static submissions.
+- [Cancelled raw `closedir` loses its typed owner](raw-closedir-cancellation-ownership.md) — confirmed ownership gap on native cancellation.
+- [Raw filesystem polling reports `UV_EBUSY` for native no-op restarts](raw-fs-poll-active-restart.md) — confirmed intentional status divergence.
+- [Raw watcher close behavior differs by family](raw-watcher-close-consistency.md) — confirmed duplicate-close guard inconsistency.
+- [libuv filesystem polling can miss changes before its first stat](upstream-fs-poll-initial-stat.md) — source-confirmed upstream defect; API removed in libuv 1.53.
 - [Large `uv_cond_timedwait` timeouts](uv-cond-timedwait-overflow.md) — confirmed on Linux; Windows behavior suspected.
 - [Windows `uv_poll_init_socket` failure registration](uv-poll-init-windows-registration.md) — resolved upstream; fixed release not established.
