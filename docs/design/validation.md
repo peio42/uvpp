@@ -353,4 +353,6 @@ infinity, copy-only and move-only callable ownership, failed callable preparatio
 join/restart and callback exception boundaries. A standalone native reproducer on
 Linux with libuv 1.51.0 and 1.53.1-dev confirmed immediate timeout after the
 `UINT64_MAX` deadline overflows; this is a native behavior, not patched by uvpp.
-Windows large-timeout behavior remains unverified at runtime.
+Windows large-timeout behavior remains unverified at runtime. See the
+[timed-wait finding](../findings/uv-cond-timedwait-overflow.md) for the native
+reproducer and status.

@@ -468,7 +468,9 @@ backend ordering in [the detailed audit](../design/raw-poll-init-rollback.md).
 There is no public synchronous libuv rollback API; public close changes failed
 constructor lifetime, while a preflight Winsock query cannot guarantee that the
 later query succeeds. Moving protocol discovery before registration upstream is
-the preferred way to eliminate this dependency; no upstream submission is made.
+the preferred way to eliminate this dependency;
+[libuv PR #5379](https://github.com/libuv/libuv/pull/5379) merged that fix into
+`v1.x`; a release containing it has not been established.
 
 Native Windows tests now intercept the real libuv module's Winsock protocol query,
 observe registration inside that query, and exercise actual native status/error

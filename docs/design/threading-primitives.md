@@ -85,39 +85,7 @@ to `UINT64_MAX`, and NaN throws `UV_EINVAL` before native entry. Floating-point
 precision limits apply. Native `uv_cond_timedwait` remains responsible for its
 platform conversion; uvpp does not mask native defects.
 
-On Linux, a native reproducer observed a `UINT64_MAX` nanosecond timeout returning
-`UV_ETIMEDOUT` immediately with libuv 1.51.0 and 1.53.1-dev (commit `2b4b918d`):
-the Unix backend adds the relative timeout to a monotonic timestamp in `uint64_t`
-and wraps. On Windows, source inspection at that commit shows a conversion to
-`DWORD` milliseconds which can exceed the destination range; this is a suspected
-limitation, not yet verified by running on Windows. No matching upstream report
-was identified in the search; the native reproducer should be reported upstream.
-The wrapper does not retry, clamp the native range, or fabricate a result.
-
-Minimal native reproducer (Linux; no uvpp calls):
-
-```c
-#include <stdint.h>
-#include <stdio.h>
-#include <uv.h>
-
-int main(void) {
-  uv_cond_t condition;
-  uv_mutex_t mutex;
-  uv_cond_init(&condition);
-  uv_mutex_init(&mutex);
-  uv_mutex_lock(&mutex);
-  uint64_t start = uv_hrtime();
-  int status = uv_cond_timedwait(&condition, &mutex, UINT64_MAX);
-  printf("%s: status=%d, elapsed_ms=%llu\n", uv_version_string(), status,
-         (unsigned long long)((uv_hrtime() - start) / 1000000));
-  uv_mutex_unlock(&mutex);
-  uv_mutex_destroy(&mutex);
-  uv_cond_destroy(&condition);
-}
-```
-
-With no signal, a roughly 584-year relative wait is expected, while the observed
-result was `UV_ETIMEDOUT` within milliseconds. Source for the reviewed Unix and
-Windows implementations is available at [libuv commit 2b4b918d, Unix](https://github.com/libuv/libuv/blob/2b4b918d/src/unix/thread.c)
-and [Windows](https://github.com/libuv/libuv/blob/2b4b918d/src/win/thread.c).
+Large native timeouts can return prematurely on Linux; Windows behavior remains
+unverified. See the [timed-wait finding](../findings/uv-cond-timedwait-overflow.md)
+for evidence, affected versions, and reproduction. The wrapper does not retry,
+clamp the native range, or fabricate a result.
