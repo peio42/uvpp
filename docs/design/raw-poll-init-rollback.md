@@ -6,6 +6,9 @@ exists to preserve the raw contract: failed initialization leaves no registered
 handle, requires no asynchronous close, and permits immediate destruction/retry.
 Loop-taking throwing constructors use the same path.
 
+The native failure ordering and its evidence are tracked in the
+[Windows poll initialization finding](../findings/uv-poll-init-windows-registration.md).
+
 ## Alternatives and selected boundary
 
 | Approach | Consequence |
@@ -17,9 +20,10 @@ Loop-taking throwing constructors use the same path.
 | Fix in libuv | Moving protocol discovery before `uv__handle_init` removes this dependency. This is the preferred upstream resolution; uvpp does not bundle or patch consumers' libuv. |
 | Current uvpp rollback | Synchronously removes only the inactive, uncommitted registration described below, preserves application `data`, and clears native storage. No loop driving or cleanup allocation. |
 
-No upstream issue or patch has been submitted by this task. An upstream ordering
-fix would allow removing the workaround for the affected newer versions while
-retaining compatibility handling for older ones.
+[libuv PR #5379](https://github.com/libuv/libuv/pull/5379) merged the ordering
+fix into `v1.x` as [commit `dd9f081`](https://github.com/libuv/libuv/commit/dd9f081cc55a4d83e2a976848d074f28ee5f34eb). A release containing it has not been
+established. The fix could allow removing the workaround for fixed versions
+while retaining compatibility handling for older ones.
 
 ## Audited versions
 

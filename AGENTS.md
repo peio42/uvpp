@@ -90,6 +90,16 @@ uv::loop loop;
 - Investigate suspected bugs with a minimal native libuv reproducer whenever practical. Distinguish confirmed defects from unverified hypotheses.
 - Once confirmed, check for an existing upstream issue or fix; otherwise propose reporting it to libuv. Keep uvpp faithful to the native contract and document affected versions when relevant.
 
+## Technical Findings
+
+- Investigate significant defects, undefined behavior, portability issues, and
+  unexpected upstream behavior; reproduce independently of uvpp when practical.
+- Record evidence, reproduction, affected versions, and status in `docs/findings/`.
+  Reference findings from design documents instead of duplicating investigations.
+- Check for existing upstream reports or fixes and propose reporting confirmed
+  upstream defects; record issue and fix references. Preserve findings after
+  resolution and update them as evidence changes.
+
 ## API Policies
 
 - Follow proposal 000: raw `uv::raw`, high-level `uv`, and coroutine primitives
@@ -119,6 +129,7 @@ uv::loop loop;
   APIs and their limits; remove superseded guides rather than archiving them.
   Group network guides under `docs/user/networking/`.
 - Implemented design and coding rules live in `docs/design/`.
+- Technical investigations and their status live in `docs/findings/`.
 - Future or partially implemented changes live in `docs/proposals/`, with explicit status.
 - When implementing a proposal, update current design and user documentation and record progress in the proposal.
 - Keep `README.md` focused on project overview, quick start, build, and links.

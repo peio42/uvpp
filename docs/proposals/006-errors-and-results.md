@@ -468,7 +468,9 @@ backend ordering in [the detailed audit](../design/raw-poll-init-rollback.md).
 There is no public synchronous libuv rollback API; public close changes failed
 constructor lifetime, while a preflight Winsock query cannot guarantee that the
 later query succeeds. Moving protocol discovery before registration upstream is
-the preferred way to eliminate this dependency; no upstream submission is made.
+the preferred way to eliminate this dependency;
+[libuv PR #5379](https://github.com/libuv/libuv/pull/5379) merged that fix into
+`v1.x`; a release containing it has not been established.
 
 Native Windows tests now intercept the real libuv module's Winsock protocol query,
 observe registration inside that query, and exercise actual native status/error
@@ -643,3 +645,10 @@ native spawn failure still leaves initialized storage requiring close; throwing
 construction retains that storage through internal close. Native operations use
 statuses or typed results, while the high-level process owner remains separate.
 Broader proposal work and cross-platform validation remain open.
+
+## Threading primitive classification progress
+
+Synchronous threading owners are classified in `uv`. Count and chrono
+conversions are checked, and thread callable ownership is explicit through
+creation, execution and optional detach. Native large condition-timeout
+limitations are recorded separately; broader proposal work remains open.

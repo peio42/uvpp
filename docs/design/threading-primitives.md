@@ -1,6 +1,6 @@
 # Threading Primitives
 
-Status: existing implementation on `main`; public surface consolidation remains pending.
+Status: implemented; classification in `uv` is final.
 
 The wrappers in `include/uvpp/threading/primitives.hpp` expose libuv thread and
 synchronization primitives. They synchronize application state and do not make
@@ -18,7 +18,9 @@ initialization errors throw `uv::error` where libuv reports them. Application co
 must ensure that no thread still uses a primitive when it is destroyed. There is
 no hidden reference counting or waiting to repair invalid ownership.
 
-These are direct libuv interop wrappers. Standard C++ synchronization facilities
+These synchronous, owning primitives are classified in `uv`, not `uv::raw`:
+they do not use event-loop handle/request lifecycles. `thread` owns a native thread
+and its entry state rather than an asynchronous libuv request. Standard C++ synchronization facilities
 remain valid alternatives; using the wrappers does not change the event-loop model.
 Future scheduling facilities are tracked in the
 [loop scheduling proposal](../proposals/007-loop-scheduling.md).
@@ -68,3 +70,22 @@ Contention tests use a separate contender thread while the owning thread keeps
 the lock held, then join before releasing it. Tests do not infer busy behavior
 from same-thread reacquisition: Windows mutexes are recursive, while BSD
 read/write lock reacquisition may produce `EDEADLK`, which libuv aborts on.
+
+## Count and timeout conversion
+
+Semaphore and barrier constructors accept integral counts representable by the
+native `unsigned int`; negative or out-of-range values throw `uv::error` with
+`UV_EINVAL` before conversion. A zero barrier count is rejected by libuv. Native
+platforms can impose lower limits, reported through their native initialization
+status. Boolean and floating-point counts are not accepted.
+
+Condition timeouts convert to nanoseconds, truncating fractional nanoseconds
+toward zero. Negative values become zero, positive overflow and infinity saturate
+to `UINT64_MAX`, and NaN throws `UV_EINVAL` before native entry. Floating-point
+precision limits apply. Native `uv_cond_timedwait` remains responsible for its
+platform conversion; uvpp does not mask native defects.
+
+Large native timeouts can return prematurely on Linux; Windows behavior remains
+unverified. See the [timed-wait finding](../findings/uv-cond-timedwait-overflow.md)
+for evidence, affected versions, and reproduction. The wrapper does not retry,
+clamp the native range, or fabricate a result.
