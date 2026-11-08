@@ -3,7 +3,7 @@
 - **Status:** confirmed; intentional wrapper policy is documented
 - **Severity:** P2
 - **Component:** `uv::raw::fs_poll::start` and `start_static`
-- **Affected versions:** repository revision when built with libuv versions that provide `uv_fs_poll_t` (through 1.52.x)
+- **Affected versions:** repository revision when built with libuv versions that provide `uv_fs_poll_t` including 1.53.0
 - **Upstream:** no native defect identified.
 
 ## Observation
@@ -20,8 +20,7 @@ the native-semantics divergence recorded here.
 The differing policy is documented in the raw watcher guide and consistency
 registry. That makes it deliberate, but it remains a semantic divergence in
 `uv::raw`, whose design contract otherwise preserves native start/restart
-behavior. The API is removed in libuv 1.53, but the issue applies when uvpp is
-built with older header sets that still provide it.
+behavior. Libuv 1.53.0 still provides the API.
 
 ## Evidence
 

@@ -9,10 +9,6 @@
 
 ## Priorities
 
-1. **P1 — Restore versioned header compatibility.** The unconditional raw
-   filesystem-poll include prevents normal umbrella-header use with libuv 1.53,
-   where upstream removed the complete API. See
-   [the compatibility finding](raw-fs-poll-libuv-1.53.md).
 2. **P2 — Tighten raw filesystem request lifecycle.** Filesystem requests lack
    a pending guard shared by DNS, random, work, and stream request families;
    accepted `closedir` cancellation also leaves the directory open after its
@@ -28,8 +24,7 @@
    guard it. See [the close finding](raw-watcher-close-consistency.md).
 5. **Track the upstream filesystem-poll issue separately.** Older libuv
    implementations can miss changes before the first asynchronous stat
-   establishes a baseline; upstream removed the API in 1.53 rather than fixing
-   that contract. See [the upstream finding](upstream-fs-poll-initial-stat.md).
+   establishes a baseline; the upstream issue discusses the contract. See [the upstream finding](upstream-fs-poll-initial-stat.md).
 
 ## Areas reviewed
 
@@ -53,7 +48,7 @@
 
 ## Findings and unresolved questions
 
-This audit records five uvpp issues and one upstream issue. The existing
+This audit records four uvpp issues and one upstream issue. The existing
 Windows poll rollback finding was also reviewed; it is an intentional, isolated
 initialization cleanup backed by upstream source analysis and is not a new audit
 finding. Path copies, runtime `std::function` storage, directory read buffers,
@@ -62,9 +57,8 @@ one-shot-operation allocation was identified in the reviewed raw families.
 
 The repository does not declare a minimum or supported libuv range, while CI
 contains a libuv 1.53.0 configuration. Resolve whether 1.53 is supported before
-choosing the compatibility boundary. The raw filesystem-poll API removal is an
-upstream change, so uvpp should gate or remove that surface rather than emulate
-it.
+choosing the compatibility boundary. Libuv 1.53.0 still provides filesystem
+polling; no removal-related gate is warranted by this audit.
 
 The audit was source-based. It did not run the test suite or platform builds.
 Follow-up validation should add focused native reproductions for request reuse,

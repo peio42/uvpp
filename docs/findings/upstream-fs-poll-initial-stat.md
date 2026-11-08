@@ -1,10 +1,10 @@
 # libuv filesystem polling can miss changes before its first stat
 
-- **Status:** confirmed by source and upstream discussion; runtime reproduction not run; upstream API removed
+- **Status:** confirmed by source inspection; runtime reproduction not run; upstream disposition unresolved
 - **Severity:** P2
 - **Component:** libuv `uv_fs_poll_start` / `uv_fs_poll_cb`
-- **Affected versions:** libuv versions that expose the filesystem-poll API through 1.52.x; removed in 1.53.0
-- **Upstream:** [issue #4543](https://github.com/libuv/libuv/issues/4543) was closed as completed after [PR #5063](https://github.com/libuv/libuv/pull/5063) removed `uv_fs_poll_t`; the removal is present in [libuv v1.53.0](https://github.com/libuv/libuv/blob/v1.53.0/include/uv.h).
+- **Affected versions:** libuv 1.52.1 source inspected; broader version range not established; API remains present in 1.53.0
+- **Upstream:** [issue #4543](https://github.com/libuv/libuv/issues/4543) discusses the behavior and possible removal in v2; no removal in v1.53.0 is established.
 
 ## Observation
 
@@ -18,8 +18,7 @@ the baseline without a user notification.
 The upstream issue discusses the mismatch between the callback documentation
 and when monitoring becomes observable. One maintainer initially disputed the
 full lost-change account, then confirmed that the first stat is asynchronous;
-the issue was closed after the API was removed rather than by correcting the
-existing API. The source establishes the baseline suppression, but this audit
+the discussion includes a proposal to remove the API in a future v2. The source establishes the baseline suppression, but this audit
 did not independently reproduce the user-visible race.
 
 ## Evidence
@@ -29,7 +28,7 @@ did not independently reproduce the user-visible race.
 - The poll completion path in the same source suppresses callback delivery when
   `busy_polling` is zero, then stores the first result as the baseline.
 - [Upstream issue #4543](https://github.com/libuv/libuv/issues/4543) records the
-  semantic concern, maintainer discussion, and API removal.
+  semantic concern and maintainer discussion.
 - `uv::raw::fs_poll` passes starts to libuv and must not emulate a presumed fix.
 
 ## Native reproduction
@@ -46,6 +45,5 @@ reproducer was not executed during the audit.
 
 Do not add a uvpp workaround. Treat the native behavior as upstream-specific,
 avoid depending on a notification for changes before the initial stat completes,
-and use the libuv version's available API surface. Since upstream removed
-`uv_fs_poll_t` in 1.53.0, uvpp should version-gate the wrapper rather than
-preserving the old behavior under a new implementation.
+and track the upstream discussion. No removal-related version gate is justified
+by the evidence reviewed here.
