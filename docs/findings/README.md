@@ -28,6 +28,8 @@ separate platform-specific confidence levels even when it has a single overall s
 
 ## Findings
 
+- [Raw libuv workaround candidate inventory](raw-libuv-workaround-inventory.md) — targeted inventory of native deviations and rejected candidates.
+- [One-shot signal rearm during callback](upstream-signal-oneshot-rearm.md) — reproduced on Linux; upstream contract and disposition unclear.
 - [Raw v3 audit summary](raw-v3-audit-summary.md) — scope, priorities, and unresolved follow-up.
 - [Raw filesystem requests do not reject pending reuse](raw-fs-request-pending-reuse.md) — confirmed missing guard across runtime and static submissions.
 - [Cancelled raw `closedir` loses its typed owner](raw-closedir-cancellation-ownership.md) — confirmed ownership gap on native cancellation.
